@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
@@ -10,15 +11,16 @@ import (
 
 // runConfigInteractive launches a TUI form to edit key config fields
 func runConfigInteractive(cfg Config) (Config, bool, error) {
-	// We operate on a copy or just locals?
-	// The fields we want to edit: BaseURL, APIKey, Model.
-	// We also might want to edit RepoArg? Maybe not for global config command.
-
 	baseURL := cfg.BaseURL
 	apiKey := cfg.APIKey
 	model := cfg.Model
 
-	// Theme customization: Draculi-ish or default? Default is usually fine to start.
+	recentNStr := fmt.Sprintf("%d", cfg.RecentN)
+	maxFilesStr := fmt.Sprintf("%d", cfg.MaxFiles)
+	tempStr := fmt.Sprintf("%.2f", cfg.Temperature)
+	summarize := cfg.Summarize
+	conventional := cfg.Conventional
+	ignoredFilesStr := strings.Join(cfg.IgnoredFiles, ", ")
 
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -40,9 +42,63 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 
 			huh.NewInput().
 				Title("Model").
-				Description("Model name (e.g. gpt-4, gpt-3.5-turbo)").
+				Description("Model name").
 				Suggestions([]string{"gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-opus", "claude-3-sonnet"}).
 				Value(&model),
+		),
+
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Recent Commits").
+				Description("Number of recent commits to include").
+				Value(&recentNStr).
+				Validate(func(s string) error {
+					_, err := strconv.Atoi(s)
+					return err
+				}),
+
+			huh.NewInput().
+				Title("Max Files").
+				Description("Max staged files to verify").
+				Value(&maxFilesStr).
+				Validate(func(s string) error {
+					_, err := strconv.Atoi(s)
+					return err
+				}),
+
+			huh.NewInput().
+				Title("Temperature").
+				Description("LLM Temperature (0.0 - 2.0)").
+				Value(&tempStr).
+				Validate(func(s string) error {
+					v, err := strconv.ParseFloat(s, 64)
+					if err != nil {
+						return err
+					}
+					if v < 0 || v > 2.0 {
+						return fmt.Errorf("must be between 0.0 and 2.0")
+					}
+					return nil
+				}),
+		),
+
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title("Summarize Changes").
+				Description("Summarize file content for larger files?").
+				Value(&summarize),
+
+			huh.NewConfirm().
+				Title("Conventional Commits").
+				Description("Enforce Conventional Commits specification?").
+				Value(&conventional),
+		),
+
+		huh.NewGroup(
+			huh.NewInput().
+				Title("Ignored Files").
+				Description("Glob patterns (comma separated)").
+				Value(&ignoredFilesStr),
 		),
 	)
 
@@ -55,6 +111,29 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	cfg.BaseURL = baseURL
 	cfg.APIKey = apiKey
 	cfg.Model = model
+
+	if v, err := strconv.Atoi(recentNStr); err == nil {
+		cfg.RecentN = v
+	}
+	if v, err := strconv.Atoi(maxFilesStr); err == nil {
+		cfg.MaxFiles = v
+	}
+	if v, err := strconv.ParseFloat(tempStr, 64); err == nil {
+		cfg.Temperature = v
+	}
+	cfg.Summarize = summarize
+	cfg.Conventional = conventional
+
+	// Split ignored files
+	rawIgnores := strings.Split(ignoredFilesStr, ",")
+	var ignores []string
+	for _, s := range rawIgnores {
+		s = strings.TrimSpace(s)
+		if s != "" {
+			ignores = append(ignores, s)
+		}
+	}
+	cfg.IgnoredFiles = ignores
 
 	return cfg, true, nil
 }

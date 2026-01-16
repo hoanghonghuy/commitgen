@@ -6,9 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"commitgen/internal/ai"
 	"commitgen/internal/config"
 	"commitgen/internal/gitx"
 	"commitgen/internal/openai"
@@ -43,6 +45,7 @@ type Config struct {
 
 	// Enhancements
 	Conventional bool
+	IgnoredFiles []string
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -50,7 +53,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return runConfig(cfg)
 	}
 
-	repoRoot, err := gitx.ResolveRepoRoot(cfg.RepoArg)
+	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
 	if err != nil {
 		return err
 	}
@@ -64,7 +67,8 @@ func Run(ctx context.Context, cfg Config) error {
 		customInstructions = string(b)
 	}
 
-	data, err := buildPromptData(repoRoot, cfg.RecentN, cfg.MaxFiles, cfg.Summarize, customInstructions)
+	// 1. Build Data
+	data, err := buildPromptData(ctx, repoRoot, cfg.RecentN, cfg.MaxFiles, cfg.Summarize, customInstructions, cfg.IgnoredFiles)
 	if err != nil {
 		return err
 	}
@@ -80,49 +84,162 @@ func Run(ctx context.Context, cfg Config) error {
 			return errors.New("missing base-url/model. Set flags or env COMMITAI_BASE_URL / COMMITAI_MODEL")
 		}
 
-		client := openai.New(openai.Config{
+		// Initialize Provider
+		// For now we only support OpenAI, but easy to switch here.
+		provider := openai.New(openai.Config{
 			BaseURL: cfg.BaseURL,
 			APIKey:  cfg.APIKey,
 			Model:   cfg.Model,
 		})
 
-		oaiMsgs := vscodeprompt.ToOpenAIMessages(vscodeMsgs)
+		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Conventional)
 
-		// Interactive Loop
+	default:
+		return fmt.Errorf("unknown -cmd=%s (use suggest | dump-prompt | config)", cfg.Command)
+	}
+}
+
+func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int, summarize bool, customInstructions string, ignoredFiles []string) (vscodeprompt.Data, error) {
+	repoName := gitx.RepoNameFromRoot(repoRoot)
+
+	branch, _ := gitx.CurrentBranch(ctx, repoRoot)
+	userEmail, _ := gitx.GitConfig(ctx, repoRoot, "user.email")
+
+	userCommits, _ := gitx.RecentCommitsByAuthor(ctx, repoRoot, recentN, userEmail)
+	repoCommits, _ := gitx.RecentCommits(ctx, repoRoot, recentN)
+
+	// Fetch more changes initially to account for filtering
+	fetchFiles := maxFiles * 2
+	if fetchFiles < 20 {
+		fetchFiles = 20
+	}
+	changes, err := gitx.StagedChanges(ctx, repoRoot, fetchFiles)
+	if err != nil {
+		return vscodeprompt.Data{}, err
+	}
+	if len(changes) == 0 {
+		return vscodeprompt.Data{}, errors.New("no staged changes. Run: git add -A")
+	}
+
+	// Filter changes
+	defaultIgnores := []string{
+		"go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+		"*.map", "*.svg", "*.min.js", "*.min.css",
+	}
+	// Combine ignores
+	allIgnores := append(defaultIgnores, ignoredFiles...)
+
+	filteredChanges := make([]vscodeprompt.Change, 0, maxFiles)
+	for _, ch := range changes {
+		if len(filteredChanges) >= maxFiles {
+			break
+		}
+
+		// Check ignores
+		if shouldIgnore(ch.Path, allIgnores) {
+			// Maybe track skipped?
+			continue
+		}
+
+		// Check size (simple heuristic: diff length)
+		// Better: check file size if new, or diff size.
+		// For simplicity, let's treat huge diffs as truncated.
+		const maxDiffSize = 100 * 1024 // 100KB
+		if len(ch.Diff) > maxDiffSize {
+			ch.Diff = ch.Diff[:2000] + "\n...[Diff truncated due to size]..."
+		}
+
+		orig, _ := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
+		if strings.TrimSpace(orig) == "" {
+			orig, _ = gitx.ReadWorkingTreeFile(repoRoot, ch.Path)
+		}
+
+		// If original content is massive, truncate it too
+		if len(orig) > maxDiffSize {
+			orig = orig[:2000] + "\n...[Content truncated due to size]..."
+		}
+
+		attachment := vscodeprompt.BuildAttachment(repoRoot, ch.Path, orig, summarize)
+		filteredChanges = append(filteredChanges, vscodeprompt.Change{
+			Path:         ch.Path,
+			Diff:         ch.Diff,
+			OriginalCode: attachment,
+		})
+	}
+
+	if len(filteredChanges) == 0 {
+		return vscodeprompt.Data{}, fmt.Errorf("all staged files were ignored (checked %d files)", len(changes))
+	}
+
+	return vscodeprompt.Data{
+		RepositoryName:       repoName,
+		BranchName:           branch,
+		RecentUserCommits:    userCommits,
+		RecentRepoCommits:    repoCommits,
+		Changes:              filteredChanges,
+		CustomInstructions:   customInstructions, // inserted into <custom-instructions>
+		SummarizeAttachments: summarize,
+	}, nil
+}
+
+func shouldIgnore(pattern string, ignores []string) bool {
+	base := filepath.Base(pattern)
+	for _, ign := range ignores {
+		// Simple equality
+		if ign == base || ign == pattern {
+			return true
+		}
+		// Glob match
+		if matched, _ := filepath.Match(ign, base); matched {
+			return true
+		}
+	}
+	return false
+}
+
+func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provider, initialMsgs []vscodeprompt.VSCodeMessage, temp float64, conventional bool) error {
+	msgs := initialMsgs
+
+	for {
+		// Spinner
+		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+		s.Suffix = " Generating commit message..."
+		s.Start()
+
+		// Add Conventional Commits instruction if requested
+		// We append this every time to ensure it's at the end of context if we were aggregating,
+		// but here we are sending fresh request mostly.
+		// However, vscodeprompt messages are fixed.
+		// If we want to enforce it, we should add it to the messages being sent.
+		// Since we want to support regeneration, let's copy the base messages.
+		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(msgs))
+		copy(currentMsgs, msgs)
+
+		if conventional {
+			reminderMsg := vscodeprompt.VSCodeMessage{
+				Role: 1, // user
+				Content: []vscodeprompt.VSCodeContentPart{
+					{Type: 1, Text: "CRITICAL INSTRUCTION: You must strictly follow the Conventional Commits specification (e.g. 'feat: add spinner', 'fix: resolve bug').\nDo not just describe the change; prefix it with the type."},
+				},
+			}
+			currentMsgs = append(currentMsgs, reminderMsg)
+		}
+
+		commitMsgRaw, err := provider.GenerateCommitMessage(ctx, currentMsgs, temp)
+		s.Stop() // Stop spinner
+
+		if err != nil {
+			return err
+		}
+
+		commitMsg, ok := vscodeprompt.ExtractOneTextCodeBlock(commitMsgRaw)
+		if !ok {
+			fmt.Fprintln(os.Stderr, "Warning: model formatting issue (raw output shown below)")
+			commitMsg = commitMsgRaw
+		}
+
+		// Inner Confirmation Loop
 		for {
-			// Spinner
-			s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-			s.Suffix = " Generating commit message..."
-			s.Start()
-
-			// Add Conventional Commits instruction if requested
-			if cfg.Conventional {
-				// Append a USER message at the end to enforce specific format, overriding previous context if necessary.
-				reminderMsg := vscodeprompt.OpenAIMessage{
-					Role:    "user",
-					Content: "CRITICAL INSTRUCTION: You must strictly follow the Conventional Commits specification (e.g. 'feat: add spinner', 'fix: resolve bug').\nDo not just describe the change; prefix it with the type.",
-				}
-				oaiMsgs = append(oaiMsgs, reminderMsg)
-			}
-
-			out, err := client.Chat(ctx, openai.ChatRequest{
-				Messages:    oaiMsgs,
-				Temperature: cfg.Temperature,
-			})
-			s.Stop() // Stop spinner
-
-			if err != nil {
-				return err
-			}
-
-			commitMsg, ok := vscodeprompt.ExtractOneTextCodeBlock(out)
-			if !ok {
-				fmt.Fprintln(os.Stderr, "Warning: model formatting issue (raw output shown below)")
-				commitMsg = out
-			}
-
-			// Interactive Confirmation
-		ConfirmStep:
 			action, err := confirmCommitInteractive(commitMsg)
 			if err != nil {
 				return err
@@ -130,7 +247,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 			switch action {
 			case ActionCommit:
-				return gitx.Commit(repoRoot, commitMsg)
+				return gitx.Commit(ctx, repoRoot, commitMsg)
 
 			case ActionEdit:
 				newMsg, err := editCommitMessageInteractive(commitMsg)
@@ -138,45 +255,24 @@ func Run(ctx context.Context, cfg Config) error {
 					return err
 				}
 				commitMsg = newMsg
-				// Loop back to confirmation without regenerating
-				// We need to bypass generation step.
-				// Refactor loop: Generation -> [Confirmation Loop -> (Commit|Regen|Edit)]
-				// But currently it's one big loop.
-				// Easiest fix: use a label or flag, OR just go to top of loop but skip generic call?
-				// Better: Nested loop.
-				// Outer Loop (Generation)
-				//   Generate
-				//   Inner Loop (Confirmation)
-				//     Show
-				//     Ask
-				//     Handle: Edit -> Update msg -> Continue Inner Loop
-				//             Regen -> Continue Outer Loop
-				//             Commit -> Return
-
-				// Let's refactor the loop structure.
-				goto ConfirmStep
+				// Stay in confirmation loop to approve the new message
+				continue
 
 			case ActionRegenerate:
 				fmt.Println("Regenerating...")
-				continue
+				// Break inner loop to continue outer loop
+				goto NextGeneration
+
 			case ActionCancel:
 				fmt.Println("Cancelled.")
 				return nil
 			}
 		}
-
-	default:
-		return fmt.Errorf("unknown -cmd=%s (use suggest | dump-prompt | config)", cfg.Command)
+	NextGeneration:
 	}
 }
 
 func runConfig(cfg Config) error {
-	// If flags are provided (e.g. -save or -api-key), we assume non-interactive mode (or mixed).
-	// But the user requested upgrade.
-	// Let's fallback to interactive if no specific property flags were set?
-	// Easier: Just always launching interactive if "config" is called, UNLESS maybe just viewing?
-	// For now, let's launch interactive form, then save.
-
 	newCfg, ok, err := runConfigInteractive(cfg)
 	if err != nil {
 		return err
@@ -186,13 +282,19 @@ func runConfig(cfg Config) error {
 		return nil
 	}
 
-	// Always save in interactive mode
 	fileCfg := config.FileConfig{
-		BaseURL: newCfg.BaseURL,
-		APIKey:  newCfg.APIKey,
-		Model:   newCfg.Model,
+		BaseURL:      newCfg.BaseURL,
+		APIKey:       newCfg.APIKey,
+		Model:        newCfg.Model,
+		IgnoredFiles: newCfg.IgnoredFiles,
+
+		RecentN:      &newCfg.RecentN,
+		MaxFiles:     &newCfg.MaxFiles,
+		Summarize:    &newCfg.Summarize,
+		Temperature:  &newCfg.Temperature,
+		Conventional: &newCfg.Conventional,
 	}
-	// Warning: We need to know where to save. newCfg has ConfigPath.
+
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
@@ -225,47 +327,4 @@ func dumpPrompt(msgs []vscodeprompt.VSCodeMessage, outPath string) error {
 		return fmt.Errorf("write json: %w", err)
 	}
 	return nil
-}
-
-func buildPromptData(repoRoot string, recentN, maxFiles int, summarize bool, customInstructions string) (vscodeprompt.Data, error) {
-	repoName := gitx.RepoNameFromRoot(repoRoot)
-
-	branch, _ := gitx.CurrentBranch(repoRoot)
-	userEmail, _ := gitx.GitConfig(repoRoot, "user.email")
-
-	userCommits, _ := gitx.RecentCommitsByAuthor(repoRoot, recentN, userEmail)
-	repoCommits, _ := gitx.RecentCommits(repoRoot, recentN)
-
-	changes, err := gitx.StagedChanges(repoRoot, maxFiles)
-	if err != nil {
-		return vscodeprompt.Data{}, err
-	}
-	if len(changes) == 0 {
-		return vscodeprompt.Data{}, errors.New("no staged changes. Run: git add -A")
-	}
-
-	// Build attachments like VSCode prompt: <attachment ... isSummarized="true"> with numbered lines & filepath comment
-	att := make([]vscodeprompt.Change, 0, len(changes))
-	for _, ch := range changes {
-		orig, _ := gitx.OriginalFileAtHEAD(repoRoot, ch.Path)
-		if strings.TrimSpace(orig) == "" {
-			orig, _ = gitx.ReadWorkingTreeFile(repoRoot, ch.Path)
-		}
-		attachment := vscodeprompt.BuildAttachment(repoRoot, ch.Path, orig, summarize)
-		att = append(att, vscodeprompt.Change{
-			Path:         ch.Path,
-			Diff:         ch.Diff,
-			OriginalCode: attachment,
-		})
-	}
-
-	return vscodeprompt.Data{
-		RepositoryName:       repoName,
-		BranchName:           branch,
-		RecentUserCommits:    userCommits,
-		RecentRepoCommits:    repoCommits,
-		Changes:              att,
-		CustomInstructions:   customInstructions, // inserted into <custom-instructions>
-		SummarizeAttachments: summarize,
-	}, nil
 }

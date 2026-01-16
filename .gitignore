@@ -32,7 +32,8 @@ go.work
 
 # Local/Private
 .local/
-**/debug.log
+*.log
 **/prompt_debug.json
 
 .agent
+build_error.txt

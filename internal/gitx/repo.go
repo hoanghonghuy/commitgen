@@ -1,13 +1,14 @@
 package gitx
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-func ResolveRepoRoot(repoArg string) (string, error) {
+func ResolveRepoRoot(ctx context.Context, repoArg string) (string, error) {
 	if strings.TrimSpace(repoArg) != "" {
 		p, err := filepath.Abs(repoArg)
 		if err != nil {
@@ -17,7 +18,7 @@ func ResolveRepoRoot(repoArg string) (string, error) {
 			return "", err
 		}
 		// If user points to subdir, normalize by asking git
-		root, err := Git(p, "rev-parse", "--show-toplevel")
+		root, err := Git(ctx, p, "rev-parse", "--show-toplevel")
 		if err == nil {
 			return strings.TrimSpace(root), nil
 		}
@@ -30,7 +31,7 @@ func ResolveRepoRoot(repoArg string) (string, error) {
 		return "", err
 	}
 	// try git directly from cwd
-	root, err := Git(cwd, "rev-parse", "--show-toplevel")
+	root, err := Git(ctx, cwd, "rev-parse", "--show-toplevel")
 	if err == nil {
 		return strings.TrimSpace(root), nil
 	}
@@ -40,7 +41,7 @@ func ResolveRepoRoot(repoArg string) (string, error) {
 	for {
 		if exists(filepath.Join(cur, ".git")) {
 			// confirm via git
-			root, err := Git(cur, "rev-parse", "--show-toplevel")
+			root, err := Git(ctx, cur, "rev-parse", "--show-toplevel")
 			if err == nil {
 				return strings.TrimSpace(root), nil
 			}

@@ -7,9 +7,17 @@ import (
 )
 
 type FileConfig struct {
-	BaseURL string `json:"base_url"`
-	APIKey  string `json:"api_key"`
-	Model   string `json:"model"`
+	BaseURL      string   `json:"base_url"`
+	APIKey       string   `json:"api_key"`
+	Model        string   `json:"model"`
+	IgnoredFiles []string `json:"ignored_files,omitempty"`
+
+	// Advanced Settings
+	RecentN      *int     `json:"recent_n,omitempty"`
+	MaxFiles     *int     `json:"max_files,omitempty"`
+	Summarize    *bool    `json:"summarize,omitempty"`
+	Temperature  *float64 `json:"temperature,omitempty"`
+	Conventional *bool    `json:"conventional,omitempty"`
 }
 
 func Load(path string) (FileConfig, error) {
@@ -62,6 +70,36 @@ func ResolveString(flagVal, envVal, fileVal, defVal string) string {
 	}
 	if fileVal != "" {
 		return fileVal
+	}
+	return defVal
+}
+
+func ResolveInt(flagVal int, flagSet bool, fileVal *int, defVal int) int {
+	if flagSet {
+		return flagVal
+	}
+	if fileVal != nil {
+		return *fileVal
+	}
+	return defVal
+}
+
+func ResolveBool(flagVal bool, flagSet bool, fileVal *bool, defVal bool) bool {
+	if flagSet {
+		return flagVal
+	}
+	if fileVal != nil {
+		return *fileVal
+	}
+	return defVal
+}
+
+func ResolveFloat(flagVal float64, flagSet bool, fileVal *float64, defVal float64) float64 {
+	if flagSet {
+		return flagVal
+	}
+	if fileVal != nil {
+		return *fileVal
 	}
 	return defVal
 }

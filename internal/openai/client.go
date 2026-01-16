@@ -33,15 +33,10 @@ func New(cfg Config) *Client {
 	}
 }
 
-type ChatRequest struct {
-	Messages    []vscodeprompt.OpenAIMessage
-	Temperature float64
-}
-
 type chatReq struct {
-	Model       string                     `json:"model"`
+	Model       string                       `json:"model"`
 	Messages    []vscodeprompt.OpenAIMessage `json:"messages"`
-	Temperature float64                    `json:"temperature,omitempty"`
+	Temperature float64                      `json:"temperature,omitempty"`
 }
 
 type chatResp struct {
@@ -56,14 +51,27 @@ type chatResp struct {
 	} `json:"error,omitempty"`
 }
 
-func (c *Client) Chat(ctx context.Context, req ChatRequest) (string, error) {
+// Ensure Client implements ai.Provider
+// var _ ai.Provider = (*Client)(nil) // Cyclic dependency if we import ai here?
+// No, ai imports vscodeprompt. openai imports vscodeprompt.
+// We need openai to import ai to verify implementation?
+// Actually, run.go will rely on the interface defined in ai. openai just needs to have the method.
+// To avoid circular imports if ai/provider.go imports vscodeprompt (which is fine),
+// openai package can rely on vscodeprompt too.
+// But checking "implements" requires importing "commitgen/internal/ai".
+// That should be fine: internal/ai -> vscodeprompt. internal/openai -> vscodeprompt. internal/openai -> internal/ai.
+// The dependency graph is DAG.
+
+func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
+	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
+
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
 	url := base + "/chat/completions"
 
 	payload, _ := json.Marshal(chatReq{
 		Model:       c.cfg.Model,
-		Messages:    req.Messages,
-		Temperature: req.Temperature,
+		Messages:    oaiMsgs,
+		Temperature: temp,
 	})
 
 	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
