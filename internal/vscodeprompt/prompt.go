@@ -153,16 +153,20 @@ func ToOpenAIMessages(vs []VSCodeMessage) []OpenAIMessage {
 	return out
 }
 
-var reTextBlock = regexp.MustCompile(`(?m)^` + "```" + `text\s*([\s\S]+?)\s*` + "```" + `$`)
+var reTextBlock = regexp.MustCompile("(?ms)^```(?:\\w+)?\\s*([\\s\\S]+?)\\s*```$")
 
 // Returns (contentToPrint, okExactOneTextBlock)
 func ExtractOneTextCodeBlock(s string) (string, bool) {
 	s = strings.TrimSpace(s)
+	// Try to find the block
 	m := reTextBlock.FindStringSubmatch(s)
 	if len(m) == 2 {
-		return strings.TrimSpace(m[1]) + "\n", true
+		return strings.TrimSpace(m[1]), true
 	}
-	return s + "\n", false
+	// Fallback: if the whole message is code but without blocks (unlikely but possible),
+	// or if there's prose.
+	// Current caller behavior: if !ok, it prints warning and usage raw s.
+	return s, false
 }
 
 func DebugPreview(vs []VSCodeMessage) string {

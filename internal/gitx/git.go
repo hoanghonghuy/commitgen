@@ -45,7 +45,7 @@ func RecentCommits(repoRoot string, n int) ([]string, error) {
 	if n <= 0 {
 		return nil, nil
 	}
-	out, err := Git(repoRoot, "log", fmt.Sprintf("-n%d", n), "--pretty=format:%s")
+	out, err := Git(repoRoot, "log", fmt.Sprintf("-n %d", n), "--pretty=format:%s")
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func RecentCommitsByAuthor(repoRoot string, n int, author string) ([]string, err
 	if n <= 0 || strings.TrimSpace(author) == "" {
 		return nil, nil
 	}
-	out, err := Git(repoRoot, "log", fmt.Sprintf("-n%d", n), fmt.Sprintf("--author=%s", author), "--pretty=format:%s")
+	out, err := Git(repoRoot, "log", fmt.Sprintf("-n %d", n), fmt.Sprintf("--author=%s", author), "--pretty=format:%s")
 	if err != nil {
 		return nil, err
 	}
