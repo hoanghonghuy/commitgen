@@ -13,6 +13,8 @@ import (
 	"commitgen/internal/gitx"
 	"commitgen/internal/openai"
 	"commitgen/internal/vscodeprompt"
+
+	"github.com/briandowns/spinner"
 )
 
 type Config struct {
@@ -38,6 +40,9 @@ type Config struct {
 	// Config management
 	ConfigPath string
 	SaveConfig bool
+
+	// Enhancements
+	Conventional bool
 }
 
 func Run(ctx context.Context, cfg Config) error {
@@ -85,10 +90,27 @@ func Run(ctx context.Context, cfg Config) error {
 
 		// Interactive Loop
 		for {
+			// Spinner
+			s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
+			s.Suffix = " Generating commit message..."
+			s.Start()
+
+			// Add Conventional Commits instruction if requested
+			if cfg.Conventional {
+				// Append a USER message at the end to enforce specific format, overriding previous context if necessary.
+				reminderMsg := vscodeprompt.OpenAIMessage{
+					Role:    "user",
+					Content: "CRITICAL INSTRUCTION: You must strictly follow the Conventional Commits specification (e.g. 'feat: add spinner', 'fix: resolve bug').\nDo not just describe the change; prefix it with the type.",
+				}
+				oaiMsgs = append(oaiMsgs, reminderMsg)
+			}
+
 			out, err := client.Chat(ctx, openai.ChatRequest{
 				Messages:    oaiMsgs,
 				Temperature: cfg.Temperature,
 			})
+			s.Stop() // Stop spinner
+
 			if err != nil {
 				return err
 			}
@@ -100,6 +122,7 @@ func Run(ctx context.Context, cfg Config) error {
 			}
 
 			// Interactive Confirmation
+		ConfirmStep:
 			action, err := confirmCommitInteractive(commitMsg)
 			if err != nil {
 				return err
@@ -108,6 +131,31 @@ func Run(ctx context.Context, cfg Config) error {
 			switch action {
 			case ActionCommit:
 				return gitx.Commit(repoRoot, commitMsg)
+
+			case ActionEdit:
+				newMsg, err := editCommitMessageInteractive(commitMsg)
+				if err != nil {
+					return err
+				}
+				commitMsg = newMsg
+				// Loop back to confirmation without regenerating
+				// We need to bypass generation step.
+				// Refactor loop: Generation -> [Confirmation Loop -> (Commit|Regen|Edit)]
+				// But currently it's one big loop.
+				// Easiest fix: use a label or flag, OR just go to top of loop but skip generic call?
+				// Better: Nested loop.
+				// Outer Loop (Generation)
+				//   Generate
+				//   Inner Loop (Confirmation)
+				//     Show
+				//     Ask
+				//     Handle: Edit -> Update msg -> Continue Inner Loop
+				//             Regen -> Continue Outer Loop
+				//             Commit -> Return
+
+				// Let's refactor the loop structure.
+				goto ConfirmStep
+
 			case ActionRegenerate:
 				fmt.Println("Regenerating...")
 				continue

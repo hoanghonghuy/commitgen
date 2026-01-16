@@ -65,6 +65,7 @@ type Action int
 const (
 	ActionCommit Action = iota
 	ActionRegenerate
+	ActionEdit
 	ActionCancel
 )
 
@@ -93,6 +94,7 @@ func confirmCommitInteractive(commitMsg string) (Action, error) {
 				Options(
 					huh.NewOption("Commit (Apply)", "commit"),
 					huh.NewOption("Regenerate", "regenerate"),
+					huh.NewOption("Edit", "edit"),
 					huh.NewOption("Cancel", "cancel"),
 				).
 				Value(&selected),
@@ -106,9 +108,30 @@ func confirmCommitInteractive(commitMsg string) (Action, error) {
 	switch selected {
 	case "commit":
 		return ActionCommit, nil
+	case "edit":
+		return ActionEdit, nil
 	case "regenerate":
 		return ActionRegenerate, nil
 	default:
 		return ActionCancel, nil
 	}
+}
+
+func editCommitMessageInteractive(initialMsg string) (string, error) {
+	var content string = initialMsg
+
+	form := huh.NewForm(
+		huh.NewGroup(
+			huh.NewText().
+				Title("Edit Commit Message").
+				Description("Modify the message below (Press Esc+Enter or standard submit key to finish)").
+				Value(&content),
+		),
+	)
+
+	err := form.Run()
+	if err != nil {
+		return "", err
+	}
+	return content, nil
 }

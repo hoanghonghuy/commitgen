@@ -32,3 +32,6 @@ go.work
 
 # Local/Private
 .local/
+**/debug.log
+**/prompt_debug.json
+
