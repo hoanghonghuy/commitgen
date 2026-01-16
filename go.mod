@@ -1,4 +1,4 @@
-module commitgen
+module github.com/hoanghonghuy/commitgen
 
 go 1.25.5
 

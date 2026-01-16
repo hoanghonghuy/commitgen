@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"commitgen/internal/vscodeprompt"
+	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
 type Config struct {
@@ -58,7 +58,7 @@ type chatResp struct {
 // Actually, run.go will rely on the interface defined in ai. openai just needs to have the method.
 // To avoid circular imports if ai/provider.go imports vscodeprompt (which is fine),
 // openai package can rely on vscodeprompt too.
-// But checking "implements" requires importing "commitgen/internal/ai".
+// But checking "implements" requires importing "github.com/hoanghonghuy/commitgen/internal/ai".
 // That should be fine: internal/ai -> vscodeprompt. internal/openai -> vscodeprompt. internal/openai -> internal/ai.
 // The dependency graph is DAG.
 

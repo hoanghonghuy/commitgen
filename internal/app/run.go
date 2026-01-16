@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"commitgen/internal/ai"
-	"commitgen/internal/config"
-	"commitgen/internal/gitx"
-	"commitgen/internal/openai"
-	"commitgen/internal/vscodeprompt"
+	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/config"
+	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/openai"
+	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 
 	"github.com/briandowns/spinner"
 )

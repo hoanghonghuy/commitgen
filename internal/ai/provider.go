@@ -3,7 +3,7 @@ package ai
 import (
 	"context"
 
-	"commitgen/internal/vscodeprompt"
+	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
 // Provider defines the interface for an AI backend (e.g. OpenAI, Ollama, Anthropic)
