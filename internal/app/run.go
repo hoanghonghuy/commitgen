@@ -269,7 +269,29 @@ func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provid
 			currentMsgs = append(currentMsgs, reminderMsg)
 		}
 
-		commitMsgRaw, err := provider.GenerateCommitMessage(ctx, currentMsgs, temp)
+		var commitMsgRaw string
+		var err error
+		maxRetries := 5
+
+		for i := 0; i < maxRetries; i++ {
+			commitMsgRaw, err = provider.GenerateCommitMessage(ctx, currentMsgs, temp)
+			if err == nil {
+				break
+			}
+			// Check for specific error to retry
+			if strings.Contains(err.Error(), "empty choices") {
+				if i < maxRetries-1 {
+					// Stop spinner to print message
+					s.Stop()
+					fmt.Printf("\n⚠️  Provider returned no choices. Retrying (%d/%d)...\n", i+1, maxRetries-1)
+					s.Start()
+					time.Sleep(500 * time.Millisecond)
+					continue
+				}
+			}
+			// Propagate other errors or if retries exhausted
+			break
+		}
 		s.Stop() // Stop spinner
 
 		if err != nil {
