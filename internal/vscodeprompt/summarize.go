@@ -48,7 +48,7 @@ func summarizeByType(relPath string, lines []string) map[int]string {
 	ext := strings.ToLower(filepath.Ext(relPath))
 	switch ext {
 	case ".md", ".txt", ".json", ".yml", ".yaml":
-		return summarizeHeadPlusLast(lines, 25, 1)
+		return summarizeHeadPlusLast(lines, 25)
 
 	case ".go":
 		return summarizeGo(lines)
@@ -59,7 +59,7 @@ func summarizeByType(relPath string, lines []string) map[int]string {
 }
 
 // Like VSCode dump for .md: keep head and last-line marker.
-func summarizeHeadPlusLast(lines []string, headN int, tailN int) map[int]string {
+func summarizeHeadPlusLast(lines []string, headN int) map[int]string {
 	kept := map[int]string{}
 	n := len(lines)
 

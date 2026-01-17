@@ -1,7 +1,9 @@
 package vscodeprompt
 
 import (
+	"bytes"
 	"fmt"
+	"html/template"
 	"regexp"
 	"strings"
 )
@@ -35,10 +37,22 @@ type Data struct {
 	Changes              []Change
 	CustomInstructions   string
 	SummarizeAttachments bool
+	SystemPromptTemplate string
 }
 
 func BuildVSCodeMessages(d Data) []VSCodeMessage {
-	systemText := systemPromptText()
+	tmpl := d.SystemPromptTemplate
+	if tmpl == "" {
+		tmpl = defaultSystemPromptTemplate()
+	}
+
+	// Simple template expansion if they use {{.RepositoryName}} etc
+	// For now, let's keep it simple. If they want to use text/template, we can support it.
+	// But mostly they just want to replace the text.
+	// Let's assume it is just a string for now, or text/template.
+	// We'll treat it as text/template.
+
+	systemText := renderTemplate(tmpl, d)
 	userText := buildUserText(d)
 
 	return []VSCodeMessage{
@@ -58,7 +72,7 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 }
 
 // This is copied to match the prompt you dumped from VS Code (including policy lines).
-func systemPromptText() string {
+func defaultSystemPromptTemplate() string {
 	return "" +
 		"You are an AI programming assistant, helping a software developer to come with the best git commit message for their code changes.\n" +
 		"You excel in interpreting the purpose behind code changes to craft succinct, clear commit messages that adhere to the repository's guidelines.\n\n" +
@@ -73,6 +87,24 @@ func systemPromptText() string {
 		"Avoid content that violates copyrights.\n" +
 		"If you are asked to generate content that is harmful, hateful, racist, sexist, lewd, or violent, only respond with \"Sorry, I can't assist with that.\"\n" +
 		"Keep your answers short and impersonal.\n"
+}
+
+func renderTemplate(tmplStr string, d Data) string {
+	// Quick pass: if no {{, just return string to save time
+	if !strings.Contains(tmplStr, "{{") {
+		return tmplStr
+	}
+	// Use text/template
+	t, err := template.New("system").Parse(tmplStr)
+	if err != nil {
+		// Fallback to raw string if parsing fails, maybe warn?
+		return tmplStr
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, d); err != nil {
+		return tmplStr
+	}
+	return buf.String()
 }
 
 func buildUserText(d Data) string {

@@ -16,6 +16,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	anthropicKey := cfg.AnthropicKey
 	geminiKey := cfg.GeminiKey
 	model := cfg.Model
+	promptTemplate := cfg.PromptTemplate
 	provider := cfg.Provider
 	if provider == "" {
 		provider = "openai"
@@ -73,6 +74,11 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 				Description("Model name").
 				Suggestions([]string{"gpt-4o", "claude-3-opus", "gemini-1.5-pro", "llama3"}).
 				Value(&model),
+
+			huh.NewInput().
+				Title("System Prompt Template").
+				Description("Custom system prompt (leave empty for default)").
+				Value(&promptTemplate),
 		),
 
 		huh.NewGroup(
@@ -141,6 +147,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	cfg.AnthropicKey = anthropicKey
 	cfg.GeminiKey = geminiKey
 	cfg.Model = model
+	cfg.PromptTemplate = promptTemplate
 	cfg.Provider = provider
 
 	if v, err := strconv.Atoi(recentNStr); err == nil {

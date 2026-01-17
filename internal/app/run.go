@@ -29,7 +29,6 @@ type Config struct {
 
 	BaseURL string
 	APIKey  string
-	APIKey  string
 	Model   string
 
 	AnthropicKey string
@@ -51,14 +50,19 @@ type Config struct {
 	SaveConfig bool
 
 	// Enhancements
-	Conventional bool
-	Provider     string
-	IgnoredFiles []string
+	Conventional   bool
+	Provider       string
+	IgnoredFiles   []string
+	HookFile       string
+	PromptTemplate string
 }
 
 func Run(ctx context.Context, cfg Config) error {
 	if cfg.Command == "config" {
 		return runConfig(cfg)
+	}
+	if cfg.Command == "install-hook" {
+		return InstallHook(ctx)
 	}
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
@@ -80,6 +84,7 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	data.SystemPromptTemplate = cfg.PromptTemplate
 
 	vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
 
@@ -131,7 +136,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return fmt.Errorf("unknown provider: %s (supported: openai, ollama, anthropic, gemini)", cfg.Provider)
 		}
 
-		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Conventional)
+		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Conventional, cfg.HookFile)
 
 	default:
 		return fmt.Errorf("unknown -cmd=%s (use suggest | dump-prompt | config)", cfg.Command)
@@ -236,7 +241,7 @@ func shouldIgnore(pattern string, ignores []string) bool {
 	return false
 }
 
-func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provider, initialMsgs []vscodeprompt.VSCodeMessage, temp float64, conventional bool) error {
+func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provider, initialMsgs []vscodeprompt.VSCodeMessage, temp float64, conventional bool, hookFile string) error {
 	msgs := initialMsgs
 
 	for {
@@ -286,6 +291,14 @@ func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provid
 
 			switch action {
 			case ActionCommit:
+				if hookFile != "" {
+					// Hook mode: Write to file instead of running git commit
+					if err := os.WriteFile(hookFile, []byte(commitMsg), 0644); err != nil {
+						return fmt.Errorf("write hook file: %w", err)
+					}
+					fmt.Println("Message generated for git hook.")
+					return nil
+				}
 				return gitx.Commit(ctx, repoRoot, commitMsg)
 
 			case ActionEdit:
@@ -304,6 +317,9 @@ func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provid
 
 			case ActionCancel:
 				fmt.Println("Cancelled.")
+				if hookFile != "" {
+					return fmt.Errorf("commit cancelled by user")
+				}
 				return nil
 			}
 		}
@@ -327,14 +343,15 @@ func runConfig(cfg Config) error {
 		Model:        newCfg.Model,
 		IgnoredFiles: newCfg.IgnoredFiles,
 
-		RecentN:      &newCfg.RecentN,
-		MaxFiles:     &newCfg.MaxFiles,
-		Summarize:    &newCfg.Summarize,
-		Temperature:  &newCfg.Temperature,
-		Conventional: &newCfg.Conventional,
-		Provider:     newCfg.Provider,
-		AnthropicKey: newCfg.AnthropicKey,
-		GeminiKey:    newCfg.GeminiKey,
+		RecentN:        &newCfg.RecentN,
+		MaxFiles:       &newCfg.MaxFiles,
+		Summarize:      &newCfg.Summarize,
+		Temperature:    &newCfg.Temperature,
+		Conventional:   &newCfg.Conventional,
+		Provider:       newCfg.Provider,
+		AnthropicKey:   newCfg.AnthropicKey,
+		GeminiKey:      newCfg.GeminiKey,
+		PromptTemplate: newCfg.PromptTemplate,
 	}
 
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
@@ -342,13 +359,6 @@ func runConfig(cfg Config) error {
 	}
 	fmt.Printf("\nConfiguration saved to %s\n", cfg.ConfigPath)
 	return nil
-}
-
-func maskKey(k string) string {
-	if len(k) < 8 {
-		return "*****"
-	}
-	return k[:4] + "..." + k[len(k)-4:]
 }
 
 func dumpPrompt(msgs []vscodeprompt.VSCodeMessage, outPath string) error {

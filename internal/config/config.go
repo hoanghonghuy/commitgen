@@ -16,6 +16,8 @@ type FileConfig struct {
 	AnthropicKey string `json:"anthropic_key,omitempty"`
 	GeminiKey    string `json:"gemini_key,omitempty"`
 
+	PromptTemplate string `json:"prompt_template,omitempty"`
+
 	IgnoredFiles []string `json:"ignored_files,omitempty"`
 
 	// Advanced Settings

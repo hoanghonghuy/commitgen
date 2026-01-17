@@ -63,9 +63,10 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	ollamaMsgs := make([]message, 0, len(msgs))
 	for _, m := range msgs {
 		role := "user"
-		if m.Role == 2 { // Assistant
+		switch m.Role {
+		case 2: // Assistant
 			role = "assistant"
-		} else if m.Role == 3 { // System
+		case 3: // System
 			role = "system"
 		}
 
