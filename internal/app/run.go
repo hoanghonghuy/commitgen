@@ -136,7 +136,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return fmt.Errorf("unknown provider: %s (supported: openai, ollama, anthropic, gemini)", cfg.Provider)
 		}
 
-		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Conventional, cfg.HookFile)
+		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
 
 	default:
 		return fmt.Errorf("unknown -cmd=%s (use suggest | dump-prompt | config)", cfg.Command)
@@ -241,7 +241,7 @@ func shouldIgnore(pattern string, ignores []string) bool {
 	return false
 }
 
-func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provider, initialMsgs []vscodeprompt.VSCodeMessage, temp float64, conventional bool, hookFile string) error {
+func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provider, initialMsgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string) error {
 	msgs := initialMsgs
 
 	for {
@@ -274,7 +274,9 @@ func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provid
 		maxRetries := 5
 
 		for i := 0; i < maxRetries; i++ {
-			commitMsgRaw, err = provider.GenerateCommitMessage(ctx, currentMsgs, temp)
+			ctxGen, cancel := context.WithTimeout(ctx, timeout)
+			commitMsgRaw, err = provider.GenerateCommitMessage(ctxGen, currentMsgs, temp)
+			cancel()
 			if err == nil {
 				break
 			}
