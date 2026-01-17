@@ -1,69 +1,49 @@
 package vscodeprompt
 
 import (
+	"strings"
 	"testing"
 )
 
-func TestExtractOneTextCodeBlock(t *testing.T) {
-	tests := []struct {
-		name   string
-		input  string
-		want   string
-		wantOk bool
-	}{
-		{
-			name:   "text block",
-			input:  "```text\ncommit message\n```",
-			want:   "commit message",
-			wantOk: true,
-		},
-		{
-			name:   "markdown block",
-			input:  "```markdown\ncommit message\n```",
-			want:   "commit message",
-			wantOk: true,
-		},
-		{
-			name:   "no lang block",
-			input:  "```\ncommit message\n```",
-			want:   "commit message",
-			wantOk: true,
-		},
-		{
-			name:   "surrounding whitespace",
-			input:  "  ```\ncommit message\n```  ",
-			want:   "commit message",
-			wantOk: true,
-		},
-		{
-			name:   "multiline message",
-			input:  "```\nfeat: add something\n\nBody line.\n```",
-			want:   "feat: add something\n\nBody line.",
-			wantOk: true,
-		},
-		{
-			name:   "prose only",
-			input:  "Just some text",
-			want:   "Just some text",
-			wantOk: false,
-		},
-		{
-			name:   "prose with code",
-			input:  "Here is the code:\n```\nfeat: x\n```",
-			want:   "feat: x",
-			wantOk: true, // Regex should find it now with (?s)
-		},
+func TestBuildVSCodeMessages_DefaultTemplate(t *testing.T) {
+	data := Data{
+		RepositoryName: "test-repo",
+		BranchName:     "main",
+		Changes:        []Change{{Path: "main.go", Diff: "package main"}},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := ExtractOneTextCodeBlock(tt.input)
-			if ok != tt.wantOk {
-				t.Errorf("ExtractOneTextCodeBlock() ok = %v, want %v", ok, tt.wantOk)
-			}
-			if got != tt.want {
-				t.Errorf("ExtractOneTextCodeBlock() got = %q, want %q", got, tt.want)
-			}
-		})
+	msgs := BuildVSCodeMessages(data)
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != 0 { // System
+		t.Errorf("expected role 0 (system), got %d", msgs[0].Role)
+	}
+	// Check if default text is present
+	if !strings.Contains(msgs[0].Content[0].Text, "You are an AI programming assistant") {
+		t.Error("default system prompt not found")
+	}
+}
+
+func TestBuildVSCodeMessages_CustomTemplate(t *testing.T) {
+	customTmpl := "Hello {{.RepositoryName}} on branch {{.BranchName}}"
+	data := Data{
+		RepositoryName:       "my-repo",
+		BranchName:           "dev",
+		Changes:              []Change{{Path: "main.go", Diff: "package main"}},
+		SystemPromptTemplate: customTmpl,
+	}
+
+	msgs := BuildVSCodeMessages(data)
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+
+	sysContent := msgs[0].Content[0].Text
+	expected := "Hello my-repo on branch dev"
+	if sysContent != expected {
+		t.Errorf("expected %q, got %q", expected, sysContent)
 	}
 }
