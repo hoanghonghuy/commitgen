@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/anthropic"
 	"github.com/hoanghonghuy/commitgen/internal/config"
+	"github.com/hoanghonghuy/commitgen/internal/gemini"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/ollama"
 	"github.com/hoanghonghuy/commitgen/internal/openai"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 
@@ -26,7 +29,11 @@ type Config struct {
 
 	BaseURL string
 	APIKey  string
+	APIKey  string
 	Model   string
+
+	AnthropicKey string
+	GeminiKey    string
 
 	RecentN   int
 	MaxFiles  int
@@ -45,6 +52,7 @@ type Config struct {
 
 	// Enhancements
 	Conventional bool
+	Provider     string
 	IgnoredFiles []string
 }
 
@@ -80,17 +88,48 @@ func Run(ctx context.Context, cfg Config) error {
 		return dumpPrompt(vscodeMsgs, cfg.DumpOutPath)
 
 	case "suggest":
-		if strings.TrimSpace(cfg.BaseURL) == "" || strings.TrimSpace(cfg.Model) == "" {
-			return errors.New("missing base-url/model. Set flags or env COMMITAI_BASE_URL / COMMITAI_MODEL")
+		if strings.TrimSpace(cfg.Model) == "" {
+			return errors.New("missing model. Set flags or env COMMITAI_MODEL")
 		}
 
-		// Initialize Provider
-		// For now we only support OpenAI, but easy to switch here.
-		provider := openai.New(openai.Config{
-			BaseURL: cfg.BaseURL,
-			APIKey:  cfg.APIKey,
-			Model:   cfg.Model,
-		})
+		var provider ai.Provider
+
+		switch strings.ToLower(cfg.Provider) {
+		case "ollama":
+			provider = ollama.New(ollama.Config{
+				BaseURL: cfg.BaseURL,
+				Model:   cfg.Model,
+			})
+		case "anthropic":
+			if cfg.AnthropicKey == "" {
+				return errors.New("missing anthropic key. Set flags or env COMMITAI_ANTHROPIC_KEY")
+			}
+			provider = anthropic.New(anthropic.Config{
+				APIKey: cfg.AnthropicKey,
+				Model:  cfg.Model,
+			})
+		case "gemini":
+			if cfg.GeminiKey == "" {
+				return errors.New("missing gemini key. Set flags or env COMMITAI_GEMINI_KEY")
+			}
+			provider = gemini.New(gemini.Config{
+				APIKey: cfg.GeminiKey,
+				Model:  cfg.Model,
+			})
+		case "openai", "":
+			if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
+				// Warn or error? OpenAI usually needs Key.
+				// But let's assume if BaseURL is set (e.g. local compatible), Key might be optional?
+				// For OpenAI official, Key is required.
+			}
+			provider = openai.New(openai.Config{
+				BaseURL: cfg.BaseURL,
+				APIKey:  cfg.APIKey,
+				Model:   cfg.Model,
+			})
+		default:
+			return fmt.Errorf("unknown provider: %s (supported: openai, ollama, anthropic, gemini)", cfg.Provider)
+		}
 
 		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Conventional)
 
@@ -293,6 +332,9 @@ func runConfig(cfg Config) error {
 		Summarize:    &newCfg.Summarize,
 		Temperature:  &newCfg.Temperature,
 		Conventional: &newCfg.Conventional,
+		Provider:     newCfg.Provider,
+		AnthropicKey: newCfg.AnthropicKey,
+		GeminiKey:    newCfg.GeminiKey,
 	}
 
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {

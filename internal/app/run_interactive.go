@@ -13,7 +13,13 @@ import (
 func runConfigInteractive(cfg Config) (Config, bool, error) {
 	baseURL := cfg.BaseURL
 	apiKey := cfg.APIKey
+	anthropicKey := cfg.AnthropicKey
+	geminiKey := cfg.GeminiKey
 	model := cfg.Model
+	provider := cfg.Provider
+	if provider == "" {
+		provider = "openai"
+	}
 
 	recentNStr := fmt.Sprintf("%d", cfg.RecentN)
 	maxFilesStr := fmt.Sprintf("%d", cfg.MaxFiles)
@@ -28,22 +34,44 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 				Title("CommitGen Configuration").
 				Description("Update your global settings in ~/.commitgen.json"),
 
+			huh.NewSelect[string]().
+				Title("AI Provider").
+				Options(
+					huh.NewOption("OpenAI", "openai"),
+					huh.NewOption("Ollama (Local)", "ollama"),
+					huh.NewOption("Anthropic (Claude)", "anthropic"),
+					huh.NewOption("Google Gemini", "gemini"),
+				).
+				Value(&provider),
+
 			huh.NewInput().
 				Title("Base URL").
-				Description("OpenAI-compatible endpoint").
-				Placeholder("https://api.openai.com/v1").
+				Description("API endpoint (default varies by provider)").
+				Placeholder("https://api.openai.com/v1 or http://localhost:11434").
 				Value(&baseURL),
 
 			huh.NewInput().
-				Title("API Key").
-				Description("Your secret key").
+				Title("OpenAI API Key").
+				Description("Key for OpenAI/Compatible providers").
 				Value(&apiKey).
+				EchoMode(huh.EchoModePassword),
+
+			huh.NewInput().
+				Title("Anthropic API Key").
+				Description("Key for Claude models").
+				Value(&anthropicKey).
+				EchoMode(huh.EchoModePassword),
+
+			huh.NewInput().
+				Title("Gemini API Key").
+				Description("Key for Google Gemini").
+				Value(&geminiKey).
 				EchoMode(huh.EchoModePassword),
 
 			huh.NewInput().
 				Title("Model").
 				Description("Model name").
-				Suggestions([]string{"gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo", "claude-3-opus", "claude-3-sonnet"}).
+				Suggestions([]string{"gpt-4o", "claude-3-opus", "gemini-1.5-pro", "llama3"}).
 				Value(&model),
 		),
 
@@ -110,7 +138,10 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	// Update the config object
 	cfg.BaseURL = baseURL
 	cfg.APIKey = apiKey
+	cfg.AnthropicKey = anthropicKey
+	cfg.GeminiKey = geminiKey
 	cfg.Model = model
+	cfg.Provider = provider
 
 	if v, err := strconv.Atoi(recentNStr); err == nil {
 		cfg.RecentN = v

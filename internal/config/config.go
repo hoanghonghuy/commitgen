@@ -7,9 +7,15 @@ import (
 )
 
 type FileConfig struct {
-	BaseURL      string   `json:"base_url"`
-	APIKey       string   `json:"api_key"`
-	Model        string   `json:"model"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"` // OpenAI Key
+	Model    string `json:"model"`
+	Provider string `json:"provider,omitempty"` // openai, ollama, anthropic, gemini
+
+	// Provider specifics
+	AnthropicKey string `json:"anthropic_key,omitempty"`
+	GeminiKey    string `json:"gemini_key,omitempty"`
+
 	IgnoredFiles []string `json:"ignored_files,omitempty"`
 
 	// Advanced Settings
