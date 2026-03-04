@@ -26,8 +26,9 @@ const (
 )
 
 type tuiModel struct {
-	state tuiState
-	width int
+	state  tuiState
+	width  int
+	height int
 
 	// Dependencies
 	provider     ai.Provider
@@ -180,7 +181,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
-		m.textarea.SetWidth(msg.Width - 4)
+		m.height = msg.Height
+		m.textarea.SetWidth(msg.Width - 10)
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -229,7 +231,7 @@ func (m tuiModel) View() string {
 		for i, opt := range options {
 			cursor := "  "
 			style := lipgloss.NewStyle()
-			barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Fainter Gray bar
+			barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("237")) // Even fainter gray
 			
 			if m.cursor == i {
 				cursor = "> "
@@ -250,7 +252,23 @@ func (m tuiModel) View() string {
 		}
 	}
 
-	return b.String()
+	content := b.String()
+	if content == "" {
+		return ""
+	}
+
+	// Wrap everything in a border
+	windowStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(lipgloss.Color("245")). // Light Gray
+		Padding(0, 1).
+		Width(m.width - 2)
+
+	if m.height > 0 {
+		windowStyle = windowStyle.Height(m.height - 2)
+	}
+
+	return windowStyle.Render(content)
 }
 
 func (m tuiModel) renderCommitMessage() string {
@@ -261,9 +279,9 @@ func (m tuiModel) renderCommitMessage() string {
 
 	contentStyle := lipgloss.NewStyle().
 		Border(lipgloss.ThickBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("240")). // Fainter Gray
+		BorderForeground(lipgloss.Color("237")). // Even fainter gray
 		PaddingLeft(1).
-		Width(m.width - 4).
+		Width(m.width - 10). // Adjusted for outer border and padding
 		MarginBottom(1)
 
 	return fmt.Sprintf("\n%s\n%s\n", titleStyle.Render("Generated Commit Message"), contentStyle.Render(m.commitMsg))
