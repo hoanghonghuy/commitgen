@@ -2,13 +2,10 @@ package app
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
-	"github.com/charmbracelet/lipgloss"
-	"golang.org/x/term"
 )
 
 // runConfigInteractive launches a TUI form to edit key config fields
@@ -178,92 +175,3 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	return cfg, true, nil
 }
 
-// Action enum for confirmation
-type Action int
-
-const (
-	ActionCommit Action = iota
-	ActionRegenerate
-	ActionEdit
-	ActionCancel
-)
-
-func confirmCommitInteractive(commitMsg string) (Action, error) {
-	// Normalize line endings and remove any stray carriage returns/tabs
-	cleanMsg := strings.ReplaceAll(commitMsg, "\r\n", "\n")
-	cleanMsg = strings.ReplaceAll(cleanMsg, "\r", "")
-	cleanMsg = strings.ReplaceAll(cleanMsg, "\t", "    ")
-	cleanMsg = strings.TrimSpace(cleanMsg)
-
-	// Get terminal width for dynamic wrapping
-	termWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil || termWidth <= 0 {
-		termWidth = 80
-	}
-
-	// Render Commit Message with Lipgloss for dynamic wrapping and consistent border
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("212")).
-		Bold(true).
-		MarginLeft(2)
-
-	contentStyle := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("240")).
-		PaddingLeft(1).
-		Width(termWidth - 4). // Account for border and some margin
-		MarginBottom(1)
-
-	fmt.Println(titleStyle.Render("Generated Commit Message"))
-	fmt.Println(contentStyle.Render(cleanMsg))
-
-	// Action Selection using huh
-	var selected string
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewSelect[string]().
-				Title("Action").
-				Options(
-					huh.NewOption("Commit (Apply)", "commit"),
-					huh.NewOption("Regenerate", "regenerate"),
-					huh.NewOption("Edit", "edit"),
-					huh.NewOption("Cancel", "cancel"),
-				).
-				Value(&selected),
-		),
-	).WithShowHelp(false)
-
-	if err := form.Run(); err != nil {
-		return ActionCancel, err
-	}
-
-	switch selected {
-	case "commit":
-		return ActionCommit, nil
-	case "edit":
-		return ActionEdit, nil
-	case "regenerate":
-		return ActionRegenerate, nil
-	default:
-		return ActionCancel, nil
-	}
-}
-
-func editCommitMessageInteractive(initialMsg string) (string, error) {
-	var content string = initialMsg
-
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewText().
-				Title("Edit Commit Message").
-				Description("Modify the message below (Press Esc+Enter or standard submit key to finish)").
-				Value(&content),
-		),
-	)
-
-	err := form.Run()
-	if err != nil {
-		return "", err
-	}
-	return content, nil
-}

@@ -19,7 +19,7 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/openai"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 
-	"github.com/briandowns/spinner"
+	tea "github.com/charmbracelet/bubbletea"
 )
 
 type Config struct {
@@ -136,7 +136,9 @@ func Run(ctx context.Context, cfg Config) error {
 			return fmt.Errorf("unknown provider: %s (supported: openai, ollama, anthropic, gemini)", cfg.Provider)
 		}
 
-		return runInteractiveLoop(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
+		p := tea.NewProgram(newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile))
+		_, err = p.Run()
+		return err
 
 	default:
 		return fmt.Errorf("unknown -cmd=%s (use suggest | dump-prompt | config)", cfg.Command)
@@ -241,115 +243,6 @@ func shouldIgnore(pattern string, ignores []string) bool {
 	return false
 }
 
-func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provider, initialMsgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string) error {
-	msgs := initialMsgs
-
-	for {
-		// Spinner
-		s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-		s.Suffix = " Generating commit message..."
-		s.Start()
-
-		// Add Conventional Commits instruction if requested
-		// We append this every time to ensure it's at the end of context if we were aggregating,
-		// but here we are sending fresh request mostly.
-		// However, vscodeprompt messages are fixed.
-		// If we want to enforce it, we should add it to the messages being sent.
-		// Since we want to support regeneration, let's copy the base messages.
-		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(msgs))
-		copy(currentMsgs, msgs)
-
-		if conventional {
-			reminderMsg := vscodeprompt.VSCodeMessage{
-				Role: 1, // user
-				Content: []vscodeprompt.VSCodeContentPart{
-					{Type: 1, Text: "CRITICAL INSTRUCTION: You must strictly follow the Conventional Commits specification (e.g. 'feat: add spinner', 'fix: resolve bug').\nDo not just describe the change; prefix it with the type."},
-				},
-			}
-			currentMsgs = append(currentMsgs, reminderMsg)
-		}
-
-		var commitMsgRaw string
-		var err error
-		maxRetries := 5
-
-		for i := 0; i < maxRetries; i++ {
-			ctxGen, cancel := context.WithTimeout(ctx, timeout)
-			commitMsgRaw, err = provider.GenerateCommitMessage(ctxGen, currentMsgs, temp)
-			cancel()
-			if err == nil {
-				break
-			}
-			// Check for specific error to retry
-			if strings.Contains(err.Error(), "empty choices") {
-				if i < maxRetries-1 {
-					// Stop spinner to print message
-					s.Stop()
-					fmt.Printf("\nProvider returned no choices. Retrying (%d/%d)...\n", i+1, maxRetries-1)
-					s.Start()
-					time.Sleep(500 * time.Millisecond)
-					continue
-				}
-			}
-			// Propagate other errors or if retries exhausted
-			break
-		}
-		s.Stop() // Stop spinner
-
-		if err != nil {
-			return err
-		}
-
-		commitMsg, ok := vscodeprompt.ExtractOneTextCodeBlock(commitMsgRaw)
-		if !ok {
-			fmt.Fprintln(os.Stderr, "Warning: model formatting issue (raw output shown below)")
-			commitMsg = commitMsgRaw
-		}
-
-		// Inner Confirmation Loop
-		for {
-			action, err := confirmCommitInteractive(commitMsg)
-			if err != nil {
-				return err
-			}
-
-			switch action {
-			case ActionCommit:
-				if hookFile != "" {
-					// Hook mode: Write to file instead of running git commit
-					if err := os.WriteFile(hookFile, []byte(commitMsg), 0644); err != nil {
-						return fmt.Errorf("write hook file: %w", err)
-					}
-					fmt.Println("Message generated for git hook.")
-					return nil
-				}
-				return gitx.Commit(ctx, repoRoot, commitMsg)
-
-			case ActionEdit:
-				newMsg, err := editCommitMessageInteractive(commitMsg)
-				if err != nil {
-					return err
-				}
-				commitMsg = newMsg
-				// Stay in confirmation loop to approve the new message
-				continue
-
-			case ActionRegenerate:
-				fmt.Println("Regenerating...")
-				// Break inner loop to continue outer loop
-				goto NextGeneration
-
-			case ActionCancel:
-				fmt.Println("Cancelled.")
-				if hookFile != "" {
-					return fmt.Errorf("commit cancelled by user")
-				}
-				return nil
-			}
-		}
-	NextGeneration:
-	}
-}
 
 func runConfig(cfg Config) error {
 	newCfg, ok, err := runConfigInteractive(cfg)
