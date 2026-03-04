@@ -136,7 +136,10 @@ func Run(ctx context.Context, cfg Config) error {
 			return fmt.Errorf("unknown provider: %s (supported: openai, ollama, anthropic, gemini)", cfg.Provider)
 		}
 
-		p := tea.NewProgram(newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile))
+		p := tea.NewProgram(
+			newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile),
+			tea.WithAltScreen(),
+		)
 		_, err = p.Run()
 		return err
 
