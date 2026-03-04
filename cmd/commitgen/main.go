@@ -15,7 +15,7 @@ import (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | dump-prompt | config | install-hook)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | dump-prompt | config | install-hook | uninstall-hook)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
@@ -43,7 +43,7 @@ func main() {
 	if flag.NArg() > 0 {
 		posCmd := flag.Arg(0)
 		switch posCmd {
-		case "suggest", "dump-prompt", "config", "install-hook":
+		case "suggest", "dump-prompt", "config", "install-hook", "uninstall-hook":
 			cmd = posCmd
 		}
 	}

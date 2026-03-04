@@ -64,6 +64,9 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Command == "install-hook" {
 		return InstallHook(ctx)
 	}
+	if cfg.Command == "uninstall-hook" {
+		return UninstallHook(ctx)
+	}
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
 	if err != nil {
