@@ -17,6 +17,29 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
+// Pre-computed styles — allocated once at startup, not on every frame.
+var (
+	styleMsgTitle    = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2)
+	styleActionTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true).MarginLeft(2)
+	styleBar         = lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
+	styleSelected    = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Bold(true)
+	styleHint        = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	styleEditTitle   = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2)
+	styleWindow      = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(lipgloss.Color("245")).
+				Padding(0, 1)
+)
+
+// msgContentStyle is width-dependent so it's a helper, not a global var.
+func msgContentStyle(width int) lipgloss.Style {
+	return lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("237")).
+		PaddingLeft(1).
+		Width(width)
+}
+
 type tuiState int
 
 const (
@@ -49,10 +72,11 @@ type tuiModel struct {
 	needsScroll   bool // true khi content vượt quá inner height
 
 	// Data
-	commitMsg string
-	cursor    int
-	err       error
-	quitting  bool
+	commitMsg      string
+	cachedContent  string // built once in Update, read in View — avoids per-frame rebuild
+	cursor         int
+	err            error
+	quitting       bool
 }
 
 type commitResultMsg struct {
@@ -67,7 +91,7 @@ type commitDoneMsg struct {
 func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string) tuiModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	s.Style = styleSelected // reuse pre-computed style
 
 	ta := textarea.New()
 	ta.Placeholder = "Enter commit message..."
@@ -161,67 +185,52 @@ func countLines(s string) int {
 	return strings.Count(s, "\n") + 1
 }
 
-// buildConfirmContent builds the full string for stateConfirm (commit msg + blank line + action menu).
-// Must only be called from Update() context, NOT from View() directly (value receiver issue).
+// buildConfirmContent builds the full string for stateConfirm.
+// Uses pre-computed package-level styles where possible.
+// Called from Update() only — result is cached in m.cachedContent.
 func (m tuiModel) buildConfirmContent() string {
 	var b strings.Builder
 
-	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("99")).
-		Bold(true).
-		MarginLeft(2)
-
-	contentStyle := lipgloss.NewStyle().
-		Border(lipgloss.ThickBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("237")).
-		PaddingLeft(1).
-		Width(m.innerWidth() - 6)
-
 	b.WriteString("\n")
-	b.WriteString(titleStyle.Render("Generated Commit Message"))
+	b.WriteString(styleMsgTitle.Render("Generated Commit Message"))
 	b.WriteString("\n")
-	b.WriteString(contentStyle.Render(m.commitMsg))
-	b.WriteString("\n\n") // blank line separating commit msg from Action section
+	b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.commitMsg))
+	b.WriteString("\n\n") // blank line before Action section
 
-	actionTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true).MarginLeft(2)
-	b.WriteString(fmt.Sprintf("%s\n", actionTitleStyle.Render("Action")))
+	b.WriteString(styleActionTitle.Render("Action"))
+	b.WriteString("\n")
 
 	options := []string{"Commit (Apply)", "Regenerate", "Edit", "Cancel"}
+	barStr := styleBar.Render("┃")
 	for i, opt := range options {
-		cursor := "  "
-		style := lipgloss.NewStyle()
-		barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("237"))
-
 		if m.cursor == i {
-			cursor = "> "
-			style = style.Foreground(lipgloss.Color("42")).Bold(true)
+			b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(opt)))
+		} else {
+			b.WriteString(fmt.Sprintf("%s   %s\n", barStr, opt))
 		}
-		b.WriteString(fmt.Sprintf("%s %s%s\n", barStyle.Render("┃"), cursor, style.Render(opt)))
 	}
 
 	return b.String()
 }
 
-// refreshViewport rebuilds confirm content, updates viewport content + needsScroll,
-// and auto-scrolls to keep the current cursor action item visible.
-// Must be called from Update() only (modifies viewport state).
+// refreshViewport rebuilds confirm content, caches it, updates viewport + needsScroll,
+// and auto-scrolls to keep the current action cursor visible.
+// Must be called from Update() only (modifies model state).
 func (m tuiModel) refreshViewport() tuiModel {
 	if !m.viewportReady || m.state != stateConfirm || m.commitMsg == "" {
 		return m
 	}
 	content := m.buildConfirmContent()
+	m.cachedContent = content
 	totalLines := countLines(content)
 	m.needsScroll = totalLines > m.innerHeight()
 
 	if m.needsScroll {
 		m.viewport.SetContent(content)
 
-		// Auto-scroll to keep the cursor action item visible.
-		// Content structure (0-indexed from bottom, excl trailing \n line):
-		//   cursor=0 → Commit (Apply) → 4th line from end
-		//   cursor=1 → Regenerate     → 3rd line from end
-		//   cursor=2 → Edit           → 2nd line from end
-		//   cursor=3 → Cancel         → 1st line from end
+		// Auto-scroll to keep cursor action item in view.
+		// Action lines are at the end of content:
+		//   cursor=0 → 4th from end, cursor=1 → 3rd, cursor=2 → 2nd, cursor=3 → last
 		lineFromEnd := 4 - m.cursor
 		cursorLine := totalLines - 1 - lineFromEnd // 0-indexed
 
@@ -297,7 +306,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tea.MouseMsg:
-		// Forward mouse wheel to viewport when in scroll mode.
+		// Only handle mouse when viewport scroll is active.
 		if m.state == stateConfirm && m.needsScroll && m.viewportReady {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
@@ -362,7 +371,7 @@ func (m tuiModel) View() string {
 
 	case stateConfirm:
 		if m.needsScroll && m.viewportReady {
-			// Content overflows → show viewport (already has latest content set in Update).
+			// Content overflows → viewport (content already set in Update via refreshViewport).
 			pct := int(m.viewport.ScrollPercent() * 100)
 			var hint string
 			switch {
@@ -373,16 +382,15 @@ func (m tuiModel) View() string {
 			default:
 				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%% ", pct)
 			}
-			hintStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-			inner = m.viewport.View() + "\n" + hintStyle.Render(hint)
+			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else {
-			// Content fits — render directly, no fixed height needed.
-			inner = m.buildConfirmContent()
+			// Content fits — use cached content built in Update (zero allocations here).
+			inner = m.cachedContent
 		}
 
 	case stateEditing:
 		var b strings.Builder
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2).Render("Edit Commit Message"))
+		b.WriteString(styleEditTitle.Render("Edit Commit Message"))
 		b.WriteString("\n")
 		b.WriteString(m.textarea.View())
 		b.WriteString("\n\n (Press Esc to finish editing)\n")
@@ -400,16 +408,11 @@ func (m tuiModel) View() string {
 		return ""
 	}
 
-	windowStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("245")).
-		Padding(0, 1).
-		Width(m.width - 2)
-
-	// Fix window height only when scrolling — prevents empty whitespace when content fits.
+	// styleWindow is pre-computed; only add Width and conditional Height here.
+	ws := styleWindow.Width(m.width - 2)
 	if m.needsScroll && m.height > 0 {
-		windowStyle = windowStyle.Height(m.height - 2)
+		ws = ws.Height(m.height - 2)
 	}
 
-	return windowStyle.Render(inner)
+	return ws.Render(inner)
 }
