@@ -25,6 +25,9 @@ type Client struct {
 }
 
 func New(cfg Config) *Client {
+	if strings.TrimSpace(cfg.BaseURL) == "" {
+		cfg.BaseURL = "https://api.openai.com/v1"
+	}
 	return &Client{
 		cfg: cfg,
 		http: &http.Client{

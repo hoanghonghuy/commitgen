@@ -2,10 +2,13 @@ package app
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/term"
 )
 
 // runConfigInteractive launches a TUI form to edit key config fields
@@ -192,13 +195,34 @@ func confirmCommitInteractive(commitMsg string) (Action, error) {
 	cleanMsg = strings.ReplaceAll(cleanMsg, "\t", "    ")
 	cleanMsg = strings.TrimSpace(cleanMsg)
 
+	// Get terminal width for dynamic wrapping
+	termWidth, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || termWidth <= 0 {
+		termWidth = 80
+	}
+
+	// Render Commit Message with Lipgloss for dynamic wrapping and consistent border
+	titleStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("212")).
+		Bold(true).
+		MarginLeft(2)
+
+	contentStyle := lipgloss.NewStyle().
+		Border(lipgloss.ThickBorder(), false, false, false, true).
+		BorderForeground(lipgloss.Color("240")).
+		PaddingLeft(1).
+		Width(termWidth - 4). // Account for border and some margin
+		MarginBottom(1)
+
+	fmt.Println(titleStyle.Render("Generated Commit Message"))
+	fmt.Println(contentStyle.Render(cleanMsg))
+
 	// Action Selection using huh
 	var selected string
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Generated Commit Message").
-				Description(cleanMsg).
+				Title("Action").
 				Options(
 					huh.NewOption("Commit (Apply)", "commit"),
 					huh.NewOption("Regenerate", "regenerate"),

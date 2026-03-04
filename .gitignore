@@ -38,3 +38,5 @@ go.work
 
 .agent
 build_error.txt
+
+.roo
