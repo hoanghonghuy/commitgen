@@ -61,7 +61,7 @@ type commitDoneMsg struct {
 func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string) tuiModel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("42")) // Green to match selection
 
 	ta := textarea.New()
 	ta.Placeholder = "Enter commit message..."
@@ -221,20 +221,25 @@ func (m tuiModel) View() string {
 
 	case stateConfirm:
 		b.WriteString(m.renderCommitMessage())
-		b.WriteString("\n Action\n")
+		
+		actionTitleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true).MarginLeft(2)
+		b.WriteString(fmt.Sprintf("\n%s\n", actionTitleStyle.Render("Action")))
+		
 		options := []string{"Commit (Apply)", "Regenerate", "Edit", "Cancel"}
 		for i, opt := range options {
 			cursor := "  "
 			style := lipgloss.NewStyle()
+			barStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("240")) // Fainter Gray bar
+			
 			if m.cursor == i {
 				cursor = "> "
-				style = style.Foreground(lipgloss.Color("212")).Bold(true)
+				style = style.Foreground(lipgloss.Color("42")).Bold(true) // Green selection
 			}
-			b.WriteString(fmt.Sprintf("┃ %s%s\n", cursor, style.Render(opt)))
+			b.WriteString(fmt.Sprintf("%s %s%s\n", barStyle.Render("┃"), cursor, style.Render(opt)))
 		}
 
 	case stateEditing:
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Bold(true).MarginLeft(2).Render("Edit Commit Message"))
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2).Render("Edit Commit Message"))
 		b.WriteString("\n")
 		b.WriteString(m.textarea.View())
 		b.WriteString("\n\n (Press Esc to finish editing)\n")
@@ -250,13 +255,13 @@ func (m tuiModel) View() string {
 
 func (m tuiModel) renderCommitMessage() string {
 	titleStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("212")).
+		Foreground(lipgloss.Color("99")). // Purple
 		Bold(true).
 		MarginLeft(2)
 
 	contentStyle := lipgloss.NewStyle().
 		Border(lipgloss.ThickBorder(), false, false, false, true).
-		BorderForeground(lipgloss.Color("240")).
+		BorderForeground(lipgloss.Color("240")). // Fainter Gray
 		PaddingLeft(1).
 		Width(m.width - 4).
 		MarginBottom(1)
