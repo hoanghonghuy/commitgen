@@ -140,6 +140,7 @@ func Run(ctx context.Context, cfg Config) error {
 		p := tea.NewProgram(
 			newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile),
 			tea.WithAltScreen(),
+			tea.WithMouseCellMotion(),
 		)
 		_, err = p.Run()
 		return err
