@@ -59,13 +59,13 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 
 	for _, m := range msgs {
 		role := "user"
-		if m.Role == 3 { // System
+		if m.Role == vscodeprompt.RoleSystem {
 			// Extract system prompt
 			for _, part := range m.Content {
 				systemPrompt += part.Text + "\n"
 			}
 			continue
-		} else if m.Role == 2 { // Assistant
+		} else if m.Role == vscodeprompt.RoleAssistant {
 			role = "assistant"
 		}
 

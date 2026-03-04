@@ -54,17 +54,6 @@ type chatResp struct {
 	} `json:"error,omitempty"`
 }
 
-// Ensure Client implements ai.Provider
-// var _ ai.Provider = (*Client)(nil) // Cyclic dependency if we import ai here?
-// No, ai imports vscodeprompt. openai imports vscodeprompt.
-// We need openai to import ai to verify implementation?
-// Actually, run.go will rely on the interface defined in ai. openai just needs to have the method.
-// To avoid circular imports if ai/provider.go imports vscodeprompt (which is fine),
-// openai package can rely on vscodeprompt too.
-// But checking "implements" requires importing "github.com/hoanghonghuy/commitgen/internal/ai".
-// That should be fine: internal/ai -> vscodeprompt. internal/openai -> vscodeprompt. internal/openai -> internal/ai.
-// The dependency graph is DAG.
-
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
 	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
 

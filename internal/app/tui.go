@@ -19,7 +19,8 @@ import (
 type tuiState int
 
 const (
-	stateGenerating tuiState = iota
+	stateGenerating  tuiState = iota // AI đang tạo commit message
+	stateCommitting                  // Đang thực hiện git commit
 	stateConfirm
 	stateEditing
 	stateDone
@@ -153,7 +154,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				switch m.cursor {
 				case 0: // Commit
-					m.state = stateGenerating // Show "Committing..."
+					m.state = stateCommitting
 					return m, m.commitCmd()
 				case 1: // Regenerate
 					m.state = stateGenerating
@@ -221,6 +222,9 @@ func (m tuiModel) View() string {
 	case stateGenerating:
 		b.WriteString(fmt.Sprintf("\n %s Generating commit message...\n", m.spinner.View()))
 
+	case stateCommitting:
+		b.WriteString(fmt.Sprintf("\n %s Committing...\n", m.spinner.View()))
+
 	case stateConfirm:
 		b.WriteString(m.renderCommitMessage())
 		
@@ -248,7 +252,9 @@ func (m tuiModel) View() string {
 
 	case stateDone:
 		if m.err != nil {
-			return fmt.Sprintf("\n Error: %v\n", m.err)
+			b.WriteString(fmt.Sprintf("\n ✗ Error: %v\n", m.err))
+		} else {
+			b.WriteString("\n ✓ Committed successfully!\n")
 		}
 	}
 

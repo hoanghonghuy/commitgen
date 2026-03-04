@@ -1,14 +1,19 @@
 package app
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 )
 
 // InstallHook installs the prepare-commit-msg hook
-func InstallHook(ctx context.Context) error {
+func InstallHook() error {
+	if runtime.GOOS == "windows" {
+		fmt.Println("Warning: The git hook uses /dev/tty and #!/bin/sh which may not work correctly on Windows.")
+		fmt.Println("Consider running commitgen manually instead of using the hook on Windows.")
+	}
+
 	// 1. Detect .git directory
 	gitDir := ".git"
 	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
@@ -82,7 +87,7 @@ echo "commitgen is analyzing changes..."
 }
 
 // UninstallHook removes the prepare-commit-msg hook
-func UninstallHook(ctx context.Context) error {
+func UninstallHook() error {
 	gitDir := ".git"
 	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 		return fmt.Errorf("current directory is not a git repository root (no .git found)")

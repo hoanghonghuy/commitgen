@@ -39,7 +39,7 @@ type Config struct {
 	Summarize bool
 
 	Temperature float64
-	Timeout     time.Duration // assigned in main, not used here directly
+	Timeout     time.Duration // passed to TUI for AI request timeout
 
 	DumpOutPath string
 
@@ -62,10 +62,10 @@ func Run(ctx context.Context, cfg Config) error {
 		return runConfig(cfg)
 	}
 	if cfg.Command == "install-hook" {
-		return InstallHook(ctx)
+		return InstallHook()
 	}
 	if cfg.Command == "uninstall-hook" {
-		return UninstallHook(ctx)
+		return UninstallHook()
 	}
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
@@ -126,9 +126,7 @@ func Run(ctx context.Context, cfg Config) error {
 			})
 		case "openai", "":
 			if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
-				// Warn or error? OpenAI usually needs Key.
-				// But let's assume if BaseURL is set (e.g. local compatible), Key might be optional?
-				// For OpenAI official, Key is required.
+				return errors.New("missing api-key. Set --api-key flag or env COMMITAI_API_KEY")
 			}
 			provider = openai.New(openai.Config{
 				BaseURL: cfg.BaseURL,
@@ -147,7 +145,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return err
 
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use suggest | dump-prompt | config)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
 	}
 }
 
