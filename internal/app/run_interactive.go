@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/term"
 )
 
 // runConfigInteractive launches a TUI form to edit key config fields
@@ -136,6 +137,11 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 		),
 	)
 
+	// Set responsive width for the form
+	if w, _, err := term.GetSize(0); err == nil {
+		form.WithWidth(min(w-4, 80))
+	}
+
 	err := form.Run()
 	if err != nil {
 		return cfg, false, err
@@ -187,6 +193,12 @@ const (
 )
 
 func confirmCommitInteractive(commitMsg string) (Action, error) {
+	// Get terminal width for responsive UI
+	w, _, _ := term.GetSize(0)
+	if w <= 0 {
+		w = 80
+	}
+
 	// Display the message nicely
 	fmt.Println()
 	fmt.Println(lipgloss.NewStyle().
@@ -194,12 +206,21 @@ func confirmCommitInteractive(commitMsg string) (Action, error) {
 		Foreground(lipgloss.Color("212")). // Pinkish
 		Render("Generated Commit Message:"))
 
-	fmt.Println(lipgloss.NewStyle().
+	// Responsive style for commit message.
+	// lipgloss will automatically wrap text if Width is set.
+	msgStyle := lipgloss.NewStyle().
 		BorderStyle(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("63")). // Purplish
-		Padding(1, 2).
+		Padding(0, 1).
 		MarginBottom(1).
-		Render(strings.TrimSpace(commitMsg)))
+		Width(min(w-4, 80)) // Responsive width with max limit
+
+	// If terminal is very narrow, simplify the border/padding
+	if w < 40 {
+		msgStyle = msgStyle.BorderStyle(lipgloss.NormalBorder()).Padding(0)
+	}
+
+	fmt.Println(msgStyle.Render(strings.TrimSpace(commitMsg)))
 
 	// Since huh Select binds to a value, we need a temp var
 	var selected string
@@ -216,7 +237,7 @@ func confirmCommitInteractive(commitMsg string) (Action, error) {
 				).
 				Value(&selected),
 		),
-	)
+	).WithWidth(min(w-4, 80))
 
 	if err := form.Run(); err != nil {
 		return ActionCancel, err
@@ -245,6 +266,10 @@ func editCommitMessageInteractive(initialMsg string) (string, error) {
 				Value(&content),
 		),
 	)
+
+	if w, _, err := term.GetSize(0); err == nil {
+		form.WithWidth(min(w-4, 80))
+	}
 
 	err := form.Run()
 	if err != nil {
