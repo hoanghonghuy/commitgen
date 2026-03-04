@@ -18,37 +18,50 @@
 
 ## Project Structure
 
-The project is organized into several internal packages:
+The project is organized into several packages:
 
+- `cmd/commitgen/`: Main entry point for the CLI application.
 - `internal/ai/`: Common interface for AI providers.
 - `internal/vscodeprompt/`: Core engine for building VS Code-style prompts and source code summarization.
 - `internal/gitx/`: Git utilities for diffing, logging, and committing.
 - `internal/app/`: Main application logic, TUI, and Git hook management.
 - `internal/config/`: User configuration management (`~/.commitgen.json`).
 
-*Note: The main entry point (`main.go`) is currently under development.*
-
-## Configuration
-
-Before using, you need to configure your AI provider settings. Configuration is saved to `~/.commitgen.json` and includes:
-- **Provider**: `openai`, `anthropic`, `gemini`, or `ollama`.
-- **Base URL**: Your AI provider endpoint.
-- **API Key**: Your API secret key.
-- **Model**: The model to use (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`).
-- **Preferences**: Toggle Conventional Commits, Summarization, and manage Ignored Files.
-
-## Development
+## Installation & Build
 
 Ensure you have Go 1.25+ installed.
+
+### Build from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/hoanghonghuy/commitgen.git
 cd commitgen
 
-# Run tests for internal packages
-go test ./internal/...
+# Build the executable
+go build -o commitgen.exe ./cmd/commitgen
 ```
+
+### Install to GOPATH
+
+```bash
+go install ./cmd/commitgen
+```
+
+## Configuration
+
+Before using, you need to configure your AI provider settings. You can do this interactively:
+
+```bash
+commitgen config
+```
+
+Configuration is saved to `~/.commitgen.json` and includes:
+- **Provider**: `openai`, `anthropic`, `gemini`, or `ollama`.
+- **Base URL**: Your AI provider endpoint.
+- **API Key**: Your API secret key.
+- **Model**: The model to use (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`).
+- **Preferences**: Toggle Conventional Commits, Summarization, and manage Ignored Files.
 
 ## Contributing
 

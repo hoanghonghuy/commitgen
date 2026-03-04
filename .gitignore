@@ -1,5 +1,6 @@
 # Binaries
-commitgen
+/commitgen
+/commitgen.exe
 commitgen_debug
 
 # OS Specifics
