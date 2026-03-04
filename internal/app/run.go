@@ -285,7 +285,7 @@ func runInteractiveLoop(ctx context.Context, repoRoot string, provider ai.Provid
 				if i < maxRetries-1 {
 					// Stop spinner to print message
 					s.Stop()
-					fmt.Printf("\n⚠️  Provider returned no choices. Retrying (%d/%d)...\n", i+1, maxRetries-1)
+					fmt.Printf("\nProvider returned no choices. Retrying (%d/%d)...\n", i+1, maxRetries-1)
 					s.Start()
 					time.Sleep(500 * time.Millisecond)
 					continue

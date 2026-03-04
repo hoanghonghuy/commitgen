@@ -67,7 +67,7 @@ if [ -t 0 ]; then
     exec < /dev/tty
 fi
 
-echo "🤖 commitgen is analyzing changes..."
+echo "commitgen is analyzing changes..."
 "%s" --hook "$COMMIT_MSG_FILE" < /dev/tty > /dev/tty
 
 # If commitgen succeeds, it writes to the file.
@@ -77,6 +77,6 @@ echo "🤖 commitgen is analyzing changes..."
 		return fmt.Errorf("write hook file: %w", err)
 	}
 
-	fmt.Printf("✅ Hook installed to %s\n", hookPath)
+	fmt.Printf("Hook installed to %s\n", hookPath)
 	return nil
 }
