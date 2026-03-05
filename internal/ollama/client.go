@@ -64,9 +64,9 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	for _, m := range msgs {
 		role := "user"
 		switch m.Role {
-		case 2: // Assistant
+		case vscodeprompt.RoleAssistant:
 			role = "assistant"
-		case 3: // System
+		case vscodeprompt.RoleSystem:
 			role = "system"
 		}
 

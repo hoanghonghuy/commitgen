@@ -108,14 +108,8 @@ func Commit(ctx context.Context, repoRoot, message string) error {
 	if msg == "" {
 		return fmt.Errorf("commit message cannot be empty")
 	}
-	// Use -m to commit
 	_, err := Git(ctx, repoRoot, "commit", "-m", msg)
-	if err != nil {
-		return err
-	}
-	// Maybe print success?
-	fmt.Println("Commit successful!")
-	return nil
+	return err
 }
 
 func splitNonEmptyLines(s string) []string {
