@@ -65,7 +65,7 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	var contents []content
 
 	for _, m := range msgs {
-		if m.Role == 3 { // System
+		if m.Role == vscodeprompt.RoleSystem {
 			for _, p := range m.Content {
 				systemParts = append(systemParts, part{Text: p.Text})
 			}
@@ -73,7 +73,7 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 		}
 
 		role := "user"
-		if m.Role == 2 { // Assistant
+		if m.Role == vscodeprompt.RoleAssistant {
 			role = "model" // Gemini uses "model"
 		}
 

@@ -1,5 +1,6 @@
 # Binaries
-commitgen
+/commitgen
+/commitgen.exe
 commitgen_debug
 
 # OS Specifics
@@ -37,3 +38,5 @@ go.work
 
 .agent
 build_error.txt
+
+.roo
