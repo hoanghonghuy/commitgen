@@ -7,33 +7,46 @@
 
 ## Features
 
-- **AI-Powered Generation**: Uses OpenAI (or compatible providers) to understand code logic and generate meaningful descriptions.
+- **AI-Powered Generation**: Uses OpenAI, Anthropic, Gemini, or Ollama to understand code logic and generate meaningful descriptions.
 - **Interactive Configuration**: Easily manage settings via a beautiful terminal UI (`commitgen config`).
 - **Conventional Commits**: Built-in support for enforcing conventional commit formats (`feat:`, `fix:`, `chore:`, etc.).
 - **Smart Token Optimization**:
   - Automatically ignores lockfiles and large assets to save costs.
-  - Truncates oversized files while preserving context.
+  - **Summarization**: Truncates oversized files while preserving context (e.g., collapsing Go function bodies).
   - Customizable ignore patterns via configuration.
 - **Context Aware**: Analyzes recent commit history to maintain consistency with your project's style.
 
-## Installation
+## Project Structure
 
-### From Source
+The project is organized into several packages:
+
+- `cmd/commitgen/`: Main entry point for the CLI application.
+- `internal/ai/`: Common interface for AI providers.
+- `internal/vscodeprompt/`: Core engine for building VS Code-style prompts and source code summarization.
+- `internal/gitx/`: Git utilities for diffing, logging, and committing.
+- `internal/app/`: Main application logic, TUI, and Git hook management.
+- `internal/config/`: User configuration management (`~/.commitgen.json`).
+
+## Installation & Build
 
 Ensure you have Go 1.25+ installed.
+
+### Build from Source
 
 ```bash
 # Clone the repository
 git clone https://github.com/hoanghonghuy/commitgen.git
 cd commitgen
 
-# Install
-./install.sh
-# OR
-go install ./cmd/commitgen
+# Build the executable
+go build -o commitgen.exe ./cmd/commitgen
 ```
 
-Ensure your `$GOPATH/bin` is in your system `PATH`.
+### Install to GOPATH
+
+```bash
+go install ./cmd/commitgen
+```
 
 ## Configuration
 
@@ -43,44 +56,12 @@ Before using, you need to configure your AI provider settings. You can do this i
 commitgen config
 ```
 
-This will open a UI where you can set:
-- **Base URL**: Your AI provider endpoint (e.g., `https://api.openai.com/v1`).
+Configuration is saved to `~/.commitgen.json` and includes:
+- **Provider**: `openai`, `anthropic`, `gemini`, or `ollama`.
+- **Base URL**: Your AI provider endpoint.
 - **API Key**: Your API secret key.
-- **Model**: The model to use (e.g., `gpt-4o`, `gpt-3.5-turbo`).
-- **Preferences**: 
-    - Toggle **Conventional Commits**.
-    - Set **Temperature** (creativity).
-    - Manage **Ignored Files**.
-
-Configuration is saved to `~/.commitgen.json`.
-
-## Usage
-
-### Generate a Commit Message
-
-Stage your changes and run:
-
-```bash
-git add .
-commitgen
-```
-
-The tool will:
-1. Analyze your staged changes.
-2. Generate a proposed commit message.
-3. Allow you to **Apply**, **Edit**, or **Regenerate** the message.
-
-### CLI Flags
-
-You can override configuration per run:
-
-```bash
-# Force specific model and conventional format
-commitgen -model gpt-4 -conventional
-
-# See all options
-commitgen -h
-```
+- **Model**: The model to use (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`).
+- **Preferences**: Toggle Conventional Commits, Summarization, and manage Ignored Files.
 
 ## Contributing
 

@@ -2,10 +2,16 @@ package vscodeprompt
 
 import (
 	"bytes"
-	"fmt"
 	"html/template"
 	"regexp"
 	"strings"
+)
+
+// Role constants for VSCodeMessage
+const (
+	RoleSystem    = 0
+	RoleUser      = 1
+	RoleAssistant = 2
 )
 
 type VSCodeContentPart struct {
@@ -14,7 +20,7 @@ type VSCodeContentPart struct {
 }
 
 type VSCodeMessage struct {
-	Role    int                 `json:"role"` // 0=system, 1=user
+	Role    int                 `json:"role"` // RoleSystem=0, RoleUser=1, RoleAssistant=2
 	Content []VSCodeContentPart `json:"content"`
 }
 
@@ -57,13 +63,13 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 
 	return []VSCodeMessage{
 		{
-			Role: 0,
+			Role: RoleSystem,
 			Content: []VSCodeContentPart{
 				{Type: 1, Text: systemText},
 			},
 		},
 		{
-			Role: 1,
+			Role: RoleUser,
 			Content: []VSCodeContentPart{
 				{Type: 1, Text: userText},
 			},
@@ -81,7 +87,8 @@ func defaultSystemPromptTemplate() string {
 		"2. Use the ORIGINAL CODE to understand the context of the CODE CHANGES. Use the line numbers to map the CODE CHANGES to the ORIGINAL CODE.\n" +
 		"3. Identify the purpose of the changes to answer the *why* for the commit messages, also considering the optionally provided RECENT USER COMMITS.\n" +
 		"4. Review the provided RECENT REPOSITORY COMMITS to identify established commit message conventions. Focus on the format and style, ignoring commit-specific details like refs, tags, and authors.\n" +
-		"5. Generate a thoughtful and succinct commit message for the given CODE CHANGES. It MUST follow the the established writing conventions. 6. Remove any meta information like issue references, tags, or author names from the commit message. The developer will add them.\n" +
+		"5. Generate a thoughtful and succinct commit message for the given CODE CHANGES. It MUST follow the established writing conventions.\n" +
+		"6. Remove any meta information like issue references, tags, or author names from the commit message. The developer will add them.\n" +
 		"7. Now only show your message, wrapped with a single markdown ```text codeblock! Do not provide any explanations or details\n" +
 		"Follow Microsoft content policies.\n" +
 		"Avoid content that violates copyrights.\n" +
@@ -151,7 +158,7 @@ func buildUserText(d Data) string {
 	b.WriteString("\n</changes>\n")
 
 	b.WriteString("<reminder>\n")
-	b.WriteString("Now generate a commit messages that describe the CODE CHANGES.\n")
+	b.WriteString("Now generate a commit message that describes the CODE CHANGES.\n")
 	b.WriteString("DO NOT COPY commits from RECENT COMMITS, but use it as reference for the commit style.\n")
 	b.WriteString("ONLY return a single markdown code block, NO OTHER PROSE!\n")
 	b.WriteString("```text\ncommit message goes here\n```\n")
@@ -171,8 +178,10 @@ func ToOpenAIMessages(vs []VSCodeMessage) []OpenAIMessage {
 	out := make([]OpenAIMessage, 0, len(vs))
 	for _, m := range vs {
 		role := "user"
-		if m.Role == 0 {
+		if m.Role == RoleSystem {
 			role = "system"
+		} else if m.Role == RoleAssistant {
+			role = "assistant"
 		}
 		var sb strings.Builder
 		for _, p := range m.Content {
@@ -201,7 +210,3 @@ func ExtractOneTextCodeBlock(s string) (string, bool) {
 	return s, false
 }
 
-func DebugPreview(vs []VSCodeMessage) string {
-	// helpful if you want quick peek
-	return fmt.Sprintf("messages=%d", len(vs))
-}
