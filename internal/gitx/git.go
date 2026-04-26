@@ -18,13 +18,17 @@ type StagedChange struct {
 }
 
 func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
-	logger.Debug("executing git command", "args", args)
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
-		logger.Error("git command failed", "error", err, "args", args, "stderr", stderr.String())
+		// Don't log as ERROR for expected cases like new files not in HEAD
+		if len(args) > 0 && args[0] == "show" && strings.Contains(stderr.String(), "exists on disk, but not in") {
+			// Silent for new files
+		} else {
+			logger.Error("git command failed", "error", err, "args", args, "stderr", stderr.String())
+		}
 		return "", fmt.Errorf("git %v failed: %v\n%s", args, err, stderr.String())
 	}
 	return stdout.String(), nil
@@ -112,7 +116,6 @@ func Commit(ctx context.Context, repoRoot, message string) error {
 	if msg == "" {
 		return logger.LogError(fmt.Errorf("commit message cannot be empty"), "empty commit message")
 	}
-	logger.Info("executing git commit", "message_length", len(msg))
 	_, err := Git(ctx, repoRoot, "commit", "-m", msg)
 	if err != nil {
 		return logger.LogError(err, "git commit failed")

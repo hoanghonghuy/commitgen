@@ -48,6 +48,9 @@ type chatResp struct {
 		Message struct {
 			Content string `json:"content"`
 		} `json:"message"`
+		Delta struct {
+			Content string `json:"content"`
+		} `json:"delta"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
@@ -56,7 +59,6 @@ type chatResp struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
-	logger.Debug("openai: generating commit message", "model", c.cfg.Model, "temperature", temp)
 	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
 
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
@@ -80,9 +82,45 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	}
 	defer resp.Body.Close()
 
-	logger.Debug("openai: received response", "status", resp.StatusCode)
-
 	b, _ := io.ReadAll(resp.Body)
+	
+	// Check if response is streaming (SSE format)
+	responseStr := string(b)
+	if strings.HasPrefix(responseStr, "data: ") {
+		// Parse streaming response
+		lines := strings.Split(responseStr, "\n")
+		var content strings.Builder
+		
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || line == "data: [DONE]" {
+				continue
+			}
+			if strings.HasPrefix(line, "data: ") {
+				jsonStr := strings.TrimPrefix(line, "data: ")
+				var chunk chatResp
+				if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
+					continue
+				}
+				if len(chunk.Choices) > 0 {
+					// Streaming uses delta, non-streaming uses message
+					if chunk.Choices[0].Delta.Content != "" {
+						content.WriteString(chunk.Choices[0].Delta.Content)
+					} else if chunk.Choices[0].Message.Content != "" {
+						content.WriteString(chunk.Choices[0].Message.Content)
+					}
+				}
+			}
+		}
+		
+		result := content.String()
+		if result == "" {
+			return "", logger.LogError(fmt.Errorf("empty streaming response"), "openai: no content in response")
+		}
+		return result, nil
+	}
+	
+	// Non-streaming response
 	var out chatResp
 	if err := json.Unmarshal(b, &out); err != nil {
 		logger.Error("openai: decode error", "error", err, "response", string(b))
@@ -93,9 +131,7 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 		return "", fmt.Errorf("llm error: %s (%s)", out.Error.Message, out.Error.Type)
 	}
 	if len(out.Choices) == 0 {
-		logger.Error("openai: empty choices")
-		return "", fmt.Errorf("llm: empty choices")
+		return "", logger.LogError(fmt.Errorf("empty choices"), "openai: no choices in response")
 	}
-	logger.Info("openai: commit message generated successfully")
 	return out.Choices[0].Message.Content, nil
 }

@@ -51,7 +51,6 @@ type messageResponse struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
-	logger.Debug("anthropic: generating commit message", "model", c.model)
 	// Anthropic API uses a specific format:
 	// System prompt is top-level.
 	// Users/Assistants alternate.
@@ -108,8 +107,6 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	}
 	defer resp.Body.Close()
 
-	logger.Debug("anthropic: received response", "status", resp.StatusCode)
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		logger.Error("anthropic: API error", "status", resp.StatusCode, "body", string(body))
@@ -122,10 +119,8 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	}
 
 	if len(msgResp.Content) == 0 {
-		logger.Error("anthropic: empty response content")
-		return "", fmt.Errorf("empty response content")
+		return "", logger.LogError(fmt.Errorf("empty response"), "anthropic: no content")
 	}
 
-	logger.Info("anthropic: commit message generated successfully")
 	return msgResp.Content[0].Text, nil
 }

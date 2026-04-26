@@ -101,8 +101,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: Failed to initialize logger: %v\n", err)
 	}
 	defer logger.Close()
-	
-	logger.Info("commitgen started", "command", cfg.Command, "version", "dev")
 
 	// 5. Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
@@ -119,7 +117,6 @@ func main() {
 	// 6. Run application
 	if err := app.Run(ctx, cfg); err != nil {
 		if ctx.Err() == context.Canceled {
-			logger.Info("operation cancelled by user")
 			os.Exit(0)
 		}
 		// Log error to file/stderr AFTER TUI exits
@@ -129,7 +126,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Check logs at: %s\n", getLogPath(cfg.LogFile))
 		os.Exit(1)
 	}
-	logger.Info("commitgen completed successfully")
 }
 
 func getLogPath(configPath string) string {
@@ -141,7 +137,6 @@ func getLogPath(configPath string) string {
 		return "commitgen.log"
 	}
 	return filepath.Join(home, ".commitgen", "commitgen.log")
-}
 }
 
 func isFlagSet(name string) bool {

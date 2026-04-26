@@ -100,6 +100,9 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 	ta.SetWidth(80)
 	ta.SetHeight(5)
 
+	// Initialize viewport with default size
+	vp := viewport.New(80, 20)
+
 	return tuiModel{
 		state:        stateGenerating,
 		provider:     provider,
@@ -111,6 +114,10 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 		repoRoot:     repoRoot,
 		spinner:      s,
 		textarea:     ta,
+		viewport:     vp,
+		viewportReady: true, // Mark as ready immediately
+		width:        80,
+		height:       24,
 	}
 }
 
@@ -120,7 +127,6 @@ func (m tuiModel) Init() tea.Cmd {
 
 func (m tuiModel) generateCommitCmd() tea.Cmd {
 	return func() tea.Msg {
-		logger.Debug("generating commit message", "conventional", m.conventional)
 		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(m.initialMsgs))
 		copy(currentMsgs, m.initialMsgs)
 
@@ -143,10 +149,8 @@ func (m tuiModel) generateCommitCmd() tea.Cmd {
 			return commitResultMsg{err: err}
 		}
 
-		logger.Debug("commit message generated", "length", len(raw))
 		msg, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
 		if !ok {
-			logger.Warn("no code block found in response, using raw output")
 			msg = raw
 		}
 		return commitResultMsg{content: msg}
@@ -155,7 +159,6 @@ func (m tuiModel) generateCommitCmd() tea.Cmd {
 
 func (m tuiModel) commitCmd() tea.Cmd {
 	return func() tea.Msg {
-		logger.Info("committing changes", "hook_mode", m.hookFile != "")
 		if m.hookFile != "" {
 			err := os.WriteFile(m.hookFile, []byte(m.commitMsg), 0644)
 			if err != nil {
@@ -166,8 +169,6 @@ func (m tuiModel) commitCmd() tea.Cmd {
 		err := gitx.Commit(context.Background(), m.repoRoot, m.commitMsg)
 		if err != nil {
 			logger.Error("git commit failed", "error", err)
-		} else {
-			logger.Info("commit successful")
 		}
 		return commitDoneMsg{err: err}
 	}
@@ -231,7 +232,7 @@ func (m tuiModel) buildConfirmContent() string {
 // and auto-scrolls to keep the current action cursor visible.
 // Must be called from Update() only (modifies model state).
 func (m tuiModel) refreshViewport() tuiModel {
-	if !m.viewportReady || m.state != stateConfirm || m.commitMsg == "" {
+	if m.state != stateConfirm || m.commitMsg == "" {
 		return m
 	}
 	content := m.buildConfirmContent()
@@ -239,7 +240,7 @@ func (m tuiModel) refreshViewport() tuiModel {
 	totalLines := countLines(content)
 	m.needsScroll = totalLines > m.innerHeight()
 
-	if m.needsScroll {
+	if m.needsScroll && m.viewportReady {
 		m.viewport.SetContent(content)
 
 		// Auto-scroll to keep cursor action item in view.
@@ -292,20 +293,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				switch m.cursor {
 				case 0: // Commit
-					logger.Debug("user selected: commit")
 					m.state = stateCommitting
 					return m, m.commitCmd()
 				case 1: // Regenerate
-					logger.Debug("user selected: regenerate")
 					m.state = stateGenerating
 					return m, m.generateCommitCmd()
 				case 2: // Edit
-					logger.Debug("user selected: edit")
 					m.state = stateEditing
 					m.textarea.SetValue(m.commitMsg)
 					return m, textarea.Blink
 				case 3: // Cancel
-					logger.Info("user cancelled operation")
 					m.quitting = true
 					return m, tea.Quit
 				}
@@ -337,12 +334,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textarea.SetWidth(m.innerWidth() - 4)
 
 		vpHeight := m.innerHeight()
-		if !m.viewportReady {
-			m.viewport = viewport.New(m.innerWidth(), vpHeight)
-			m.viewportReady = true
-		} else {
+		if m.viewportReady {
 			m.viewport.Width = m.innerWidth()
 			m.viewport.Height = vpHeight
+		} else {
+			m.viewport = viewport.New(m.innerWidth(), vpHeight)
+			m.viewportReady = true
 		}
 		m = m.refreshViewport()
 
@@ -358,18 +355,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state = stateDone
 			return m, tea.Quit
 		}
-		logger.Debug("commit message received", "length", len(msg.content))
 		m.commitMsg = msg.content
 		m.state = stateConfirm
 		m.cursor = 0
 		m = m.refreshViewport()
+		return m, nil
 
 	case commitDoneMsg:
 		if msg.err != nil {
 			logger.Error("commit operation failed", "error", msg.err)
 			m.err = msg.err
-		} else {
-			logger.Info("commit operation completed successfully")
 		}
 		m.state = stateDone
 		return m, tea.Quit
@@ -408,7 +403,12 @@ func (m tuiModel) View() string {
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else {
 			// Content fits — use cached content built in Update (zero allocations here).
-			inner = m.cachedContent
+			if m.cachedContent == "" {
+				// Fallback: build content if not cached yet
+				inner = m.buildConfirmContent()
+			} else {
+				inner = m.cachedContent
+			}
 		}
 
 	case stateEditing:

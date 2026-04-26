@@ -64,8 +64,6 @@ type Config struct {
 }
 
 func Run(ctx context.Context, cfg Config) error {
-	logger.Debug("app.Run started", "command", cfg.Command)
-	
 	if cfg.Command == "config" {
 		return runConfig(cfg)
 	}
@@ -80,7 +78,6 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return logger.LogError(err, "failed to resolve repository root", "repo_arg", cfg.RepoArg)
 	}
-	logger.Debug("repository resolved", "repo_root", repoRoot)
 
 	customInstructions := ""
 	if strings.TrimSpace(cfg.InstructionsPath) != "" {
@@ -92,7 +89,6 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	// 1. Build Data
-	logger.Debug("building prompt data", "recent_n", cfg.RecentN, "max_files", cfg.MaxFiles)
 	data, err := buildPromptData(ctx, repoRoot, cfg.RecentN, cfg.MaxFiles, cfg.Summarize, customInstructions, cfg.IgnoredFiles)
 	if err != nil {
 		return logger.LogError(err, "failed to build prompt data")
@@ -106,7 +102,6 @@ func Run(ctx context.Context, cfg Config) error {
 		return dumpPrompt(vscodeMsgs, cfg.DumpOutPath)
 
 	case "suggest":
-		logger.Info("starting commit message suggestion", "provider", cfg.Provider, "model", cfg.Model)
 		if strings.TrimSpace(cfg.Model) == "" {
 			return logger.LogError(errors.New("missing model"), "model not configured")
 		}
@@ -115,7 +110,6 @@ func Run(ctx context.Context, cfg Config) error {
 
 		switch strings.ToLower(cfg.Provider) {
 		case "ollama":
-			logger.Debug("using ollama provider", "base_url", cfg.BaseURL)
 			provider = ollama.New(ollama.Config{
 				BaseURL: cfg.BaseURL,
 				Model:   cfg.Model,
@@ -124,7 +118,6 @@ func Run(ctx context.Context, cfg Config) error {
 			if cfg.AnthropicKey == "" {
 				return logger.LogError(errors.New("missing anthropic key"), "anthropic key not configured")
 			}
-			logger.Debug("using anthropic provider")
 			provider = anthropic.New(anthropic.Config{
 				APIKey: cfg.AnthropicKey,
 				Model:  cfg.Model,
@@ -133,7 +126,6 @@ func Run(ctx context.Context, cfg Config) error {
 			if cfg.GeminiKey == "" {
 				return logger.LogError(errors.New("missing gemini key"), "gemini key not configured")
 			}
-			logger.Debug("using gemini provider")
 			provider = gemini.New(gemini.Config{
 				APIKey: cfg.GeminiKey,
 				Model:  cfg.Model,
@@ -142,7 +134,6 @@ func Run(ctx context.Context, cfg Config) error {
 			if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
 				return logger.LogError(errors.New("missing api key"), "openai api key not configured")
 			}
-			logger.Debug("using openai provider", "base_url", cfg.BaseURL)
 			provider = openai.New(openai.Config{
 				BaseURL: cfg.BaseURL,
 				APIKey:  cfg.APIKey,
@@ -157,12 +148,18 @@ func Run(ctx context.Context, cfg Config) error {
 			tea.WithAltScreen(),
 			tea.WithMouseCellMotion(),
 		)
-		logger.Debug("starting TUI")
-		_, err = p.Run()
+		finalModel, err := p.Run()
 		if err != nil {
 			return logger.LogError(err, "TUI execution failed")
 		}
-		return err
+		
+		// Check if TUI model has error
+		if m, ok := finalModel.(tuiModel); ok {
+			if m.err != nil {
+				return logger.LogError(m.err, "TUI operation failed")
+			}
+		}
+		return nil
 
 	default:
 		return fmt.Errorf("unknown -cmd=%s (use: suggest | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
@@ -190,7 +187,6 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 	if len(changes) == 0 {
 		return vscodeprompt.Data{}, logger.LogError(errors.New("no staged changes"), "no files staged for commit")
 	}
-	logger.Debug("staged changes retrieved", "count", len(changes))
 
 	// Filter changes
 	defaultIgnores := []string{
@@ -222,6 +218,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 
 		orig, _ := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
 		if strings.TrimSpace(orig) == "" {
+			// File might be new (not in HEAD yet), try reading from working tree
 			orig, _ = gitx.ReadWorkingTreeFile(repoRoot, ch.Path)
 		}
 
@@ -303,7 +300,6 @@ func runConfig(cfg Config) error {
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
 		return logger.LogError(err, "failed to save config", "path", cfg.ConfigPath)
 	}
-	logger.Info("configuration saved", "path", cfg.ConfigPath)
 	fmt.Printf("\nConfiguration saved to %s\n", cfg.ConfigPath)
 	return nil
 }

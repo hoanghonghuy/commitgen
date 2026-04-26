@@ -60,7 +60,6 @@ type candidate struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
-	logger.Debug("gemini: generating commit message", "model", c.model)
 	// Gemini: System instructions are separate. Roles are "user" and "model".
 
 	var systemParts []part
@@ -121,8 +120,6 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	}
 	defer resp.Body.Close()
 
-	logger.Debug("gemini: received response", "status", resp.StatusCode)
-
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		logger.Error("gemini: API error", "status", resp.StatusCode, "body", string(body))
@@ -135,10 +132,8 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	}
 
 	if len(genResp.Candidates) == 0 || len(genResp.Candidates[0].Content.Parts) == 0 {
-		logger.Error("gemini: empty response")
-		return "", fmt.Errorf("empty response from gemini")
+		return "", logger.LogError(fmt.Errorf("empty response"), "gemini: no content")
 	}
 
-	logger.Info("gemini: commit message generated successfully")
 	return genResp.Candidates[0].Content.Parts[0].Text, nil
 }
