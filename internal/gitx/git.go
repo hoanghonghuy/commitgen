@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
 
 type StagedChange struct {
@@ -16,11 +18,13 @@ type StagedChange struct {
 }
 
 func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
+	logger.Debug("executing git command", "args", args)
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		logger.Error("git command failed", "error", err, "args", args, "stderr", stderr.String())
 		return "", fmt.Errorf("git %v failed: %v\n%s", args, err, stderr.String())
 	}
 	return stdout.String(), nil
@@ -106,10 +110,14 @@ func ReadWorkingTreeFile(repoRoot, relPath string) (string, error) {
 func Commit(ctx context.Context, repoRoot, message string) error {
 	msg := strings.TrimSpace(message)
 	if msg == "" {
-		return fmt.Errorf("commit message cannot be empty")
+		return logger.LogError(fmt.Errorf("commit message cannot be empty"), "empty commit message")
 	}
+	logger.Info("executing git commit", "message_length", len(msg))
 	_, err := Git(ctx, repoRoot, "commit", "-m", msg)
-	return err
+	if err != nil {
+		return logger.LogError(err, "git commit failed")
+	}
+	return nil
 }
 
 func splitNonEmptyLines(s string) []string {

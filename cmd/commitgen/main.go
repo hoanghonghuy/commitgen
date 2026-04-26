@@ -5,12 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/app"
 	"github.com/hoanghonghuy/commitgen/internal/config"
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
 
 func main() {
@@ -35,6 +37,10 @@ func main() {
 	dumpOutFlag := flag.String("dump-out", "", "Output path for dump-prompt")
 	instructionsFlag := flag.String("instructions", "", "Path to custom instructions file")
 	configPathFlag := flag.String("config", "", "Path to config file")
+	
+	logLevelFlag := flag.String("log-level", "", "Log level (debug, info, warn, error)")
+	logOutputFlag := flag.String("log-output", "", "Log output (stdout, stderr, file, both)")
+	logFileFlag := flag.String("log-file", "", "Log file path")
 
 	flag.Parse()
 
@@ -51,7 +57,7 @@ func main() {
 	// 2. Load config from file
 	fileCfg, err := config.Load(*configPathFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Warning: Error loading config: %v\n", err)
 	}
 
 	// 3. Resolve final config (Flag > Env > File > Default)
@@ -78,9 +84,27 @@ func main() {
 		ConfigPath:       *configPathFlag,
 		Timeout:          60 * time.Second,
 		PromptTemplate:   fileCfg.PromptTemplate,
+		
+		LogLevel:  config.ResolveString(*logLevelFlag, os.Getenv("COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
+		LogOutput: config.ResolveString(*logOutputFlag, os.Getenv("COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
+		LogFile:   config.ResolveString(*logFileFlag, os.Getenv("COMMITAI_LOG_FILE"), fileCfg.LogFile, ""),
 	}
 
-	// 4. Setup context with cancellation
+	// 4. Initialize logger
+	loggerCfg := logger.Config{
+		Level:      cfg.LogLevel,
+		Output:     cfg.LogOutput,
+		FilePath:   cfg.LogFile,
+		JSONFormat: false,
+	}
+	if err := logger.Init(loggerCfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to initialize logger: %v\n", err)
+	}
+	defer logger.Close()
+	
+	logger.Info("commitgen started", "command", cfg.Command, "version", "dev")
+
+	// 5. Setup context with cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -92,14 +116,32 @@ func main() {
 		cancel()
 	}()
 
-	// 5. Run application
+	// 6. Run application
 	if err := app.Run(ctx, cfg); err != nil {
 		if ctx.Err() == context.Canceled {
+			logger.Info("operation cancelled by user")
 			os.Exit(0)
 		}
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		// Log error to file/stderr AFTER TUI exits
+		logger.Error("application error", "error", err)
+		// Also print to stderr so user sees it immediately
+		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Check logs at: %s\n", getLogPath(cfg.LogFile))
 		os.Exit(1)
 	}
+	logger.Info("commitgen completed successfully")
+}
+
+func getLogPath(configPath string) string {
+	if configPath != "" {
+		return configPath
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "commitgen.log"
+	}
+	return filepath.Join(home, ".commitgen", "commitgen.log")
+}
 }
 
 func isFlagSet(name string) bool {

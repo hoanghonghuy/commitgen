@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -59,6 +60,7 @@ type chatResponse struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+	logger.Debug("ollama: generating commit message", "model", c.model, "base_url", c.baseURL)
 	// Convert VSCode messages to Ollama format
 	ollamaMsgs := make([]message, 0, len(msgs))
 	for _, m := range msgs {
@@ -104,19 +106,23 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("ollama request failed: %w", err)
+		return "", logger.LogError(err, "ollama: request failed", "url", url)
 	}
 	defer resp.Body.Close()
 
+	logger.Debug("ollama: received response", "status", resp.StatusCode)
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		logger.Error("ollama: API error", "status", resp.StatusCode, "body", string(body))
 		return "", fmt.Errorf("ollama API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var chatResp chatResponse
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
+		return "", logger.LogError(err, "ollama: decode error")
 	}
 
+	logger.Info("ollama: commit message generated successfully")
 	return chatResp.Message.Content, nil
 }

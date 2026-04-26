@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -50,6 +51,7 @@ type messageResponse struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+	logger.Debug("anthropic: generating commit message", "model", c.model)
 	// Anthropic API uses a specific format:
 	// System prompt is top-level.
 	// Users/Assistants alternate.
@@ -102,23 +104,28 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("anthropic request failed: %w", err)
+		return "", logger.LogError(err, "anthropic: request failed")
 	}
 	defer resp.Body.Close()
 
+	logger.Debug("anthropic: received response", "status", resp.StatusCode)
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		logger.Error("anthropic: API error", "status", resp.StatusCode, "body", string(body))
 		return "", fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var msgResp messageResponse
 	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
+		return "", logger.LogError(err, "anthropic: decode error")
 	}
 
 	if len(msgResp.Content) == 0 {
+		logger.Error("anthropic: empty response content")
 		return "", fmt.Errorf("empty response content")
 	}
 
+	logger.Info("anthropic: commit message generated successfully")
 	return msgResp.Content[0].Text, nil
 }

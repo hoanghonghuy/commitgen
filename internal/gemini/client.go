@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -59,6 +60,7 @@ type candidate struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+	logger.Debug("gemini: generating commit message", "model", c.model)
 	// Gemini: System instructions are separate. Roles are "user" and "model".
 
 	var systemParts []part
@@ -115,23 +117,28 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("gemini request failed: %w", err)
+		return "", logger.LogError(err, "gemini: request failed")
 	}
 	defer resp.Body.Close()
 
+	logger.Debug("gemini: received response", "status", resp.StatusCode)
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		logger.Error("gemini: API error", "status", resp.StatusCode, "body", string(body))
 		return "", fmt.Errorf("gemini API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	var genResp generateContentResponse
 	if err := json.NewDecoder(resp.Body).Decode(&genResp); err != nil {
-		return "", fmt.Errorf("decode response: %w", err)
+		return "", logger.LogError(err, "gemini: decode error")
 	}
 
 	if len(genResp.Candidates) == 0 || len(genResp.Candidates[0].Content.Parts) == 0 {
+		logger.Error("gemini: empty response")
 		return "", fmt.Errorf("empty response from gemini")
 	}
 
+	logger.Info("gemini: commit message generated successfully")
 	return genResp.Candidates[0].Content.Parts[0].Text, nil
 }

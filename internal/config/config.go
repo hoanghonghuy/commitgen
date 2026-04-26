@@ -26,6 +26,11 @@ type FileConfig struct {
 	Summarize    *bool    `json:"summarize,omitempty"`
 	Temperature  *float64 `json:"temperature,omitempty"`
 	Conventional *bool    `json:"conventional,omitempty"`
+
+	// Logging Settings
+	LogLevel  string `json:"log_level,omitempty"`   // debug, info, warn, error
+	LogOutput string `json:"log_output,omitempty"`  // stdout, stderr, file, both
+	LogFile   string `json:"log_file,omitempty"`    // path to log file
 }
 
 func Load(path string) (FileConfig, error) {

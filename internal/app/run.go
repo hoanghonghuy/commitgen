@@ -15,6 +15,7 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/gemini"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
 	"github.com/hoanghonghuy/commitgen/internal/openai"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
@@ -55,9 +56,16 @@ type Config struct {
 	IgnoredFiles   []string
 	HookFile       string
 	PromptTemplate string
+
+	// Logging
+	LogLevel  string
+	LogOutput string
+	LogFile   string
 }
 
 func Run(ctx context.Context, cfg Config) error {
+	logger.Debug("app.Run started", "command", cfg.Command)
+	
 	if cfg.Command == "config" {
 		return runConfig(cfg)
 	}
@@ -70,8 +78,9 @@ func Run(ctx context.Context, cfg Config) error {
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
 	if err != nil {
-		return err
+		return logger.LogError(err, "failed to resolve repository root", "repo_arg", cfg.RepoArg)
 	}
+	logger.Debug("repository resolved", "repo_root", repoRoot)
 
 	customInstructions := ""
 	if strings.TrimSpace(cfg.InstructionsPath) != "" {
@@ -83,9 +92,10 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 
 	// 1. Build Data
+	logger.Debug("building prompt data", "recent_n", cfg.RecentN, "max_files", cfg.MaxFiles)
 	data, err := buildPromptData(ctx, repoRoot, cfg.RecentN, cfg.MaxFiles, cfg.Summarize, customInstructions, cfg.IgnoredFiles)
 	if err != nil {
-		return err
+		return logger.LogError(err, "failed to build prompt data")
 	}
 	data.SystemPromptTemplate = cfg.PromptTemplate
 
@@ -96,45 +106,50 @@ func Run(ctx context.Context, cfg Config) error {
 		return dumpPrompt(vscodeMsgs, cfg.DumpOutPath)
 
 	case "suggest":
+		logger.Info("starting commit message suggestion", "provider", cfg.Provider, "model", cfg.Model)
 		if strings.TrimSpace(cfg.Model) == "" {
-			return errors.New("missing model. Set flags or env COMMITAI_MODEL")
+			return logger.LogError(errors.New("missing model"), "model not configured")
 		}
 
 		var provider ai.Provider
 
 		switch strings.ToLower(cfg.Provider) {
 		case "ollama":
+			logger.Debug("using ollama provider", "base_url", cfg.BaseURL)
 			provider = ollama.New(ollama.Config{
 				BaseURL: cfg.BaseURL,
 				Model:   cfg.Model,
 			})
 		case "anthropic":
 			if cfg.AnthropicKey == "" {
-				return errors.New("missing anthropic key. Set flags or env COMMITAI_ANTHROPIC_KEY")
+				return logger.LogError(errors.New("missing anthropic key"), "anthropic key not configured")
 			}
+			logger.Debug("using anthropic provider")
 			provider = anthropic.New(anthropic.Config{
 				APIKey: cfg.AnthropicKey,
 				Model:  cfg.Model,
 			})
 		case "gemini":
 			if cfg.GeminiKey == "" {
-				return errors.New("missing gemini key. Set flags or env COMMITAI_GEMINI_KEY")
+				return logger.LogError(errors.New("missing gemini key"), "gemini key not configured")
 			}
+			logger.Debug("using gemini provider")
 			provider = gemini.New(gemini.Config{
 				APIKey: cfg.GeminiKey,
 				Model:  cfg.Model,
 			})
 		case "openai", "":
 			if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
-				return errors.New("missing api-key. Set --api-key flag or env COMMITAI_API_KEY")
+				return logger.LogError(errors.New("missing api key"), "openai api key not configured")
 			}
+			logger.Debug("using openai provider", "base_url", cfg.BaseURL)
 			provider = openai.New(openai.Config{
 				BaseURL: cfg.BaseURL,
 				APIKey:  cfg.APIKey,
 				Model:   cfg.Model,
 			})
 		default:
-			return fmt.Errorf("unknown provider: %s (supported: openai, ollama, anthropic, gemini)", cfg.Provider)
+			return logger.LogError(fmt.Errorf("unknown provider: %s", cfg.Provider), "unsupported provider")
 		}
 
 		p := tea.NewProgram(
@@ -142,7 +157,11 @@ func Run(ctx context.Context, cfg Config) error {
 			tea.WithAltScreen(),
 			tea.WithMouseCellMotion(),
 		)
+		logger.Debug("starting TUI")
 		_, err = p.Run()
+		if err != nil {
+			return logger.LogError(err, "TUI execution failed")
+		}
 		return err
 
 	default:
@@ -166,11 +185,12 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 	}
 	changes, err := gitx.StagedChanges(ctx, repoRoot, fetchFiles)
 	if err != nil {
-		return vscodeprompt.Data{}, err
+		return vscodeprompt.Data{}, logger.LogError(err, "failed to get staged changes")
 	}
 	if len(changes) == 0 {
-		return vscodeprompt.Data{}, errors.New("no staged changes. Run: git add -A")
+		return vscodeprompt.Data{}, logger.LogError(errors.New("no staged changes"), "no files staged for commit")
 	}
+	logger.Debug("staged changes retrieved", "count", len(changes))
 
 	// Filter changes
 	defaultIgnores := []string{
@@ -274,11 +294,16 @@ func runConfig(cfg Config) error {
 		AnthropicKey:   newCfg.AnthropicKey,
 		GeminiKey:      newCfg.GeminiKey,
 		PromptTemplate: newCfg.PromptTemplate,
+		
+		LogLevel:  newCfg.LogLevel,
+		LogOutput: newCfg.LogOutput,
+		LogFile:   newCfg.LogFile,
 	}
 
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
+		return logger.LogError(err, "failed to save config", "path", cfg.ConfigPath)
 	}
+	logger.Info("configuration saved", "path", cfg.ConfigPath)
 	fmt.Printf("\nConfiguration saved to %s\n", cfg.ConfigPath)
 	return nil
 }

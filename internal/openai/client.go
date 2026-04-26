@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -55,6 +56,7 @@ type chatResp struct {
 }
 
 func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
+	logger.Debug("openai: generating commit message", "model", c.cfg.Model, "temperature", temp)
 	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
 
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
@@ -74,20 +76,26 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
-		return "", err
+		return "", logger.LogError(err, "openai: request failed", "url", url)
 	}
 	defer resp.Body.Close()
+
+	logger.Debug("openai: received response", "status", resp.StatusCode)
 
 	b, _ := io.ReadAll(resp.Body)
 	var out chatResp
 	if err := json.Unmarshal(b, &out); err != nil {
+		logger.Error("openai: decode error", "error", err, "response", string(b))
 		return "", fmt.Errorf("decode error: %v\nraw: %s", err, string(b))
 	}
 	if out.Error != nil {
+		logger.Error("openai: API error", "message", out.Error.Message, "type", out.Error.Type)
 		return "", fmt.Errorf("llm error: %s (%s)", out.Error.Message, out.Error.Type)
 	}
 	if len(out.Choices) == 0 {
+		logger.Error("openai: empty choices")
 		return "", fmt.Errorf("llm: empty choices")
 	}
+	logger.Info("openai: commit message generated successfully")
 	return out.Choices[0].Message.Content, nil
 }

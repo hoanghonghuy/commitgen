@@ -14,6 +14,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -119,6 +120,7 @@ func (m tuiModel) Init() tea.Cmd {
 
 func (m tuiModel) generateCommitCmd() tea.Cmd {
 	return func() tea.Msg {
+		logger.Debug("generating commit message", "conventional", m.conventional)
 		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(m.initialMsgs))
 		copy(currentMsgs, m.initialMsgs)
 
@@ -137,11 +139,14 @@ func (m tuiModel) generateCommitCmd() tea.Cmd {
 
 		raw, err := m.provider.GenerateCommitMessage(ctx, currentMsgs, m.temp)
 		if err != nil {
+			logger.Error("failed to generate commit message", "error", err)
 			return commitResultMsg{err: err}
 		}
 
+		logger.Debug("commit message generated", "length", len(raw))
 		msg, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
 		if !ok {
+			logger.Warn("no code block found in response, using raw output")
 			msg = raw
 		}
 		return commitResultMsg{content: msg}
@@ -150,11 +155,20 @@ func (m tuiModel) generateCommitCmd() tea.Cmd {
 
 func (m tuiModel) commitCmd() tea.Cmd {
 	return func() tea.Msg {
+		logger.Info("committing changes", "hook_mode", m.hookFile != "")
 		if m.hookFile != "" {
 			err := os.WriteFile(m.hookFile, []byte(m.commitMsg), 0644)
+			if err != nil {
+				logger.Error("failed to write hook file", "error", err, "path", m.hookFile)
+			}
 			return commitDoneMsg{err: err}
 		}
 		err := gitx.Commit(context.Background(), m.repoRoot, m.commitMsg)
+		if err != nil {
+			logger.Error("git commit failed", "error", err)
+		} else {
+			logger.Info("commit successful")
+		}
 		return commitDoneMsg{err: err}
 	}
 }
@@ -278,16 +292,20 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				switch m.cursor {
 				case 0: // Commit
+					logger.Debug("user selected: commit")
 					m.state = stateCommitting
 					return m, m.commitCmd()
 				case 1: // Regenerate
+					logger.Debug("user selected: regenerate")
 					m.state = stateGenerating
 					return m, m.generateCommitCmd()
 				case 2: // Edit
+					logger.Debug("user selected: edit")
 					m.state = stateEditing
 					m.textarea.SetValue(m.commitMsg)
 					return m, textarea.Blink
 				case 3: // Cancel
+					logger.Info("user cancelled operation")
 					m.quitting = true
 					return m, tea.Quit
 				}
@@ -335,10 +353,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case commitResultMsg:
 		if msg.err != nil {
+			logger.Error("commit generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = stateDone
 			return m, tea.Quit
 		}
+		logger.Debug("commit message received", "length", len(msg.content))
 		m.commitMsg = msg.content
 		m.state = stateConfirm
 		m.cursor = 0
@@ -346,7 +366,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case commitDoneMsg:
 		if msg.err != nil {
+			logger.Error("commit operation failed", "error", msg.err)
 			m.err = msg.err
+		} else {
+			logger.Info("commit operation completed successfully")
 		}
 		m.state = stateDone
 		return m, tea.Quit
