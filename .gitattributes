@@ -1,0 +1,5 @@
+# Normalize text files to LF by default
+* text=auto eol=lf
+
+# Shell scripts must always use LF
+*.sh text eol=lf
