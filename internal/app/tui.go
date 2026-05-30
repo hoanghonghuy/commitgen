@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -49,6 +50,7 @@ const (
 	stateConfirm
 	stateEditing
 	stateDone
+	stateCopied
 )
 
 type tuiModel struct {
@@ -84,6 +86,9 @@ type commitResultMsg struct {
 	content string
 	err     error
 }
+
+// copyDoneMsg is sent after clipboard copy feedback expires.
+type copyDoneMsg struct{}
 
 type commitDoneMsg struct {
 	err error
@@ -272,6 +277,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case stateConfirm:
 			switch msg.String() {
+			case "y", "Y":
+				if m.commitMsg != "" {
+					if err := clipboard.WriteAll(m.commitMsg); err != nil {
+						logger.Error("failed to copy to clipboard", "error", err)
+					} else {
+						m.state = stateCopied
+						return m, tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
+							return copyDoneMsg{}
+						})
+					}
+				}
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
@@ -373,6 +389,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.state = stateDone
 		return m, tea.Quit
+
+	case copyDoneMsg:
+		m.state = stateConfirm
+		return m, nil
 	}
 
 	return m, nil
@@ -399,11 +419,11 @@ func (m tuiModel) View() string {
 			var hint string
 			switch {
 			case m.viewport.AtTop():
-				hint = fmt.Sprintf(" ↓ PgDn/Scroll  %d%% ", pct)
+				hint = fmt.Sprintf(" ↓ PgDn/Scroll  %d%%  |  y Copy ", pct)
 			case m.viewport.AtBottom():
-				hint = fmt.Sprintf(" ↑ PgUp/Scroll  %d%% ", pct)
+				hint = fmt.Sprintf(" ↑ PgUp/Scroll  %d%%  |  y Copy ", pct)
 			default:
-				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%% ", pct)
+				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%%  |  y Copy ", pct)
 			}
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else {
@@ -430,6 +450,9 @@ func (m tuiModel) View() string {
 		} else {
 			inner = "\n ✓ Committed successfully!\n"
 		}
+
+	case stateCopied:
+		inner = fmt.Sprintf("\n  ✓ Copied to clipboard!\n")
 	}
 
 	if inner == "" {

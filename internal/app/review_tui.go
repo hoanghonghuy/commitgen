@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -139,6 +140,7 @@ type reviewState int
 const (
 	reviewStateAnalyzing reviewState = iota
 	reviewStateDone
+	reviewStateCopied
 )
 
 type reviewModel struct {
@@ -168,6 +170,9 @@ type reviewResultMsg struct {
 	content string
 	err     error
 }
+
+// reviewCopyDoneMsg is sent after clipboard copy feedback expires.
+type reviewCopyDoneMsg struct{}
 
 func newReviewModel(provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration) reviewModel {
 	s := spinner.New()
@@ -291,6 +296,18 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case reviewStateDone:
 			switch msg.String() {
+			case "y", "Y":
+				if m.report != "" {
+					// Copy plain report text to clipboard
+					if err := clipboard.WriteAll(m.report); err != nil {
+						logger.Error("failed to copy to clipboard", "error", err)
+					} else {
+						m.state = reviewStateCopied
+						return m, tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
+							return reviewCopyDoneMsg{}
+						})
+					}
+				}
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
@@ -373,6 +390,10 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.viewport.GotoTop() // reset scroll to top for new content
 		m = m.refreshViewport()
 		return m, nil
+
+	case reviewCopyDoneMsg:
+		m.state = reviewStateDone
+		return m, nil
 	}
 
 	return m, nil
@@ -397,11 +418,11 @@ func (m reviewModel) View() string {
 			var hint string
 			switch {
 			case m.viewport.AtTop():
-				hint = fmt.Sprintf(" ↓ PgDn/Scroll  %d%% ", pct)
+				hint = fmt.Sprintf(" ↓ PgDn/Scroll  %d%%  |  y Copy ", pct)
 			case m.viewport.AtBottom():
-				hint = fmt.Sprintf(" ↑ PgUp/Scroll  %d%% ", pct)
+				hint = fmt.Sprintf(" ↑ PgUp/Scroll  %d%%  |  y Copy ", pct)
 			default:
-				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%% ", pct)
+				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%%  |  y Copy ", pct)
 			}
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else if m.cachedContent != "" {
@@ -409,6 +430,9 @@ func (m reviewModel) View() string {
 		} else {
 			inner = m.buildDoneContent()
 		}
+
+	case reviewStateCopied:
+		inner = fmt.Sprintf("\n  ✓ Copied to clipboard!\n")
 	}
 
 	if inner == "" {
