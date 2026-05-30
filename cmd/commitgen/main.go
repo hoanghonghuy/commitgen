@@ -82,8 +82,9 @@ func main() {
 		DumpOutPath:      *dumpOutFlag,
 		InstructionsPath: *instructionsFlag,
 		ConfigPath:       *configPathFlag,
-		Timeout:          60 * time.Second,
+		Timeout:          120 * time.Second,
 		PromptTemplate:   fileCfg.PromptTemplate,
+		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 
 		LogLevel:  config.ResolveString(*logLevelFlag, os.Getenv("COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
 		LogOutput: config.ResolveString(*logOutputFlag, os.Getenv("COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),

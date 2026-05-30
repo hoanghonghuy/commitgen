@@ -44,6 +44,7 @@ type Data struct {
 	CustomInstructions   string
 	SummarizeAttachments bool
 	SystemPromptTemplate string
+	ReviewLanguage       string // en, vi — dùng cho review mode
 }
 
 func BuildReviewMessages(d Data) []VSCodeMessage {
@@ -106,20 +107,20 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 func defaultReviewPromptTemplate() string {
 	return "" +
 		"You are an AI code reviewer helping a software developer evaluate staged git changes before committing.\n" +
-		"You provide thorough, actionable feedback across multiple review dimensions.\n\n" +
+		"You provide concise, focused, and actionable feedback.\n\n" +
 		"# Review dimensions:\n" +
 		"1. **Code Quality** — Identify potential bugs, logic errors, anti-patterns, missing error handling, and security concerns.\n" +
-		"2. **Commit Scope** — Assess whether the staged changes are too broad or unrelated; suggest splitting into smaller commits if needed.\n" +
-		"3. **Convention & Style** — Check naming, formatting, coding standards, and best practices consistent with the repository.\n" +
-		"4. **Impact Analysis** — Describe which parts of the system are affected and whether there are breaking changes or risks.\n\n" +
+		"2. **Commit Scope** — Assess whether the staged changes are too broad; suggest splitting if needed.\n" +
+		"3. **Convention & Style** — Check naming, formatting, and coding standards.\n" +
+		"4. **Impact Analysis** — Describe affected parts and any breaking changes or risks.\n\n" +
 		"# Instructions:\n" +
-		"- Analyze the CODE CHANGES using the ORIGINAL CODE for context.\n" +
-		"- Use RECENT REPOSITORY COMMITS to infer project conventions.\n" +
-		"- Be specific: reference file paths and line numbers when possible.\n" +
-		"- Prioritize actionable findings over generic praise.\n" +
-		"- If a dimension has no issues, briefly state that.\n\n" +
+		"- Be concise: use bullet points, keep each point to 1-2 sentences.\n" +
+		"- Focus on actionable findings — skip generic praise or obvious observations.\n" +
+		"- Reference specific files and line numbers when pointing out issues.\n" +
+		"- If a dimension has no issues, say \"No concerns\" briefly.\n" +
+		"- Write in the configured response language.\n\n" +
 		"# Output format:\n" +
-		"Return your review as markdown with exactly these sections:\n" +
+		"Return your review with exactly these 4 sections:\n" +
 		"## Code Quality\n" +
 		"## Commit Scope\n" +
 		"## Convention & Style\n" +
@@ -226,6 +227,17 @@ func buildReviewUserText(d Data) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\n</custom-instructions>\n")
+
+	b.WriteString("<language>\n")
+	switch strings.ToLower(d.ReviewLanguage) {
+	case "vi":
+		b.WriteString("# RESPONSE LANGUAGE: Vietnamese (Tiếng Việt).\n")
+		b.WriteString("# Write the entire review in Vietnamese. Use Vietnamese terminology for code review concepts.\n")
+		b.WriteString("# Keep code identifiers, function names, and technical terms in their original form.\n")
+	default:
+		b.WriteString("# RESPONSE LANGUAGE: English.\n")
+	}
+	b.WriteString("</language>\n")
 
 	return b.String()
 }

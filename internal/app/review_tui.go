@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
@@ -18,7 +20,119 @@ import (
 var (
 	styleReviewTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2)
 	styleReviewError = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).MarginLeft(2)
+	styleReviewH2    = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).MarginLeft(2) // yellow bold for ## headings
+	styleReviewH3    = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true).MarginLeft(4) // cyan for ### headings
+	styleReviewCode  = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Padding(0, 1)             // bright cyan for inline code
+	styleReviewQuote = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).MarginLeft(2)            // gray for > blockquote
+	styleReviewRule  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))                           // dim for ---
+	styleReviewBold  = lipgloss.NewStyle().Bold(true)
+	styleReviewBorder = lipgloss.NewStyle().
+				Border(lipgloss.ThickBorder(), false, false, false, true).
+				BorderForeground(lipgloss.Color("237")).
+				PaddingLeft(1)
+	reMDH2           = regexp.MustCompile(`^##\s+(.+)$`)
+	reMDH3           = regexp.MustCompile(`^###\s+(.+)$`)
+	reMDBold         = regexp.MustCompile(`\*\*(.+?)\*\*`)
+	reMDInlineCode   = regexp.MustCompile("`([^`]+?)`")
+	reMDBullet       = regexp.MustCompile(`^[-*]\s+`)
+	reMDNumberedList = regexp.MustCompile(`^\d+\.\s+`)
+	reMDQuote        = regexp.MustCompile(`^>\s*`)
+	reMDRule         = regexp.MustCompile(`^(-{3,}|\*{3,})$`)
 )
+
+// formatReviewText converts simple markdown to terminal-friendly formatted text.
+func formatReviewText(s string) string {
+	lines := strings.Split(s, "\n")
+	var b strings.Builder
+	prevBlank := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// strip code block markers
+		if strings.HasPrefix(trimmed, "```") {
+			continue
+		}
+		if trimmed == "" {
+			if !prevBlank {
+				b.WriteString("\n")
+			}
+			prevBlank = true
+			continue
+		}
+		prevBlank = false
+
+		// --- or *** → horizontal rule
+		if reMDRule.MatchString(trimmed) {
+			b.WriteString(styleReviewRule.Render(strings.Repeat("─", 50)))
+			b.WriteString("\n")
+			continue
+		}
+
+		// ## Heading → styled heading
+		if m := reMDH2.FindStringSubmatch(trimmed); len(m) == 2 {
+			b.WriteString(styleReviewH2.Render(m[1]))
+			b.WriteString("\n")
+			continue
+		}
+
+		// ### Heading → styled heading (level 3)
+		if m := reMDH3.FindStringSubmatch(trimmed); len(m) == 2 {
+			b.WriteString(styleReviewH3.Render(m[1]))
+			b.WriteString("\n")
+			continue
+		}
+
+		// > blockquote
+		if reMDQuote.MatchString(trimmed) {
+			text := reMDQuote.ReplaceAllString(trimmed, "")
+			text = applyInlineStyles(text)
+			b.WriteString(styleReviewQuote.Render("│ " + text))
+			b.WriteString("\n")
+			continue
+		}
+
+		// - item → bullet
+		if reMDBullet.MatchString(trimmed) {
+			text := reMDBullet.ReplaceAllString(trimmed, "• ")
+			text = applyInlineStyles(text)
+			b.WriteString(text)
+			b.WriteString("\n")
+			continue
+		}
+
+		// 1. numbered list
+		if reMDNumberedList.MatchString(trimmed) {
+			text := applyInlineStyles(trimmed)
+			b.WriteString(text)
+			b.WriteString("\n")
+			continue
+		}
+
+		// plain line with inline styles
+		b.WriteString(applyInlineStyles(trimmed))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// applyInlineStyles handles inline code and bold in a single line.
+// NOTE: We intentionally skip italic (*text* / _text_) because:
+//   - It conflicts with **bold** regex in terminals
+//   - Italic is hard to read in most terminal fonts
+//   - AI review output rarely needs italic emphasis
+func applyInlineStyles(s string) string {
+	// 1. inline code `text` — handle first since it's most specific
+	s = reMDInlineCode.ReplaceAllStringFunc(s, func(match string) string {
+		inner := match[1 : len(match)-1]
+		return styleReviewCode.Render(inner)
+	})
+	// 2. bold **text**
+	s = reMDBold.ReplaceAllStringFunc(s, func(match string) string {
+		inner := match[2 : len(match)-2]
+		return styleReviewBold.Render(inner)
+	})
+	return s
+}
 
 type reviewState int
 
@@ -124,7 +238,13 @@ func (m reviewModel) buildDoneContent() string {
 	b.WriteString("\n")
 	b.WriteString(styleReviewTitle.Render("Review Report"))
 	b.WriteString("\n")
-	b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.report))
+
+	// Wrap and border the review report.
+	// We use ansi.Wrap (ANSI-aware) before applying border,
+	// so long lines are wrapped correctly without breaking styles.
+	w := m.innerWidth() - 4 // account for border + padding
+	wrapped := ansi.Wrap(formatReviewText(m.report), w, " ")
+	b.WriteString(styleReviewBorder.Render(wrapped))
 	b.WriteString("\n\n")
 
 	b.WriteString(styleActionTitle.Render("Action"))
@@ -150,25 +270,11 @@ func (m reviewModel) refreshViewport() reviewModel {
 
 	content := m.buildDoneContent()
 	m.cachedContent = content
-	totalLines := countLines(content)
-	m.needsScroll = totalLines > m.innerHeight()
+	m.needsScroll = true // always use viewport for review report (handles word-wrap)
 
-	if m.needsScroll && m.viewportReady {
+	if m.viewportReady {
+		m.viewport.GotoTop() // ensure we start at the top
 		m.viewport.SetContent(content)
-
-		// Auto-scroll to keep cursor action item in view.
-		// Action lines are at the end of content (3 items: Suggest, Regenerate, Exit):
-		//   cursor=0 → 3rd from end, cursor=1 → 2nd, cursor=2 → last
-		lineFromEnd := 3 - m.cursor
-		cursorLine := totalLines - 1 - lineFromEnd
-
-		viewTop := m.viewport.YOffset
-		viewBottom := m.viewport.YOffset + m.viewport.Height - 1
-		if cursorLine < viewTop {
-			m.viewport.SetYOffset(cursorLine)
-		} else if cursorLine > viewBottom {
-			m.viewport.SetYOffset(cursorLine - m.viewport.Height + 1)
-		}
 	}
 	return m
 }
@@ -232,7 +338,14 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 
-		vpHeight := m.innerHeight()
+		// Viewport height must account for the border (2 lines), padding (2 lines),
+		// and the scroll hint line (1 line) that follows viewport.View().
+		// Total overhead = 5 lines. innerHeight() already subtracts border (2),
+		// so we need to subtract 3 more (padding 2 + hint 1).
+		vpHeight := m.innerHeight() - 3
+		if vpHeight < 3 {
+			vpHeight = 3
+		}
 		if m.viewportReady {
 			m.viewport.Width = m.innerWidth()
 			m.viewport.Height = vpHeight
@@ -257,6 +370,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.report = msg.content
 		m.state = reviewStateDone
 		m.cursor = 0
+		m.viewport.GotoTop() // reset scroll to top for new content
 		m = m.refreshViewport()
 		return m, nil
 	}
@@ -278,7 +392,7 @@ func (m reviewModel) View() string {
 	case reviewStateDone:
 		if m.err != nil {
 			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render("Error: "+m.err.Error()))
-		} else if m.needsScroll && m.viewportReady {
+		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			var hint string
 			switch {
@@ -302,9 +416,6 @@ func (m reviewModel) View() string {
 	}
 
 	ws := styleWindow.Width(m.width - 2)
-	if m.needsScroll && m.height > 0 {
-		ws = ws.Height(m.height - 2)
-	}
 
 	return ws.Render(inner)
 }

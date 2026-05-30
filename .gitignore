@@ -35,6 +35,8 @@ go.work
 .local/
 *.log
 **/prompt_debug.json
+openspec/
+.cursor/
 
 .agent
 build_error.txt

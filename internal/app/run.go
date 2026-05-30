@@ -56,6 +56,7 @@ type Config struct {
 	IgnoredFiles   []string
 	HookFile       string
 	PromptTemplate string
+	ReviewLanguage string
 
 	// Logging
 	LogLevel  string
@@ -94,6 +95,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return logger.LogError(err, "failed to build prompt data")
 	}
 	data.SystemPromptTemplate = cfg.PromptTemplate
+	data.ReviewLanguage = cfg.ReviewLanguage
 
 	switch cfg.Command {
 	case "dump-prompt":
@@ -334,6 +336,7 @@ func runConfig(cfg Config) error {
 		AnthropicKey:   newCfg.AnthropicKey,
 		GeminiKey:      newCfg.GeminiKey,
 		PromptTemplate: newCfg.PromptTemplate,
+		ReviewLanguage: newCfg.ReviewLanguage,
 
 		LogLevel:  newCfg.LogLevel,
 		LogOutput: newCfg.LogOutput,

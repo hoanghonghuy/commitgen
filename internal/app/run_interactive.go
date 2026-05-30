@@ -28,6 +28,11 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	conventional := cfg.Conventional
 	ignoredFilesStr := strings.Join(cfg.IgnoredFiles, ", ")
 
+	reviewLanguage := cfg.ReviewLanguage
+	if reviewLanguage == "" {
+		reviewLanguage = "en"
+	}
+
 	logLevel := cfg.LogLevel
 	if logLevel == "" {
 		logLevel = "info"
@@ -145,6 +150,17 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 		),
 
 		huh.NewGroup(
+			huh.NewSelect[string]().
+				Title("Review Language").
+				Description("Language for review output").
+				Options(
+					huh.NewOption("English", "en"),
+					huh.NewOption("Tiếng Việt", "vi"),
+				).
+				Value(&reviewLanguage),
+		),
+
+		huh.NewGroup(
 			huh.NewNote().
 				Title("Logging Settings").
 				Description("Configure logging behavior"),
@@ -211,6 +227,8 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 		}
 	}
 	cfg.IgnoredFiles = ignores
+
+	cfg.ReviewLanguage = reviewLanguage
 
 	cfg.LogLevel = logLevel
 	cfg.LogOutput = logOutput

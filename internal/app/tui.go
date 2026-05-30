@@ -333,7 +333,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.textarea.SetWidth(m.innerWidth() - 4)
 
-		vpHeight := m.innerHeight()
+		// Viewport height must account for border (2), padding (2), and hint (1).
+		// innerHeight() subtracts border (2), so we subtract 3 more (padding 2 + hint 1).
+		vpHeight := m.innerHeight() - 3
+		if vpHeight < 3 {
+			vpHeight = 3
+		}
 		if m.viewportReady {
 			m.viewport.Width = m.innerWidth()
 			m.viewport.Height = vpHeight
@@ -431,11 +436,11 @@ func (m tuiModel) View() string {
 		return ""
 	}
 
-	// styleWindow is pre-computed; only add Width and conditional Height here.
+	// styleWindow is pre-computed; only add Width here.
+	// DO NOT set Height — viewport already has correct height from WindowSizeMsg.
+	// Setting Height on styleWindow causes lipgloss to crop content from the top,
+	// which clips the border's top edge when viewport content exceeds the height.
 	ws := styleWindow.Width(m.width - 2)
-	if m.needsScroll && m.height > 0 {
-		ws = ws.Height(m.height - 2)
-	}
 
 	return ws.Render(inner)
 }

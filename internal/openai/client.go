@@ -32,7 +32,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		cfg: cfg,
 		http: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second,
 		},
 	}
 }
@@ -49,7 +49,8 @@ type chatResp struct {
 			Content string `json:"content"`
 		} `json:"message"`
 		Delta struct {
-			Content string `json:"content"`
+			Content           string `json:"content"`
+			ReasoningContent  string `json:"reasoning_content"`
 		} `json:"delta"`
 	} `json:"choices"`
 	Error *struct {
@@ -59,7 +60,38 @@ type chatResp struct {
 }
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
-	return c.generate(ctx, msgs, temp)
+	return c.generateWithRetry(ctx, msgs, temp, 2)
+}
+
+func (c *Client) generateWithRetry(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64, maxRetries int) (string, error) {
+	var lastErr error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			logger.Info("openai: retry attempt", "attempt", attempt, "max", maxRetries)
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
+		result, err := c.generate(ctx, msgs, temp)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+		errMsg := err.Error()
+		// Don't retry on auth, timeout, or network errors
+		if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "403") ||
+			strings.Contains(errMsg, "context deadline exceeded") ||
+			strings.Contains(errMsg, "deadline exceeded") ||
+			strings.Contains(errMsg, "Client.Timeout") {
+			return "", err
+		}
+	}
+	return "", fmt.Errorf("openai: failed after %d retries: %v", maxRetries, lastErr)
+}
+
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
 }
 
 func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
@@ -113,12 +145,16 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 					} else if chunk.Choices[0].Message.Content != "" {
 						content.WriteString(chunk.Choices[0].Message.Content)
 					}
+					// Skip reasoning_content — it's the model's internal thinking process,
+					// not part of the final output we want to show.
 				}
 			}
 		}
 
 		result := content.String()
 		if result == "" {
+			// Log raw response for debugging empty responses
+			logger.Error("openai: empty streaming response", "raw_response_prefix", truncateString(responseStr, 500))
 			return "", logger.LogError(fmt.Errorf("empty streaming response"), "openai: no content in response")
 		}
 		return result, nil
