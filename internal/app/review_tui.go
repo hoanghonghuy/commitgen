@@ -42,11 +42,12 @@ type reviewModel struct {
 	viewportReady bool
 	needsScroll   bool
 
-	report        string
-	cachedContent string
-	cursor        int
-	err           error
-	quitting      bool
+	report          string
+	cachedContent   string
+	cursor          int
+	err             error
+	quitting        bool
+	switchToSuggest bool // true khi user chọn "Suggest commit message" từ review
 }
 
 type reviewResultMsg struct {
@@ -87,7 +88,7 @@ func (m reviewModel) generateReviewCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 		defer cancel()
 
-		raw, err := m.provider.GenerateCommitMessage(ctx, currentMsgs, m.temp)
+		raw, err := m.provider.Generate(ctx, currentMsgs, m.temp)
 		if err != nil {
 			logger.Error("failed to generate review", "error", err)
 			return reviewResultMsg{err: err}
@@ -129,7 +130,7 @@ func (m reviewModel) buildDoneContent() string {
 	b.WriteString(styleActionTitle.Render("Action"))
 	b.WriteString("\n")
 
-	options := []string{"Regenerate", "Exit"}
+	options := []string{"Suggest commit message", "Regenerate", "Exit"}
 	barStr := styleBar.Render("┃")
 	for i, opt := range options {
 		if m.cursor == i {
@@ -155,10 +156,10 @@ func (m reviewModel) refreshViewport() reviewModel {
 	if m.needsScroll && m.viewportReady {
 		m.viewport.SetContent(content)
 
-	// Auto-scroll to keep cursor action item in view.
-		// Action lines are at the end of content (2 items: Regenerate, Exit):
-		//   cursor=0 → 2nd from end, cursor=1 → last
-		lineFromEnd := 2 - m.cursor
+		// Auto-scroll to keep cursor action item in view.
+		// Action lines are at the end of content (3 items: Suggest, Regenerate, Exit):
+		//   cursor=0 → 3rd from end, cursor=1 → 2nd, cursor=2 → last
+		lineFromEnd := 3 - m.cursor
 		cursorLine := totalLines - 1 - lineFromEnd
 
 		viewTop := m.viewport.YOffset
@@ -190,7 +191,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m = m.refreshViewport()
 				}
 			case "down", "j":
-				if m.cursor < 1 {
+				if m.cursor < 2 {
 					m.cursor++
 					m = m.refreshViewport()
 				}
@@ -204,12 +205,16 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				switch m.cursor {
-				case 0:
+				case 0: // Suggest commit message
+					m.switchToSuggest = true
+					m.quitting = true
+					return m, tea.Quit
+				case 1: // Regenerate
 					m.state = reviewStateAnalyzing
 					m.report = ""
 					m.cachedContent = ""
 					return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
-				case 1:
+				case 2: // Exit
 					m.quitting = true
 					return m, tea.Quit
 				}

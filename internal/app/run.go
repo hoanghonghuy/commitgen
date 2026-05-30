@@ -143,6 +143,24 @@ func Run(ctx context.Context, cfg Config) error {
 			if m.err != nil {
 				return logger.LogError(m.err, "review operation failed")
 			}
+			// User selected "Suggest commit message" from review mode
+			if m.switchToSuggest {
+				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
+				p := tea.NewProgram(
+					newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile),
+					tea.WithAltScreen(),
+					tea.WithMouseCellMotion(),
+				)
+				suggestModel, err := p.Run()
+				if err != nil {
+					return logger.LogError(err, "TUI execution failed")
+				}
+				if sm, ok := suggestModel.(tuiModel); ok {
+					if sm.err != nil {
+						return logger.LogError(sm.err, "TUI operation failed")
+					}
+				}
+			}
 		}
 		return nil
 
