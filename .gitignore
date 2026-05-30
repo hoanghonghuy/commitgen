@@ -40,3 +40,5 @@ go.work
 build_error.txt
 
 .roo
+.claude
+AGENTS.md
