@@ -1,14 +1,13 @@
 package anthropic
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/hoanghonghuy/commitgen/internal/httpx"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -17,6 +16,8 @@ type Config struct {
 	APIKey string
 	Model  string
 }
+
+const anthropicMaxTokens = 1024
 
 type Client struct {
 	apiKey string
@@ -28,7 +29,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		apiKey: cfg.APIKey,
 		model:  cfg.Model,
-		client: &http.Client{},
+		client: &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -88,38 +89,19 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	reqBody := messageRequest{
 		Model:     c.model,
 		Messages:  anthropicMsgs,
-		MaxTokens: 1024,
+		MaxTokens: anthropicMaxTokens,
 		System:    strings.TrimSpace(systemPrompt),
 	}
 
-	b, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("marshal request: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://api.anthropic.com/v1/messages", bytes.NewReader(b))
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("content-type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", logger.LogError(err, "anthropic: request failed")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		logger.Error("anthropic: API error", "status", resp.StatusCode, "body", string(body))
-		return "", fmt.Errorf("anthropic API error (status %d): %s", resp.StatusCode, string(body))
+	headers := map[string]string{
+		"x-api-key":         c.apiKey,
+		"anthropic-version": "2023-06-01",
+		"content-type":      "application/json",
 	}
 
 	var msgResp messageResponse
-	if err := json.NewDecoder(resp.Body).Decode(&msgResp); err != nil {
-		return "", logger.LogError(err, "anthropic: decode error")
+	if err := httpx.DoJSONRequest(ctx, c.client, "POST", "https://api.anthropic.com/v1/messages", headers, reqBody, &msgResp); err != nil {
+		return "", logger.LogError(err, "anthropic: request failed")
 	}
 
 	if len(msgResp.Content) == 0 {

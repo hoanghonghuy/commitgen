@@ -1,14 +1,13 @@
 package ollama
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
+	"time"
 
+	"github.com/hoanghonghuy/commitgen/internal/httpx"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -34,7 +33,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		baseURL: baseURL,
 		model:   cfg.Model,
-		client:  &http.Client{},
+		client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -95,33 +94,14 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		},
 	}
 
-	b, err := json.Marshal(reqBody)
-	if err != nil {
-		return "", fmt.Errorf("marshal request: %w", err)
-	}
-
 	url := fmt.Sprintf("%s/api/chat", c.baseURL)
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(b))
-	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.client.Do(req)
-	if err != nil {
-		return "", logger.LogError(err, "ollama: request failed", "url", url)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		logger.Error("ollama: API error", "status", resp.StatusCode, "body", string(body))
-		return "", fmt.Errorf("ollama API error (status %d): %s", resp.StatusCode, string(body))
+	headers := map[string]string{
+		"Content-Type": "application/json",
 	}
 
 	var chatResp chatResponse
-	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
-		return "", logger.LogError(err, "ollama: decode error")
+	if err := httpx.DoJSONRequest(ctx, c.client, "POST", url, headers, reqBody, &chatResp); err != nil {
+		return "", logger.LogError(err, "ollama: request failed", "url", url)
 	}
 
 	return chatResp.Message.Content, nil

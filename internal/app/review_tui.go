@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -143,6 +142,10 @@ const (
 	reviewStateCopied
 )
 
+const (
+	reviewActionCount = 3 // number of options in review action menu
+)
+
 type reviewModel struct {
 	state  reviewState
 	width  int
@@ -163,7 +166,7 @@ type reviewModel struct {
 	cursor          int
 	err             error
 	quitting        bool
-	switchToSuggest bool // true khi user chọn "Suggest commit message" từ review
+	switchToSuggest bool // true when user selects "Suggest commit message" from review
 }
 
 type reviewResultMsg struct {
@@ -175,11 +178,9 @@ type reviewResultMsg struct {
 type reviewCopyDoneMsg struct{}
 
 func newReviewModel(provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration) reviewModel {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = styleSelected
+	s := newSpinnerModel()
 
-	vp := viewport.New(80, 20)
+	vp := newDefaultViewport(80, 20)
 
 	return reviewModel{
 		state:         reviewStateAnalyzing,
@@ -222,19 +223,11 @@ func (m reviewModel) generateReviewCmd() tea.Cmd {
 }
 
 func (m reviewModel) innerWidth() int {
-	w := m.width - 4
-	if w < 10 {
-		w = 10
-	}
-	return w
+	return calcInnerWidth(m.width)
 }
 
 func (m reviewModel) innerHeight() int {
-	h := m.height - 2
-	if h < 3 {
-		h = 3
-	}
-	return h
+	return calcInnerHeight(m.height)
 }
 
 func (m reviewModel) buildDoneContent() string {
@@ -299,13 +292,9 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "y", "Y":
 				if m.report != "" {
 					// Copy plain report text to clipboard
-					if err := clipboard.WriteAll(m.report); err != nil {
-						logger.Error("failed to copy to clipboard", "error", err)
-					} else {
+					if cmd := clipboardCopyCmd(m.report, reviewCopyDoneMsg{}); cmd != nil {
 						m.state = reviewStateCopied
-						return m, tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
-							return reviewCopyDoneMsg{}
-						})
+						return m, cmd
 					}
 				}
 			case "up", "k":
@@ -314,7 +303,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m = m.refreshViewport()
 				}
 			case "down", "j":
-				if m.cursor < 2 {
+				if m.cursor < reviewActionCount-1 {
 					m.cursor++
 					m = m.refreshViewport()
 				}
@@ -415,15 +404,7 @@ func (m reviewModel) View() string {
 			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render("Error: "+m.err.Error()))
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
-			var hint string
-			switch {
-			case m.viewport.AtTop():
-				hint = fmt.Sprintf(" ↓ PgDn/Scroll  %d%%  |  y Copy ", pct)
-			case m.viewport.AtBottom():
-				hint = fmt.Sprintf(" ↑ PgUp/Scroll  %d%%  |  y Copy ", pct)
-			default:
-				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%%  |  y Copy ", pct)
-			}
+			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else if m.cachedContent != "" {
 			inner = m.cachedContent

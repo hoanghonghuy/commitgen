@@ -37,13 +37,13 @@ func New(cfg Config) *Client {
 	}
 }
 
-type chatReq struct {
+type chatRequest struct {
 	Model       string                       `json:"model"`
 	Messages    []vscodeprompt.OpenAIMessage `json:"messages"`
 	Temperature float64                      `json:"temperature,omitempty"`
 }
 
-type chatResp struct {
+type chatResponse struct {
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -100,13 +100,19 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
 	url := base + "/chat/completions"
 
-	payload, _ := json.Marshal(chatReq{
+	payload, err := json.Marshal(chatRequest{
 		Model:       c.cfg.Model,
 		Messages:    oaiMsgs,
 		Temperature: temp,
 	})
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
 
-	httpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if strings.TrimSpace(c.cfg.APIKey) != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
@@ -134,7 +140,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 			}
 			if strings.HasPrefix(line, "data: ") {
 				jsonStr := strings.TrimPrefix(line, "data: ")
-				var chunk chatResp
+				var chunk chatResponse
 				if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
 					continue
 				}
@@ -161,7 +167,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	}
 
 	// Non-streaming response
-	var out chatResp
+	var out chatResponse
 	if err := json.Unmarshal(b, &out); err != nil {
 		logger.Error("openai: decode error", "error", err, "response", string(b))
 		return "", fmt.Errorf("decode error: %v\nraw: %s", err, string(b))

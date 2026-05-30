@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -45,12 +44,16 @@ func msgContentStyle(width int) lipgloss.Style {
 type tuiState int
 
 const (
-	stateGenerating tuiState = iota // AI đang tạo commit message
-	stateCommitting                 // Đang thực hiện git commit
+	stateGenerating tuiState = iota // AI is generating commit message
+	stateCommitting                 // Performing git commit
 	stateConfirm
 	stateEditing
 	stateDone
 	stateCopied
+)
+
+const (
+	confirmActionCount = 4 // number of options in confirm menu
 )
 
 type tuiModel struct {
@@ -72,7 +75,7 @@ type tuiModel struct {
 	textarea      textarea.Model
 	viewport      viewport.Model
 	viewportReady bool
-	needsScroll   bool // true khi content vượt quá inner height
+	needsScroll   bool // true when content exceeds inner height
 
 	// Data
 	commitMsg     string
@@ -95,9 +98,7 @@ type commitDoneMsg struct {
 }
 
 func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string) tuiModel {
-	s := spinner.New()
-	s.Spinner = spinner.Dot
-	s.Style = styleSelected // reuse pre-computed style
+	s := newSpinnerModel()
 
 	ta := textarea.New()
 	ta.Placeholder = "Enter commit message..."
@@ -106,7 +107,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 	ta.SetHeight(5)
 
 	// Initialize viewport with default size
-	vp := viewport.New(80, 20)
+	vp := newDefaultViewport(80, 20)
 
 	return tuiModel{
 		state:         stateGenerating,
@@ -179,22 +180,14 @@ func (m tuiModel) commitCmd() tea.Cmd {
 	}
 }
 
-// innerWidth returns usable width inside the outer border+padding (border=2, padding=2 → 4 total).
+// innerWidth returns usable width inside the outer border+padding.
 func (m tuiModel) innerWidth() int {
-	w := m.width - 4
-	if w < 10 {
-		w = 10
-	}
-	return w
+	return calcInnerWidth(m.width)
 }
 
-// innerHeight returns usable height inside the outer border (border top+bottom = 2).
+// innerHeight returns usable height inside the outer border.
 func (m tuiModel) innerHeight() int {
-	h := m.height - 2
-	if h < 3 {
-		h = 3
-	}
-	return h
+	return calcInnerHeight(m.height)
 }
 
 // countLines counts the number of terminal lines in s.
@@ -250,8 +243,8 @@ func (m tuiModel) refreshViewport() tuiModel {
 
 		// Auto-scroll to keep cursor action item in view.
 		// Action lines are at the end of content:
-		//   cursor=0 → 4th from end, cursor=1 → 3rd, cursor=2 → 2nd, cursor=3 → last
-		lineFromEnd := 4 - m.cursor
+		//   cursor=0 → last option, cursor=max → first action item
+		lineFromEnd := confirmActionCount - m.cursor
 		cursorLine := totalLines - 1 - lineFromEnd // 0-indexed
 
 		viewTop := m.viewport.YOffset
@@ -279,13 +272,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch msg.String() {
 			case "y", "Y":
 				if m.commitMsg != "" {
-					if err := clipboard.WriteAll(m.commitMsg); err != nil {
-						logger.Error("failed to copy to clipboard", "error", err)
-					} else {
+					if cmd := clipboardCopyCmd(m.commitMsg, copyDoneMsg{}); cmd != nil {
 						m.state = stateCopied
-						return m, tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
-							return copyDoneMsg{}
-						})
+						return m, cmd
 					}
 				}
 			case "up", "k":
@@ -294,7 +283,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m = m.refreshViewport()
 				}
 			case "down", "j":
-				if m.cursor < 3 {
+				if m.cursor < confirmActionCount-1 {
 					m.cursor++
 					m = m.refreshViewport()
 				}
@@ -416,15 +405,7 @@ func (m tuiModel) View() string {
 		if m.needsScroll && m.viewportReady {
 			// Content overflows → viewport (content already set in Update via refreshViewport).
 			pct := int(m.viewport.ScrollPercent() * 100)
-			var hint string
-			switch {
-			case m.viewport.AtTop():
-				hint = fmt.Sprintf(" ↓ PgDn/Scroll  %d%%  |  y Copy ", pct)
-			case m.viewport.AtBottom():
-				hint = fmt.Sprintf(" ↑ PgUp/Scroll  %d%%  |  y Copy ", pct)
-			default:
-				hint = fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%%  |  y Copy ", pct)
-			}
+			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else {
 			// Content fits — use cached content built in Update (zero allocations here).

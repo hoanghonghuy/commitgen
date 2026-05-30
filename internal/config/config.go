@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 )
 
+// FileConfig holds the application configuration loaded from a JSON file.
 type FileConfig struct {
 	BaseURL  string `json:"base_url"`
 	APIKey   string `json:"api_key"` // OpenAI Key
@@ -36,6 +37,7 @@ type FileConfig struct {
 	LogFile   string `json:"log_file,omitempty"`   // path to log file
 }
 
+// Load reads configuration from the given path, or from ~/.commitgen.json if path is empty.
 func Load(path string) (FileConfig, error) {
 	var cfg FileConfig
 	if path == "" {
@@ -60,6 +62,7 @@ func Load(path string) (FileConfig, error) {
 	return cfg, nil
 }
 
+// Save writes configuration to the given path, or to ~/.commitgen.json if path is empty.
 func Save(cfg FileConfig, path string) error {
 	if path == "" {
 		home, err := os.UserHomeDir()
@@ -77,6 +80,7 @@ func Save(cfg FileConfig, path string) error {
 	return os.WriteFile(path, b, 0644)
 }
 
+// ResolveString returns the first non-empty value from flag, env, file, or default.
 func ResolveString(flagVal, envVal, fileVal, defVal string) string {
 	if flagVal != "" {
 		return flagVal
@@ -90,6 +94,7 @@ func ResolveString(flagVal, envVal, fileVal, defVal string) string {
 	return defVal
 }
 
+// ResolveInt returns the flag value if set, file value if non-nil, or default.
 func ResolveInt(flagVal int, flagSet bool, fileVal *int, defVal int) int {
 	if flagSet {
 		return flagVal
@@ -100,6 +105,7 @@ func ResolveInt(flagVal int, flagSet bool, fileVal *int, defVal int) int {
 	return defVal
 }
 
+// ResolveBool returns the flag value if set, file value if non-nil, or default.
 func ResolveBool(flagVal bool, flagSet bool, fileVal *bool, defVal bool) bool {
 	if flagSet {
 		return flagVal
@@ -110,6 +116,7 @@ func ResolveBool(flagVal bool, flagSet bool, fileVal *bool, defVal bool) bool {
 	return defVal
 }
 
+// ResolveFloat returns the flag value if set, file value if non-nil, or default.
 func ResolveFloat(flagVal float64, flagSet bool, fileVal *float64, defVal float64) float64 {
 	if flagSet {
 		return flagVal

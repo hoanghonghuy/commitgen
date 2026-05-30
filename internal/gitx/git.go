@@ -12,11 +12,13 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
 
+// StagedChange represents a single staged file change with its diff.
 type StagedChange struct {
 	Path string
 	Diff string
 }
 
+// Git runs a git command in the given repository root and returns its stdout.
 func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...)
 	var stdout, stderr bytes.Buffer
@@ -34,6 +36,7 @@ func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+// CurrentBranch returns the name of the current git branch.
 func CurrentBranch(ctx context.Context, repoRoot string) (string, error) {
 	out, err := Git(ctx, repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
@@ -42,6 +45,7 @@ func CurrentBranch(ctx context.Context, repoRoot string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// GitConfig returns the value of a git config key.
 func GitConfig(ctx context.Context, repoRoot, key string) (string, error) {
 	out, err := Git(ctx, repoRoot, "config", "--get", key)
 	if err != nil {
@@ -50,6 +54,7 @@ func GitConfig(ctx context.Context, repoRoot, key string) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// RecentCommits returns the last n commit messages from the repository.
 func RecentCommits(ctx context.Context, repoRoot string, n int) ([]string, error) {
 	if n <= 0 {
 		return nil, nil
@@ -61,6 +66,7 @@ func RecentCommits(ctx context.Context, repoRoot string, n int) ([]string, error
 	return splitNonEmptyLines(out), nil
 }
 
+// RecentCommitsByAuthor returns the last n commit messages from the specified author.
 func RecentCommitsByAuthor(ctx context.Context, repoRoot string, n int, author string) ([]string, error) {
 	if n <= 0 || strings.TrimSpace(author) == "" {
 		return nil, nil
@@ -72,6 +78,7 @@ func RecentCommitsByAuthor(ctx context.Context, repoRoot string, n int, author s
 	return splitNonEmptyLines(out), nil
 }
 
+// StagedChanges returns staged changes, limited to maxFiles entries.
 func StagedChanges(ctx context.Context, repoRoot string, maxFiles int) ([]StagedChange, error) {
 	if maxFiles <= 0 {
 		maxFiles = 10
@@ -93,6 +100,7 @@ func StagedChanges(ctx context.Context, repoRoot string, maxFiles int) ([]Staged
 	return out, nil
 }
 
+// OriginalFileAtHEAD returns the content of a file at HEAD.
 func OriginalFileAtHEAD(ctx context.Context, repoRoot, relPath string) (string, error) {
 	spec := "HEAD:" + relPath
 	out, err := Git(ctx, repoRoot, "show", spec)
@@ -102,6 +110,7 @@ func OriginalFileAtHEAD(ctx context.Context, repoRoot, relPath string) (string, 
 	return out, nil
 }
 
+// ReadWorkingTreeFile reads a file from the working tree.
 func ReadWorkingTreeFile(repoRoot, relPath string) (string, error) {
 	p := filepath.Join(repoRoot, relPath)
 	b, err := os.ReadFile(p)
@@ -111,6 +120,7 @@ func ReadWorkingTreeFile(repoRoot, relPath string) (string, error) {
 	return string(b), nil
 }
 
+// Commit creates a git commit with the given message.
 func Commit(ctx context.Context, repoRoot, message string) error {
 	msg := strings.TrimSpace(message)
 	if msg == "" {

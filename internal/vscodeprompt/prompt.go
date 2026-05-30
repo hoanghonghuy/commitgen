@@ -103,7 +103,6 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 	}
 }
 
-// This is copied to match the prompt you dumped from VS Code (including policy lines).
 func defaultReviewPromptTemplate() string {
 	return "" +
 		"You are an AI code reviewer helping a software developer evaluate staged git changes before committing.\n" +

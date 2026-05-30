@@ -3,9 +3,11 @@ package vscodeprompt
 import (
 	"fmt"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
+// BuildAttachment builds a numbered, line-numbered attachment string for a file, optionally summarized.
 func BuildAttachment(repoRoot, relPath, content string, summarize bool) string {
 	base := filepath.Base(relPath)
 	abs := filepath.Join(repoRoot, relPath)
@@ -35,7 +37,7 @@ func BuildAttachment(repoRoot, relPath, content string, summarize bool) string {
 	for k := range kept {
 		keys = append(keys, k)
 	}
-	sortInts(keys)
+	sort.Ints(keys)
 
 	for _, ln := range keys {
 		b.WriteString(fmt.Sprintf("%*d: %s\n", width, ln, kept[ln]))
@@ -226,15 +228,5 @@ func filepathCommentLine(rel, abs string) string {
 		return fmt.Sprintf("# filepath: %s\n", abs)
 	default:
 		return fmt.Sprintf("// filepath: %s\n", abs)
-	}
-}
-
-func sortInts(a []int) {
-	for i := 1; i < len(a); i++ {
-		j := i
-		for j > 0 && a[j-1] > a[j] {
-			a[j-1], a[j] = a[j], a[j-1]
-			j--
-		}
 	}
 }

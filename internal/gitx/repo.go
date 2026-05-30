@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+// ResolveRepoRoot finds the git repository root, starting from repoArg or the current directory.
 func ResolveRepoRoot(ctx context.Context, repoArg string) (string, error) {
 	if strings.TrimSpace(repoArg) != "" {
 		p, err := filepath.Abs(repoArg)
@@ -62,6 +63,7 @@ func exists(p string) bool {
 	return err == nil
 }
 
+// RepoNameFromRoot returns the directory name of the repository root.
 func RepoNameFromRoot(repoRoot string) string {
 	return filepath.Base(repoRoot)
 }
