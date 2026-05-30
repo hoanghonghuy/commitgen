@@ -44,8 +44,8 @@ func msgContentStyle(width int) lipgloss.Style {
 type tuiState int
 
 const (
-	stateGenerating  tuiState = iota // AI đang tạo commit message
-	stateCommitting                  // Đang thực hiện git commit
+	stateGenerating tuiState = iota // AI đang tạo commit message
+	stateCommitting                 // Đang thực hiện git commit
 	stateConfirm
 	stateEditing
 	stateDone
@@ -73,11 +73,11 @@ type tuiModel struct {
 	needsScroll   bool // true khi content vượt quá inner height
 
 	// Data
-	commitMsg      string
-	cachedContent  string // built once in Update, read in View — avoids per-frame rebuild
-	cursor         int
-	err            error
-	quitting       bool
+	commitMsg     string
+	cachedContent string // built once in Update, read in View — avoids per-frame rebuild
+	cursor        int
+	err           error
+	quitting      bool
 }
 
 type commitResultMsg struct {
@@ -104,20 +104,20 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 	vp := viewport.New(80, 20)
 
 	return tuiModel{
-		state:        stateGenerating,
-		provider:     provider,
-		initialMsgs:  msgs,
-		temp:         temp,
-		timeout:      timeout,
-		conventional: conventional,
-		hookFile:     hookFile,
-		repoRoot:     repoRoot,
-		spinner:      s,
-		textarea:     ta,
-		viewport:     vp,
+		state:         stateGenerating,
+		provider:      provider,
+		initialMsgs:   msgs,
+		temp:          temp,
+		timeout:       timeout,
+		conventional:  conventional,
+		hookFile:      hookFile,
+		repoRoot:      repoRoot,
+		spinner:       s,
+		textarea:      ta,
+		viewport:      vp,
 		viewportReady: true, // Mark as ready immediately
-		width:        80,
-		height:       24,
+		width:         80,
+		height:        24,
 	}
 }
 
@@ -143,7 +143,7 @@ func (m tuiModel) generateCommitCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 		defer cancel()
 
-		raw, err := m.provider.GenerateCommitMessage(ctx, currentMsgs, m.temp)
+		raw, err := m.provider.Generate(ctx, currentMsgs, m.temp)
 		if err != nil {
 			logger.Error("failed to generate commit message", "error", err)
 			return commitResultMsg{err: err}

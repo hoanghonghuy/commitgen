@@ -5,8 +5,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"path/filepath"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -17,13 +17,13 @@ import (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | dump-prompt | config | install-hook | uninstall-hook)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | dump-prompt | config | install-hook | uninstall-hook)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
 	modelFlag := flag.String("model", "", "AI model name")
 	providerFlag := flag.String("provider", "", "AI provider (openai | ollama | anthropic | gemini)")
-	
+
 	anthropicKeyFlag := flag.String("anthropic-key", "", "Anthropic API key")
 	geminiKeyFlag := flag.String("gemini-key", "", "Gemini API key")
 
@@ -32,12 +32,12 @@ func main() {
 	summarizeFlag := flag.Bool("summarize", false, "Summarize file content")
 	tempFlag := flag.Float64("temp", 0, "LLM temperature")
 	conventionalFlag := flag.Bool("conventional", false, "Enforce conventional commits")
-	
+
 	hookFlag := flag.String("hook", "", "Path to commit message file (used by git hook)")
 	dumpOutFlag := flag.String("dump-out", "", "Output path for dump-prompt")
 	instructionsFlag := flag.String("instructions", "", "Path to custom instructions file")
 	configPathFlag := flag.String("config", "", "Path to config file")
-	
+
 	logLevelFlag := flag.String("log-level", "", "Log level (debug, info, warn, error)")
 	logOutputFlag := flag.String("log-output", "", "Log output (stdout, stderr, file, both)")
 	logFileFlag := flag.String("log-file", "", "Log file path")
@@ -49,7 +49,7 @@ func main() {
 	if flag.NArg() > 0 {
 		posCmd := flag.Arg(0)
 		switch posCmd {
-		case "suggest", "dump-prompt", "config", "install-hook", "uninstall-hook":
+		case "suggest", "review", "dump-prompt", "config", "install-hook", "uninstall-hook":
 			cmd = posCmd
 		}
 	}
@@ -62,13 +62,13 @@ func main() {
 
 	// 3. Resolve final config (Flag > Env > File > Default)
 	cfg := app.Config{
-		Command:      cmd,
-		RepoArg:      *repoFlag,
-		BaseURL:      config.ResolveString(*baseURLFlag, os.Getenv("COMMITAI_BASE_URL"), fileCfg.BaseURL, ""),
-		APIKey:       config.ResolveString(*apiKeyFlag, os.Getenv("COMMITAI_API_KEY"), fileCfg.APIKey, ""),
-		Model:        config.ResolveString(*modelFlag, os.Getenv("COMMITAI_MODEL"), fileCfg.Model, "gpt-4o"),
-		Provider:     config.ResolveString(*providerFlag, os.Getenv("COMMITAI_PROVIDER"), fileCfg.Provider, "openai"),
-		
+		Command:  cmd,
+		RepoArg:  *repoFlag,
+		BaseURL:  config.ResolveString(*baseURLFlag, os.Getenv("COMMITAI_BASE_URL"), fileCfg.BaseURL, ""),
+		APIKey:   config.ResolveString(*apiKeyFlag, os.Getenv("COMMITAI_API_KEY"), fileCfg.APIKey, ""),
+		Model:    config.ResolveString(*modelFlag, os.Getenv("COMMITAI_MODEL"), fileCfg.Model, "gpt-4o"),
+		Provider: config.ResolveString(*providerFlag, os.Getenv("COMMITAI_PROVIDER"), fileCfg.Provider, "openai"),
+
 		AnthropicKey: config.ResolveString(*anthropicKeyFlag, os.Getenv("COMMITAI_ANTHROPIC_KEY"), fileCfg.AnthropicKey, ""),
 		GeminiKey:    config.ResolveString(*geminiKeyFlag, os.Getenv("COMMITAI_GEMINI_KEY"), fileCfg.GeminiKey, ""),
 
@@ -77,14 +77,14 @@ func main() {
 		Summarize:    config.ResolveBool(*summarizeFlag, isFlagSet("summarize"), fileCfg.Summarize, true),
 		Temperature:  config.ResolveFloat(*tempFlag, isFlagSet("temp"), fileCfg.Temperature, 0.7),
 		Conventional: config.ResolveBool(*conventionalFlag, isFlagSet("conventional"), fileCfg.Conventional, true),
-		
+
 		HookFile:         *hookFlag,
 		DumpOutPath:      *dumpOutFlag,
 		InstructionsPath: *instructionsFlag,
 		ConfigPath:       *configPathFlag,
 		Timeout:          60 * time.Second,
 		PromptTemplate:   fileCfg.PromptTemplate,
-		
+
 		LogLevel:  config.ResolveString(*logLevelFlag, os.Getenv("COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
 		LogOutput: config.ResolveString(*logOutputFlag, os.Getenv("COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
 		LogFile:   config.ResolveString(*logFileFlag, os.Getenv("COMMITAI_LOG_FILE"), fileCfg.LogFile, ""),

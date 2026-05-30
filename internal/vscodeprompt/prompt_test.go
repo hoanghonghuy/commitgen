@@ -5,6 +5,29 @@ import (
 	"testing"
 )
 
+func TestBuildReviewMessages_DefaultTemplate(t *testing.T) {
+	data := Data{
+		RepositoryName: "test-repo",
+		BranchName:     "main",
+		Changes:        []Change{{Path: "main.go", Diff: "package main"}},
+	}
+
+	msgs := BuildReviewMessages(data)
+
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	if msgs[0].Role != 0 {
+		t.Errorf("expected role 0 (system), got %d", msgs[0].Role)
+	}
+	if !strings.Contains(msgs[0].Content[0].Text, "AI code reviewer") {
+		t.Error("default review system prompt not found")
+	}
+	if !strings.Contains(msgs[1].Content[0].Text, "Review the staged CODE CHANGES") {
+		t.Error("review user reminder not found")
+	}
+}
+
 func TestBuildVSCodeMessages_DefaultTemplate(t *testing.T) {
 	data := Data{
 		RepositoryName: "test-repo",

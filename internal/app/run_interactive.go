@@ -27,7 +27,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	summarize := cfg.Summarize
 	conventional := cfg.Conventional
 	ignoredFilesStr := strings.Join(cfg.IgnoredFiles, ", ")
-	
+
 	logLevel := cfg.LogLevel
 	if logLevel == "" {
 		logLevel = "info"
@@ -143,12 +143,12 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 				Description("Glob patterns (comma separated)").
 				Value(&ignoredFilesStr),
 		),
-		
+
 		huh.NewGroup(
 			huh.NewNote().
 				Title("Logging Settings").
 				Description("Configure logging behavior"),
-			
+
 			huh.NewSelect[string]().
 				Title("Log Level").
 				Options(
@@ -158,7 +158,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 					huh.NewOption("Error", "error"),
 				).
 				Value(&logLevel),
-			
+
 			huh.NewSelect[string]().
 				Title("Log Output").
 				Options(
@@ -167,7 +167,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 					huh.NewOption("Both console and file", "both"),
 				).
 				Value(&logOutput),
-			
+
 			huh.NewInput().
 				Title("Log File Path").
 				Description("Leave empty for default (~/.commitgen/commitgen.log)").
@@ -211,11 +211,10 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 		}
 	}
 	cfg.IgnoredFiles = ignores
-	
+
 	cfg.LogLevel = logLevel
 	cfg.LogOutput = logOutput
 	cfg.LogFile = logFile
 
 	return cfg, true, nil
 }
-

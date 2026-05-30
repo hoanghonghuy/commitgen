@@ -46,6 +46,31 @@ type Data struct {
 	SystemPromptTemplate string
 }
 
+func BuildReviewMessages(d Data) []VSCodeMessage {
+	tmpl := d.SystemPromptTemplate
+	if tmpl == "" {
+		tmpl = defaultReviewPromptTemplate()
+	}
+
+	systemText := renderTemplate(tmpl, d)
+	userText := buildReviewUserText(d)
+
+	return []VSCodeMessage{
+		{
+			Role: RoleSystem,
+			Content: []VSCodeContentPart{
+				{Type: 1, Text: systemText},
+			},
+		},
+		{
+			Role: RoleUser,
+			Content: []VSCodeContentPart{
+				{Type: 1, Text: userText},
+			},
+		},
+	}
+}
+
 func BuildVSCodeMessages(d Data) []VSCodeMessage {
 	tmpl := d.SystemPromptTemplate
 	if tmpl == "" {
@@ -78,6 +103,30 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 }
 
 // This is copied to match the prompt you dumped from VS Code (including policy lines).
+func defaultReviewPromptTemplate() string {
+	return "" +
+		"You are an AI code reviewer helping a software developer evaluate staged git changes before committing.\n" +
+		"You provide thorough, actionable feedback across multiple review dimensions.\n\n" +
+		"# Review dimensions:\n" +
+		"1. **Code Quality** — Identify potential bugs, logic errors, anti-patterns, missing error handling, and security concerns.\n" +
+		"2. **Commit Scope** — Assess whether the staged changes are too broad or unrelated; suggest splitting into smaller commits if needed.\n" +
+		"3. **Convention & Style** — Check naming, formatting, coding standards, and best practices consistent with the repository.\n" +
+		"4. **Impact Analysis** — Describe which parts of the system are affected and whether there are breaking changes or risks.\n\n" +
+		"# Instructions:\n" +
+		"- Analyze the CODE CHANGES using the ORIGINAL CODE for context.\n" +
+		"- Use RECENT REPOSITORY COMMITS to infer project conventions.\n" +
+		"- Be specific: reference file paths and line numbers when possible.\n" +
+		"- Prioritize actionable findings over generic praise.\n" +
+		"- If a dimension has no issues, briefly state that.\n\n" +
+		"# Output format:\n" +
+		"Return your review as markdown with exactly these sections:\n" +
+		"## Code Quality\n" +
+		"## Commit Scope\n" +
+		"## Convention & Style\n" +
+		"## Impact Analysis\n\n" +
+		"Wrap the entire review in a single markdown ```markdown code block. Do not include any text outside the code block.\n"
+}
+
 func defaultSystemPromptTemplate() string {
 	return "" +
 		"You are an AI programming assistant, helping a software developer to come with the best git commit message for their code changes.\n" +
@@ -114,20 +163,93 @@ func renderTemplate(tmplStr string, d Data) string {
 	return buf.String()
 }
 
+func buildReviewUserText(d Data) string {
+	var b strings.Builder
+
+	b.WriteString("<repository-context>\n")
+	b.WriteString("# REPOSITORY DETAILS:\n")
+	b.WriteString("Repository name: ")
+	b.WriteString(d.RepositoryName)
+	b.WriteString("\n")
+	b.WriteString("Branch name: ")
+	b.WriteString(d.BranchName)
+	b.WriteString("\n\n")
+	b.WriteString("</repository-context>\n")
+
+	if len(d.RecentUserCommits) > 0 {
+		b.WriteString("<user-commits>\n")
+		b.WriteString("# RECENT USER COMMITS (For reference only):\n")
+		for _, c := range d.RecentUserCommits {
+			b.WriteString("- ")
+			b.WriteString(c)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n</user-commits>\n")
+	}
+
+	if len(d.RecentRepoCommits) > 0 {
+		b.WriteString("<recent-commits>\n")
+		b.WriteString("# RECENT REPOSITORY COMMITS (For reference only):\n")
+		for _, c := range d.RecentRepoCommits {
+			b.WriteString("- ")
+			b.WriteString(c)
+			b.WriteString("\n")
+		}
+		b.WriteString("\n</recent-commits>\n")
+	}
+
+	b.WriteString("<changes>\n")
+	for _, ch := range d.Changes {
+		b.WriteString("<original-code>\n")
+		b.WriteString("# ORIGINAL CODE:\n")
+		b.WriteString(ch.OriginalCode)
+		b.WriteString("\n</original-code>\n")
+
+		b.WriteString("<code-changes>\n")
+		b.WriteString("# CODE CHANGES:\n")
+		b.WriteString("```diff\n")
+		b.WriteString(strings.TrimRight(ch.Diff, "\n"))
+		b.WriteString("\n```\n")
+		b.WriteString("</code-changes>\n")
+	}
+	b.WriteString("\n</changes>\n")
+
+	b.WriteString("<reminder>\n")
+	b.WriteString("Review the staged CODE CHANGES above across all four dimensions.\n")
+	b.WriteString("Return ONLY a single markdown code block with the review report.\n")
+	b.WriteString("```markdown\n## Code Quality\n...\n```\n")
+	b.WriteString("</reminder>\n")
+
+	b.WriteString("<custom-instructions>\n")
+	if strings.TrimSpace(d.CustomInstructions) != "" {
+		b.WriteString(strings.TrimRight(d.CustomInstructions, "\n"))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n</custom-instructions>\n")
+
+	return b.String()
+}
+
 func buildUserText(d Data) string {
 	var b strings.Builder
 
 	b.WriteString("<repository-context>\n")
 	b.WriteString("# REPOSITORY DETAILS:\n")
-	b.WriteString("Repository name: " + d.RepositoryName + "\n")
-	b.WriteString("Branch name: " + d.BranchName + "\n\n")
+	b.WriteString("Repository name: ")
+	b.WriteString(d.RepositoryName)
+	b.WriteString("\n")
+	b.WriteString("Branch name: ")
+	b.WriteString(d.BranchName)
+	b.WriteString("\n\n")
 	b.WriteString("</repository-context>\n")
 
 	if len(d.RecentUserCommits) > 0 {
 		b.WriteString("<user-commits>\n")
 		b.WriteString("# RECENT USER COMMITS (For reference only, do not copy!):\n")
 		for _, c := range d.RecentUserCommits {
-			b.WriteString("- " + c + "\n")
+			b.WriteString("- ")
+			b.WriteString(c)
+			b.WriteString("\n")
 		}
 		b.WriteString("\n</user-commits>\n")
 	}
@@ -136,7 +258,9 @@ func buildUserText(d Data) string {
 		b.WriteString("<recent-commits>\n")
 		b.WriteString("# RECENT REPOSITORY COMMITS (For reference only, do not copy!):\n")
 		for _, c := range d.RecentRepoCommits {
-			b.WriteString("- " + c + "\n")
+			b.WriteString("- ")
+			b.WriteString(c)
+			b.WriteString("\n")
 		}
 		b.WriteString("\n</recent-commits>\n")
 	}
@@ -177,11 +301,14 @@ func buildUserText(d Data) string {
 func ToOpenAIMessages(vs []VSCodeMessage) []OpenAIMessage {
 	out := make([]OpenAIMessage, 0, len(vs))
 	for _, m := range vs {
-		role := "user"
-		if m.Role == RoleSystem {
+		var role string
+		switch m.Role {
+		case RoleSystem:
 			role = "system"
-		} else if m.Role == RoleAssistant {
+		case RoleAssistant:
 			role = "assistant"
+		default:
+			role = "user"
 		}
 		var sb strings.Builder
 		for _, p := range m.Content {
@@ -209,4 +336,3 @@ func ExtractOneTextCodeBlock(s string) (string, bool) {
 	// Current caller behavior: if !ok, it prints warning and usage raw s.
 	return s, false
 }
-

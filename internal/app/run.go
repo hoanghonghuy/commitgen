@@ -95,54 +95,17 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	data.SystemPromptTemplate = cfg.PromptTemplate
 
-	vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-
 	switch cfg.Command {
 	case "dump-prompt":
+		vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
 		return dumpPrompt(vscodeMsgs, cfg.DumpOutPath)
 
 	case "suggest":
-		if strings.TrimSpace(cfg.Model) == "" {
-			return logger.LogError(errors.New("missing model"), "model not configured")
+		provider, err := newProvider(cfg)
+		if err != nil {
+			return err
 		}
-
-		var provider ai.Provider
-
-		switch strings.ToLower(cfg.Provider) {
-		case "ollama":
-			provider = ollama.New(ollama.Config{
-				BaseURL: cfg.BaseURL,
-				Model:   cfg.Model,
-			})
-		case "anthropic":
-			if cfg.AnthropicKey == "" {
-				return logger.LogError(errors.New("missing anthropic key"), "anthropic key not configured")
-			}
-			provider = anthropic.New(anthropic.Config{
-				APIKey: cfg.AnthropicKey,
-				Model:  cfg.Model,
-			})
-		case "gemini":
-			if cfg.GeminiKey == "" {
-				return logger.LogError(errors.New("missing gemini key"), "gemini key not configured")
-			}
-			provider = gemini.New(gemini.Config{
-				APIKey: cfg.GeminiKey,
-				Model:  cfg.Model,
-			})
-		case "openai", "":
-			if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
-				return logger.LogError(errors.New("missing api key"), "openai api key not configured")
-			}
-			provider = openai.New(openai.Config{
-				BaseURL: cfg.BaseURL,
-				APIKey:  cfg.APIKey,
-				Model:   cfg.Model,
-			})
-		default:
-			return logger.LogError(fmt.Errorf("unknown provider: %s", cfg.Provider), "unsupported provider")
-		}
-
+		vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
 		p := tea.NewProgram(
 			newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile),
 			tea.WithAltScreen(),
@@ -152,8 +115,7 @@ func Run(ctx context.Context, cfg Config) error {
 		if err != nil {
 			return logger.LogError(err, "TUI execution failed")
 		}
-		
-		// Check if TUI model has error
+
 		if m, ok := finalModel.(tuiModel); ok {
 			if m.err != nil {
 				return logger.LogError(m.err, "TUI operation failed")
@@ -161,8 +123,72 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 		return nil
 
+	case "review":
+		provider, err := newProvider(cfg)
+		if err != nil {
+			return err
+		}
+		reviewMsgs := vscodeprompt.BuildReviewMessages(data)
+		p := tea.NewProgram(
+			newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout),
+			tea.WithAltScreen(),
+			tea.WithMouseCellMotion(),
+		)
+		finalModel, err := p.Run()
+		if err != nil {
+			return logger.LogError(err, "review TUI execution failed")
+		}
+
+		if m, ok := finalModel.(reviewModel); ok {
+			if m.err != nil {
+				return logger.LogError(m.err, "review operation failed")
+			}
+		}
+		return nil
+
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use: suggest | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
+	}
+}
+
+func newProvider(cfg Config) (ai.Provider, error) {
+	if strings.TrimSpace(cfg.Model) == "" {
+		return nil, logger.LogError(errors.New("missing model"), "model not configured")
+	}
+
+	switch strings.ToLower(cfg.Provider) {
+	case "ollama":
+		return ollama.New(ollama.Config{
+			BaseURL: cfg.BaseURL,
+			Model:   cfg.Model,
+		}), nil
+	case "anthropic":
+		if cfg.AnthropicKey == "" {
+			return nil, logger.LogError(errors.New("missing anthropic key"), "anthropic key not configured")
+		}
+		return anthropic.New(anthropic.Config{
+			APIKey: cfg.AnthropicKey,
+			Model:  cfg.Model,
+		}), nil
+	case "gemini":
+		if cfg.GeminiKey == "" {
+			return nil, logger.LogError(errors.New("missing gemini key"), "gemini key not configured")
+		}
+		return gemini.New(gemini.Config{
+			APIKey: cfg.GeminiKey,
+			Model:  cfg.Model,
+		}), nil
+	case "openai", "":
+		if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
+			return nil, logger.LogError(errors.New("missing api key"), "openai api key not configured")
+		}
+		return openai.New(openai.Config{
+			BaseURL: cfg.BaseURL,
+			APIKey:  cfg.APIKey,
+			Model:   cfg.Model,
+		}), nil
+	default:
+		return nil, logger.LogError(fmt.Errorf("unknown provider: %s", cfg.Provider), "unsupported provider")
 	}
 }
 
@@ -265,7 +291,6 @@ func shouldIgnore(pattern string, ignores []string) bool {
 	return false
 }
 
-
 func runConfig(cfg Config) error {
 	newCfg, ok, err := runConfigInteractive(cfg)
 	if err != nil {
@@ -291,7 +316,7 @@ func runConfig(cfg Config) error {
 		AnthropicKey:   newCfg.AnthropicKey,
 		GeminiKey:      newCfg.GeminiKey,
 		PromptTemplate: newCfg.PromptTemplate,
-		
+
 		LogLevel:  newCfg.LogLevel,
 		LogOutput: newCfg.LogOutput,
 		LogFile:   newCfg.LogFile,

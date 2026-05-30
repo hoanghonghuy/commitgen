@@ -59,7 +59,11 @@ type chatResponse struct {
 	Done    bool    `json:"done"`
 }
 
-func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+	return c.generate(ctx, msgs, temperature)
+}
+
+func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
 	// Convert VSCode messages to Ollama format
 	ollamaMsgs := make([]message, 0, len(msgs))
 	for _, m := range msgs {

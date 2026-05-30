@@ -58,7 +58,11 @@ type chatResp struct {
 	} `json:"error,omitempty"`
 }
 
-func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
+func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
+	return c.generate(ctx, msgs, temp)
+}
+
+func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
 	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
 
 	base := strings.TrimRight(c.cfg.BaseURL, "/")
@@ -83,14 +87,14 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 	defer resp.Body.Close()
 
 	b, _ := io.ReadAll(resp.Body)
-	
+
 	// Check if response is streaming (SSE format)
 	responseStr := string(b)
 	if strings.HasPrefix(responseStr, "data: ") {
 		// Parse streaming response
 		lines := strings.Split(responseStr, "\n")
 		var content strings.Builder
-		
+
 		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" || line == "data: [DONE]" {
@@ -112,14 +116,14 @@ func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.
 				}
 			}
 		}
-		
+
 		result := content.String()
 		if result == "" {
 			return "", logger.LogError(fmt.Errorf("empty streaming response"), "openai: no content in response")
 		}
 		return result, nil
 	}
-	
+
 	// Non-streaming response
 	var out chatResp
 	if err := json.Unmarshal(b, &out); err != nil {

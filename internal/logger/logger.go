@@ -24,9 +24,9 @@ type Config struct {
 
 func Init(cfg Config) error {
 	level := parseLevel(cfg.Level)
-	
+
 	var writers []io.Writer
-	
+
 	// Setup outputs
 	switch strings.ToLower(cfg.Output) {
 	case "stdout":
@@ -57,9 +57,9 @@ func Init(cfg Config) error {
 	default:
 		writers = append(writers, os.Stderr)
 	}
-	
+
 	writer := io.MultiWriter(writers...)
-	
+
 	var handler slog.Handler
 	opts := &slog.HandlerOptions{
 		Level: level,
@@ -71,16 +71,16 @@ func Init(cfg Config) error {
 			return a
 		},
 	}
-	
+
 	if cfg.JSONFormat {
 		handler = slog.NewJSONHandler(writer, opts)
 	} else {
 		handler = slog.NewTextHandler(writer, opts)
 	}
-	
+
 	defaultLogger = slog.New(handler)
 	slog.SetDefault(defaultLogger)
-	
+
 	return nil
 }
 
@@ -121,7 +121,7 @@ func openLogFile(path string) (*os.File, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
-	
+
 	// Open in append mode
 	return os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 }

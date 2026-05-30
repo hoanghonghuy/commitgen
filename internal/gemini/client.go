@@ -59,7 +59,11 @@ type candidate struct {
 	Content content `json:"content"`
 }
 
-func (c *Client) GenerateCommitMessage(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+	return c.generate(ctx, msgs, temperature)
+}
+
+func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
 	// Gemini: System instructions are separate. Roles are "user" and "model".
 
 	var systemParts []part
