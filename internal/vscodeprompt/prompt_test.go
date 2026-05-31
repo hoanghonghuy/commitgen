@@ -12,7 +12,7 @@ func TestBuildReviewMessages_DefaultTemplate(t *testing.T) {
 		Changes:        []Change{{Path: "main.go", Diff: "package main"}},
 	}
 
-	msgs := BuildReviewMessages(data)
+	msgs := BuildReviewMessages(data, false)
 
 	if len(msgs) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(msgs))

@@ -130,9 +130,9 @@ func Run(ctx context.Context, cfg Config) error {
 		if err != nil {
 			return err
 		}
-		reviewMsgs := vscodeprompt.BuildReviewMessages(data)
+		reviewMsgs := vscodeprompt.BuildReviewMessages(data, true)
 		p := tea.NewProgram(
-			newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout),
+			newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true),
 			tea.WithAltScreen(),
 			tea.WithMouseCellMotion(),
 		)

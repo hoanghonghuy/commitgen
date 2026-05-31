@@ -47,10 +47,14 @@ type Data struct {
 	ReviewLanguage       string // en, vi — dùng cho review mode
 }
 
-func BuildReviewMessages(d Data) []VSCodeMessage {
+func BuildReviewMessages(d Data, quickMode bool) []VSCodeMessage {
 	tmpl := d.SystemPromptTemplate
 	if tmpl == "" {
-		tmpl = defaultReviewPromptTemplate()
+		if quickMode {
+			tmpl = defaultQuickReviewPromptTemplate()
+		} else {
+			tmpl = defaultFullReviewPromptTemplate()
+		}
 	}
 
 	systemText := renderTemplate(tmpl, d)
@@ -103,7 +107,11 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 	}
 }
 
-func defaultReviewPromptTemplate() string {
+func defaultFullReviewPromptTemplate() string {
+	return DefaultFullReviewPromptTemplate()
+}
+
+func DefaultFullReviewPromptTemplate() string {
 	return "" +
 		"You are an AI code reviewer helping a software developer evaluate staged git changes before committing.\n" +
 		"You provide concise, focused, and actionable feedback.\n\n" +
@@ -125,6 +133,28 @@ func defaultReviewPromptTemplate() string {
 		"## Convention & Style\n" +
 		"## Impact Analysis\n\n" +
 		"Wrap the entire review in a single markdown ```markdown code block. Do not include any text outside the code block.\n"
+}
+
+func defaultQuickReviewPromptTemplate() string {
+	return "" +
+		"You are an AI code reviewer helping a developer quickly evaluate staged git changes before committing.\n" +
+		"Perform a concise review and produce ONLY a brief conclusion output.\n\n" +
+		"# Instructions:\n" +
+		"- Read the staged diff carefully.\n" +
+		"- Focus on identifying any serious issues or risks.\n" +
+		"- Be concise: keep each point to 1 sentence.\n" +
+		"- Write in the configured response language.\n\n" +
+		"# Output format:\n" +
+		"Return ONLY a ## Conclusion section with this exact structure:\n" +
+		"**Verdict: APPROVE** or **Verdict: REQUEST CHANGES** or **Verdict: APPROVE WITH SUGGESTIONS**\n" +
+		"### Overall Assessment\n" +
+		"<!-- 1 sentence: what changed and is it safe? -->\n" +
+		"### Risk Level: LOW or MEDIUM or HIGH\n" +
+		"<!-- Brief justification -->\n" +
+		"### Key Improvements\n" +
+		"<!-- 3-5 bullets max -->\n" +
+		"- \n" +
+		"Wrap the entire output in a single markdown ```markdown code block. Do not include any text outside the code block.\n"
 }
 
 func defaultSystemPromptTemplate() string {
@@ -216,8 +246,9 @@ func buildReviewUserText(d Data) string {
 
 	b.WriteString("<reminder>\n")
 	b.WriteString("Review the staged CODE CHANGES above across all four dimensions.\n")
-	b.WriteString("Return ONLY a single markdown code block with the review report.\n")
-	b.WriteString("```markdown\n## Code Quality\n...\n```\n")
+	b.WriteString("Include a ## Conclusion section with Verdict, Overall Assessment, Risk Level, Key Improvements, Remaining Concerns, and Recommendation.\n")
+	b.WriteString("Return ONLY a single markdown code block with the full review report.\n")
+	b.WriteString("```markdown\n## Code Quality\n...\n## Conclusion\n...\n```\n")
 	b.WriteString("</reminder>\n")
 
 	b.WriteString("<custom-instructions>\n")
