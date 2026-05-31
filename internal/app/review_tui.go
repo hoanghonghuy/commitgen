@@ -18,14 +18,14 @@ import (
 )
 
 var (
-	styleReviewTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2)
-	styleReviewError = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).MarginLeft(2)
-	styleReviewH2    = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).MarginLeft(2) // yellow bold for ## headings
-	styleReviewH3    = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true).MarginLeft(4) // cyan for ### headings
-	styleReviewCode  = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Padding(0, 1)             // bright cyan for inline code
-	styleReviewQuote = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).MarginLeft(2)            // gray for > blockquote
-	styleReviewRule  = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))                           // dim for ---
-	styleReviewBold  = lipgloss.NewStyle().Bold(true)
+	styleReviewTitle  = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).MarginLeft(2)
+	styleReviewError  = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).MarginLeft(2)
+	styleReviewH2     = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true).MarginLeft(2) // yellow bold for ## headings
+	styleReviewH3     = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true).MarginLeft(4) // cyan for ### headings
+	styleReviewCode   = lipgloss.NewStyle().Foreground(lipgloss.Color("81")).Padding(0, 1)            // bright cyan for inline code
+	styleReviewQuote  = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).MarginLeft(2)           // gray for > blockquote
+	styleReviewRule   = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))                         // dim for ---
+	styleReviewBold   = lipgloss.NewStyle().Bold(true)
 	styleReviewBorder = lipgloss.NewStyle().
 				Border(lipgloss.ThickBorder(), false, false, false, true).
 				BorderForeground(lipgloss.Color("237")).
@@ -257,9 +257,9 @@ func (m reviewModel) buildDoneContent() string {
 
 	var options []string
 	if m.isQuickMode {
-		options = []string{"Xem chi tiet", "Suggest commit message", "Regenerate", "Exit"}
+		options = []string{"View Details", "Suggest Commit Message", "Regenerate", "Exit"}
 	} else {
-		options = []string{"Suggest commit message", "Regenerate", "Exit"}
+		options = []string{"Suggest Commit Message", "Regenerate", "Exit"}
 	}
 	barStr := styleBar.Render("┃")
 	for i, opt := range options {
@@ -322,7 +322,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				switch m.cursor {
-				case 0: // Xem chi tiet → full review
+				case 0: // View Details → full review
 					m.isQuickMode = false
 					m.state = reviewStateAnalyzing
 					m.report = ""
