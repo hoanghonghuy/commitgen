@@ -301,6 +301,14 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.state {
 		case reviewStateQuickDone:
 			switch msg.String() {
+			case "y", "Y":
+				if m.report != "" {
+					// Copy plain report text to clipboard
+					if cmd := clipboardCopyCmd(m.report, reviewCopyDoneMsg{}); cmd != nil {
+						m.state = reviewStateCopied
+						return m, cmd
+					}
+				}
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
