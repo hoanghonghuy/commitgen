@@ -17,16 +17,20 @@ type Config struct {
 }
 
 type Client struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey  string
+	model   string
+	baseURL string
+	client  *http.Client
 }
+
+const defaultGeminiBaseURL = "https://generativelanguage.googleapis.com/v1beta/models"
 
 func New(cfg Config) *Client {
 	return &Client{
-		apiKey: cfg.APIKey,
-		model:  cfg.Model,
-		client: &http.Client{Timeout: 120 * time.Second},
+		apiKey:  cfg.APIKey,
+		model:   cfg.Model,
+		baseURL: defaultGeminiBaseURL,
+		client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -105,7 +109,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		}
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", c.model, c.apiKey)
+	url := fmt.Sprintf("%s/%s:generateContent?key=%s", c.baseURL, c.model, c.apiKey)
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}

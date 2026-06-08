@@ -19,17 +19,21 @@ type Config struct {
 
 const anthropicMaxTokens = 4096
 
+const defaultAnthropicURL = "https://api.anthropic.com/v1/messages"
+
 type Client struct {
-	apiKey string
-	model  string
-	client *http.Client
+	apiKey  string
+	model   string
+	baseURL string
+	client  *http.Client
 }
 
 func New(cfg Config) *Client {
 	return &Client{
-		apiKey: cfg.APIKey,
-		model:  cfg.Model,
-		client: &http.Client{Timeout: 120 * time.Second},
+		apiKey:  cfg.APIKey,
+		model:   cfg.Model,
+		baseURL: defaultAnthropicURL,
+		client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
 
@@ -102,7 +106,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	}
 
 	var msgResp messageResponse
-	if err := httpx.DoJSONRequest(ctx, c.client, "POST", "https://api.anthropic.com/v1/messages", headers, reqBody, &msgResp); err != nil {
+	if err := httpx.DoJSONRequest(ctx, c.client, "POST", c.baseURL, headers, reqBody, &msgResp); err != nil {
 		return "", logger.LogError(err, "anthropic: request failed")
 	}
 
