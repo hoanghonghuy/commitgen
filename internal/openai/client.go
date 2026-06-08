@@ -126,6 +126,19 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 
 	b, _ := io.ReadAll(resp.Body)
 
+	// Check HTTP status before parsing. Non-2xx responses (auth errors, rate
+	// limits, gateway errors) may not be valid JSON, so handle them explicitly
+	// and include the status code in the error (retry logic relies on it).
+	if resp.StatusCode != http.StatusOK {
+		var out chatResponse
+		if jsonErr := json.Unmarshal(b, &out); jsonErr == nil && out.Error != nil {
+			logger.Error("openai: API error", "status", resp.StatusCode, "message", out.Error.Message, "type", out.Error.Type)
+			return "", fmt.Errorf("openai: API error (status %d): %s (%s)", resp.StatusCode, out.Error.Message, out.Error.Type)
+		}
+		logger.Error("openai: API error", "status", resp.StatusCode, "body", truncateString(string(b), 500))
+		return "", fmt.Errorf("openai: API error (status %d): %s", resp.StatusCode, truncateString(string(b), 500))
+	}
+
 	// Check if response is streaming (SSE format)
 	responseStr := string(b)
 	if strings.HasPrefix(responseStr, "data: ") {

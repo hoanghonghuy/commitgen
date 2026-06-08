@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -85,6 +86,7 @@ func main() {
 		Timeout:          120 * time.Second,
 		PromptTemplate:   fileCfg.PromptTemplate,
 		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
+		IgnoredFiles:     fileCfg.IgnoredFiles,
 
 		LogLevel:  config.ResolveString(*logLevelFlag, os.Getenv("COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
 		LogOutput: config.ResolveString(*logOutputFlag, os.Getenv("COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
@@ -124,20 +126,30 @@ func main() {
 		logger.Error("application error", "error", err)
 		// Also print to stderr so user sees it immediately
 		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Check logs at: %s\n", getLogPath(cfg.LogFile))
+		if logPath := resolveLogFilePath(cfg.LogFile, cfg.LogOutput); logPath != "" {
+			fmt.Fprintf(os.Stderr, "Check logs at: %s\n", logPath)
+		}
 		os.Exit(1)
 	}
 }
 
-func getLogPath(configPath string) string {
-	if configPath != "" {
-		return configPath
+// resolveLogFilePath returns the path of the log file that errors are written to,
+// or "" when logging is not directed to a file (e.g. stderr/stdout only).
+func resolveLogFilePath(logFile, logOutput string) string {
+	switch strings.ToLower(logOutput) {
+	case "file", "both":
+		if logFile != "" {
+			return logFile
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "commitgen.log"
+		}
+		return filepath.Join(home, ".commitgen", "commitgen.log")
+	default:
+		// stdout / stderr / unknown → no file written
+		return ""
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "commitgen.log"
-	}
-	return filepath.Join(home, ".commitgen", "commitgen.log")
 }
 
 func isFlagSet(name string) bool {

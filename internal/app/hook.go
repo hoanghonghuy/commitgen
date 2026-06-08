@@ -1,49 +1,70 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
+
+	"github.com/hoanghonghuy/commitgen/internal/gitx"
 )
 
+// resolveHooksDir returns the absolute path to the repository's git hooks
+// directory, honoring repoArg and supporting worktrees/submodules via
+// `git rev-parse --git-path hooks`.
+func resolveHooksDir(ctx context.Context, repoArg string) (string, error) {
+	repoRoot, err := gitx.ResolveRepoRoot(ctx, repoArg)
+	if err != nil {
+		return "", err
+	}
+
+	// `git rev-parse --git-path hooks` resolves the correct hooks directory
+	// even for worktrees and submodules (where .git is a file, not a dir).
+	out, err := gitx.Git(ctx, repoRoot, "rev-parse", "--git-path", "hooks")
+	if err != nil {
+		return "", fmt.Errorf("resolve hooks dir: %w", err)
+	}
+	hooksDir := strings.TrimSpace(out)
+	if hooksDir == "" {
+		return "", fmt.Errorf("could not determine git hooks directory")
+	}
+	if !filepath.IsAbs(hooksDir) {
+		// git returns the path relative to the repo root.
+		hooksDir = filepath.Join(repoRoot, hooksDir)
+	}
+	return hooksDir, nil
+}
+
 // InstallHook installs the prepare-commit-msg hook
-func InstallHook() error {
+func InstallHook(ctx context.Context, repoArg string) error {
 	if runtime.GOOS == "windows" {
 		fmt.Println("Warning: The git hook uses /dev/tty and #!/bin/sh which may not work correctly on Windows.")
 		fmt.Println("Consider running commitgen manually instead of using the hook on Windows.")
 	}
 
-	// 1. Detect .git directory
-	gitDir := ".git"
-	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-		return fmt.Errorf("current directory is not a git repository root (no .git found)")
+	hooksDir, err := resolveHooksDir(ctx, repoArg)
+	if err != nil {
+		return err
 	}
 
-	hooksDir := filepath.Join(gitDir, "hooks")
 	if err := os.MkdirAll(hooksDir, 0755); err != nil {
 		return fmt.Errorf("create hooks dir: %w", err)
 	}
 
 	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
 
-	// 2. Check if hook exists
+	// Don't overwrite an existing hook blindly.
 	if _, err := os.Stat(hookPath); err == nil {
-		// Hook exists. We should not overwrite blindly.
-		// For now, let's error out or ask user (but this is a command).
-		// Let's notify user.
 		return fmt.Errorf("hook %s already exists. Please remove it first", hookPath)
 	}
 
-	// 3. Create hook script
-	// We need the absolute path to commitgen binary?
-	// Or assume it's in PATH.
-	// Since we are running the binary, we can try `os.Executable()`.
+	// Resolve the absolute path to the commitgen binary so the hook can call it.
 	exe, err := os.Executable()
 	if err != nil {
-		exe = "commitgen" // fallback
+		exe = "commitgen" // fallback: assume it's in PATH
 	} else {
-		// Evaluate symlinks if needed, but absolute path is safer.
 		exe, _ = filepath.Abs(exe)
 	}
 
@@ -87,13 +108,13 @@ echo "commitgen is analyzing changes..."
 }
 
 // UninstallHook removes the prepare-commit-msg hook
-func UninstallHook() error {
-	gitDir := ".git"
-	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-		return fmt.Errorf("current directory is not a git repository root (no .git found)")
+func UninstallHook(ctx context.Context, repoArg string) error {
+	hooksDir, err := resolveHooksDir(ctx, repoArg)
+	if err != nil {
+		return err
 	}
 
-	hookPath := filepath.Join(gitDir, "hooks", "prepare-commit-msg")
+	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
 
 	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
 		fmt.Println("Hook is not installed.")

@@ -17,7 +17,7 @@ type Config struct {
 	Model  string
 }
 
-const anthropicMaxTokens = 1024
+const anthropicMaxTokens = 4096
 
 type Client struct {
 	apiKey string
@@ -34,10 +34,11 @@ func New(cfg Config) *Client {
 }
 
 type messageRequest struct {
-	Model     string    `json:"model"`
-	Messages  []message `json:"messages"`
-	MaxTokens int       `json:"max_tokens"`
-	System    string    `json:"system,omitempty"`
+	Model       string    `json:"model"`
+	Messages    []message `json:"messages"`
+	MaxTokens   int       `json:"max_tokens"`
+	System      string    `json:"system,omitempty"`
+	Temperature float64   `json:"temperature,omitempty"`
 }
 
 type message struct {
@@ -87,10 +88,11 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	}
 
 	reqBody := messageRequest{
-		Model:     c.model,
-		Messages:  anthropicMsgs,
-		MaxTokens: anthropicMaxTokens,
-		System:    strings.TrimSpace(systemPrompt),
+		Model:       c.model,
+		Messages:    anthropicMsgs,
+		MaxTokens:   anthropicMaxTokens,
+		System:      strings.TrimSpace(systemPrompt),
+		Temperature: temperature,
 	}
 
 	headers := map[string]string{

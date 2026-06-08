@@ -32,9 +32,9 @@ func New(cfg Config) *Client {
 
 // Minimal Gemini API structs
 type generateContentRequest struct {
-	Contents          []content        `json:"contents"`
-	SystemInstruction *content         `json:"systemInstruction,omitempty"`
-	GenerationConfig  generationConfig `json:"generationConfig,omitempty"`
+	Contents          []content         `json:"contents"`
+	SystemInstruction *content          `json:"systemInstruction,omitempty"`
+	GenerationConfig  *generationConfig `json:"generationConfig,omitempty"`
 }
 
 type content struct {
@@ -94,7 +94,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 
 	reqBody := generateContentRequest{
 		Contents: contents,
-		GenerationConfig: generationConfig{
+		GenerationConfig: &generationConfig{
 			Temperature: temperature,
 		},
 	}

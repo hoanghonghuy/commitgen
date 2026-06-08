@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/anthropic"
@@ -69,10 +70,10 @@ func Run(ctx context.Context, cfg Config) error {
 		return runConfig(cfg)
 	}
 	if cfg.Command == "install-hook" {
-		return InstallHook()
+		return InstallHook(ctx, cfg.RepoArg)
 	}
 	if cfg.Command == "uninstall-hook" {
-		return UninstallHook()
+		return UninstallHook(ctx, cfg.RepoArg)
 	}
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
@@ -259,7 +260,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		// For simplicity, let's treat huge diffs as truncated.
 		const maxDiffSize = 100 * 1024 // 100KB
 		if len(ch.Diff) > maxDiffSize {
-			ch.Diff = ch.Diff[:2000] + "\n...[Diff truncated due to size]..."
+			ch.Diff = truncateUTF8(ch.Diff, 2000) + "\n...[Diff truncated due to size]..."
 		}
 
 		orig, _ := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
@@ -270,7 +271,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 
 		// If original content is massive, truncate it too
 		if len(orig) > maxDiffSize {
-			orig = orig[:2000] + "\n...[Content truncated due to size]..."
+			orig = truncateUTF8(orig, 2000) + "\n...[Content truncated due to size]..."
 		}
 
 		attachment := vscodeprompt.BuildAttachment(repoRoot, ch.Path, orig, summarize)
@@ -294,6 +295,19 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		CustomInstructions:   customInstructions, // inserted into <custom-instructions>
 		SummarizeAttachments: summarize,
 	}, nil
+}
+
+// truncateUTF8 returns the first maxBytes bytes of s without splitting a
+// multi-byte UTF-8 rune. The result is at most maxBytes bytes and always valid UTF-8.
+func truncateUTF8(s string, maxBytes int) string {
+	if len(s) <= maxBytes {
+		return s
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
 }
 
 func shouldIgnore(pattern string, ignores []string) bool {
@@ -346,7 +360,15 @@ func runConfig(cfg Config) error {
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
 		return logger.LogError(err, "failed to save config", "path", cfg.ConfigPath)
 	}
-	fmt.Printf("\nConfiguration saved to %s\n", cfg.ConfigPath)
+	savedPath := cfg.ConfigPath
+	if savedPath == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			savedPath = filepath.Join(home, ".commitgen.json")
+		} else {
+			savedPath = "~/.commitgen.json"
+		}
+	}
+	fmt.Printf("\nConfiguration saved to %s\n", savedPath)
 	return nil
 }
 

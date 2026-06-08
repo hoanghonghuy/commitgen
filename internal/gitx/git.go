@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/hoanghonghuy/commitgen/internal/logger"
@@ -59,7 +60,7 @@ func RecentCommits(ctx context.Context, repoRoot string, n int) ([]string, error
 	if n <= 0 {
 		return nil, nil
 	}
-	out, err := Git(ctx, repoRoot, "log", fmt.Sprintf("-n %d", n), "--pretty=format:%s")
+	out, err := Git(ctx, repoRoot, "log", "-n", strconv.Itoa(n), "--pretty=format:%s")
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func RecentCommitsByAuthor(ctx context.Context, repoRoot string, n int, author s
 	if n <= 0 || strings.TrimSpace(author) == "" {
 		return nil, nil
 	}
-	out, err := Git(ctx, repoRoot, "log", fmt.Sprintf("-n %d", n), fmt.Sprintf("--author=%s", author), "--pretty=format:%s")
+	out, err := Git(ctx, repoRoot, "log", "-n", strconv.Itoa(n), fmt.Sprintf("--author=%s", author), "--pretty=format:%s")
 	if err != nil {
 		return nil, err
 	}
