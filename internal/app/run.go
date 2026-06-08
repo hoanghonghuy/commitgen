@@ -24,6 +24,14 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// runTUI runs a Bubble Tea program for the given model and returns the final
+// model. It is a package-level variable so tests can substitute a stub instead
+// of launching a real terminal program.
+var runTUI = func(model tea.Model) (tea.Model, error) {
+	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	return p.Run()
+}
+
 type Config struct {
 	Command string
 
@@ -109,12 +117,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-		p := tea.NewProgram(
-			newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile),
-			tea.WithAltScreen(),
-			tea.WithMouseCellMotion(),
-		)
-		finalModel, err := p.Run()
+		finalModel, err := runTUI(newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile))
 		if err != nil {
 			return logger.LogError(err, "TUI execution failed")
 		}
@@ -132,12 +135,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		reviewMsgs := vscodeprompt.BuildReviewMessages(data, true)
-		p := tea.NewProgram(
-			newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true),
-			tea.WithAltScreen(),
-			tea.WithMouseCellMotion(),
-		)
-		finalModel, err := p.Run()
+		finalModel, err := runTUI(newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true))
 		if err != nil {
 			return logger.LogError(err, "review TUI execution failed")
 		}
@@ -149,12 +147,7 @@ func Run(ctx context.Context, cfg Config) error {
 			// User selected "Suggest commit message" from review mode
 			if m.switchToSuggest {
 				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-				p := tea.NewProgram(
-					newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile),
-					tea.WithAltScreen(),
-					tea.WithMouseCellMotion(),
-				)
-				suggestModel, err := p.Run()
+				suggestModel, err := runTUI(newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile))
 				if err != nil {
 					return logger.LogError(err, "TUI execution failed")
 				}

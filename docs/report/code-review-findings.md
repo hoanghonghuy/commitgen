@@ -156,11 +156,13 @@ vì làm cấu hình người dùng âm thầm không hoạt động.
 | `internal/vscodeprompt` | 35.9% | 90.0% |
 | `internal/logger` | 52.9% | 86.8% |
 | `internal/gitx` | 0% | 85.6% |
-| `internal/app` | 1.0% | 71.2% |
+| `internal/app` | 1.0% | 77.5% |
 | `cmd/commitgen` | 0% | 25.4% |
-| **Tổng dự án** | **~3%** | **78.0%** |
+| **Tổng dự án** | **~3%** | **81.2%** |
 
 > Lần nâng coverage thứ hai bổ sung: test nhánh home-dir của `config`, `ResolveRepoRoot` từ cwd/subdir của `gitx`, `getDefaultLogPath`/`openLogFile`/`Close` của `logger`, `renderTemplate` lỗi + `summarizeGo` cạnh của `vscodeprompt`, streaming rỗng + retry của `openai`, refactor `resolveCommand` (tách khỏi `main()`), và test `Run()` cho các nhánh không cần TTY (`dump-prompt`, `install-hook`, `uninstall-hook`, lệnh sai, các nhánh lỗi).
+
+> Lần nâng coverage thứ ba (teatest): thêm `github.com/charmbracelet/x/exp/teatest` để chạy trọn vòng lặp chương trình TUI (`Init → Update → View → Quit`) cho cả `tuiModel` và `reviewModel` — gồm các luồng Cancel, Commit-qua-hook, lỗi sinh message, review quick Exit/Suggest/View Details. Đồng thời thêm seam tiêm phụ thuộc `runTUI` (biến package-level, có thể override trong test) để test nhánh `suggest`/`review` của `Run()` mà không cần terminal thật.
 
 ### Loại test đã thêm
 - **Unit test (UT):** `config` (resolve/load/save), `vscodeprompt` (extract code block, summarize Go/Markdown, role mapping, language vi), `logger` (output modes, redaction, JSON), các helper TUI (`calcInnerWidth/Height`, `countLines`, `scrollHintText`, `formatReviewText`, `applyInlineStyles`), `truncateUTF8`, `newProvider`.
@@ -173,7 +175,7 @@ vì làm cấu hình người dùng âm thầm không hoạt động.
 - `anthropic` và `gemini`: thêm field nội bộ `baseURL` (mặc định trỏ tới endpoint thật, **hành vi không đổi**) để test có thể inject `httptest` server. Trước đây URL bị hardcode nên không thể test mà không gọi API thật.
 
 ### Phần chưa phủ (cố ý)
-- `cmd/commitgen` `main()` và `internal/app` `Run()` / `runConfigInteractive()`: mở TUI/form tương tác cần terminal thật (TTY), không phù hợp unit test. Đây là lớp orchestration mỏng; logic lõi bên dưới đã được test.
+- `cmd/commitgen` `main()` và `internal/app` `runConfigInteractive()`: parse cờ toàn cục và form cấu hình tương tác (`huh`) cần terminal thật (TTY), không phù hợp unit test. Logic lõi bên dưới đã được test; vòng lặp TUI chính đã được phủ bằng `teatest`.
 
 ### Về TDD
 TDD (viết test trước khi viết code) là quy trình áp dụng cho **code mới** về sau, không phải việc bổ sung test cho code có sẵn (đó là "retrofit test" như vừa làm). Khuyến nghị: từ giờ với tính năng/bugfix mới, viết test thất bại trước → code cho pass → refactor.
