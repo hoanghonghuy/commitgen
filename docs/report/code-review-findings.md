@@ -151,14 +151,16 @@ vì làm cấu hình người dùng âm thầm không hoạt động.
 | `internal/gemini` | 0% | 100% |
 | `internal/anthropic` | 0% | 95.8% |
 | `internal/httpx` | 0% | 94.7% |
-| `internal/openai` | 0% | 84.4% |
-| `internal/vscodeprompt` | 35.9% | 81.9% |
-| `internal/logger` | 52.9% | 77.9% |
-| `internal/config` | 0% | 77.8% |
-| `internal/gitx` | 0% | 71.1% |
-| `internal/app` | 1.0% | 59.2% |
-| `cmd/commitgen` | 0% | 11.3% |
-| **Tổng dự án** | **~3%** | **67.7%** |
+| `internal/config` | 0% | 91.1% |
+| `internal/openai` | 0% | 89.6% |
+| `internal/vscodeprompt` | 35.9% | 90.0% |
+| `internal/logger` | 52.9% | 86.8% |
+| `internal/gitx` | 0% | 85.6% |
+| `internal/app` | 1.0% | 71.2% |
+| `cmd/commitgen` | 0% | 25.4% |
+| **Tổng dự án** | **~3%** | **78.0%** |
+
+> Lần nâng coverage thứ hai bổ sung: test nhánh home-dir của `config`, `ResolveRepoRoot` từ cwd/subdir của `gitx`, `getDefaultLogPath`/`openLogFile`/`Close` của `logger`, `renderTemplate` lỗi + `summarizeGo` cạnh của `vscodeprompt`, streaming rỗng + retry của `openai`, refactor `resolveCommand` (tách khỏi `main()`), và test `Run()` cho các nhánh không cần TTY (`dump-prompt`, `install-hook`, `uninstall-hook`, lệnh sai, các nhánh lỗi).
 
 ### Loại test đã thêm
 - **Unit test (UT):** `config` (resolve/load/save), `vscodeprompt` (extract code block, summarize Go/Markdown, role mapping, language vi), `logger` (output modes, redaction, JSON), các helper TUI (`calcInnerWidth/Height`, `countLines`, `scrollHintText`, `formatReviewText`, `applyInlineStyles`), `truncateUTF8`, `newProvider`.

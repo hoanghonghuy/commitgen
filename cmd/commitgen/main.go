@@ -46,14 +46,7 @@ func main() {
 	flag.Parse()
 
 	// Support positional commands (e.g., 'commitgen config' instead of 'commitgen -cmd=config')
-	cmd := *cmdFlag
-	if flag.NArg() > 0 {
-		posCmd := flag.Arg(0)
-		switch posCmd {
-		case "suggest", "review", "dump-prompt", "config", "install-hook", "uninstall-hook":
-			cmd = posCmd
-		}
-	}
+	cmd := resolveCommand(*cmdFlag, flag.Args())
 
 	// 2. Load config from file
 	fileCfg, err := config.Load(*configPathFlag)
@@ -131,6 +124,19 @@ func main() {
 		}
 		os.Exit(1)
 	}
+}
+
+// resolveCommand returns the effective command: a recognized positional
+// argument takes precedence over the -cmd flag's default value.
+func resolveCommand(cmdFlag string, args []string) string {
+	cmd := cmdFlag
+	if len(args) > 0 {
+		switch args[0] {
+		case "suggest", "review", "dump-prompt", "config", "install-hook", "uninstall-hook":
+			cmd = args[0]
+		}
+	}
+	return cmd
 }
 
 // resolveLogFilePath returns the path of the log file that errors are written to,
