@@ -65,6 +65,22 @@ func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	return c.generate(ctx, msgs, temperature)
 }
 
+// endpoint returns the chat URL for the configured base URL.
+func (c *Client) endpoint() string {
+	return c.baseURL + "/api/chat"
+}
+
+// buildRequest assembles the chat request payload shared by the blocking and
+// streaming code paths.
+func (c *Client) buildRequest(msgs []vscodeprompt.VSCodeMessage, temperature float64, stream bool) chatRequest {
+	return chatRequest{
+		Model:    c.model,
+		Messages: toOllamaMessages(msgs),
+		Stream:   stream,
+		Options:  options{Temperature: temperature},
+	}
+}
+
 // toOllamaMessages converts VSCode messages to Ollama's chat format.
 func toOllamaMessages(msgs []vscodeprompt.VSCodeMessage) []message {
 	ollamaMsgs := make([]message, 0, len(msgs))
@@ -88,18 +104,12 @@ func toOllamaMessages(msgs []vscodeprompt.VSCodeMessage) []message {
 // GenerateStream streams the completion using Ollama's NDJSON stream, invoking
 // onDelta for each chunk. It returns the full accumulated message.
 func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64, onDelta func(string)) (string, error) {
-	reqBody := chatRequest{
-		Model:    c.model,
-		Messages: toOllamaMessages(msgs),
-		Stream:   true,
-		Options:  options{Temperature: temperature},
-	}
-	payload, err := json.Marshal(reqBody)
+	payload, err := json.Marshal(c.buildRequest(msgs, temperature, true))
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
-	url := fmt.Sprintf("%s/api/chat", c.baseURL)
+	url := c.endpoint()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -145,16 +155,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 }
 
 func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
-	reqBody := chatRequest{
-		Model:    c.model,
-		Messages: toOllamaMessages(msgs),
-		Stream:   false,
-		Options: options{
-			Temperature: temperature,
-		},
-	}
+	reqBody := c.buildRequest(msgs, temperature, false)
 
-	url := fmt.Sprintf("%s/api/chat", c.baseURL)
+	url := c.endpoint()
 	headers := map[string]string{
 		"Content-Type": "application/json",
 	}

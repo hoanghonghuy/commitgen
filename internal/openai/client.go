@@ -66,23 +66,31 @@ func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	return c.generateWithRetry(ctx, msgs, temp, 2)
 }
 
+// endpoint returns the chat completions URL for the configured base URL.
+func (c *Client) endpoint() string {
+	return strings.TrimRight(c.cfg.BaseURL, "/") + "/chat/completions"
+}
+
+// buildRequest assembles the chat completion request payload shared by the
+// blocking and streaming code paths.
+func (c *Client) buildRequest(msgs []vscodeprompt.VSCodeMessage, temp float64, stream bool) chatRequest {
+	return chatRequest{
+		Model:       c.cfg.Model,
+		Messages:    vscodeprompt.ToOpenAIMessages(msgs),
+		Temperature: temp,
+		Stream:      stream,
+	}
+}
+
 // GenerateStream streams the completion using SSE, invoking onDelta for each
 // text chunk as it arrives. It returns the full accumulated message.
 func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64, onDelta func(string)) (string, error) {
-	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
-	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	url := base + "/chat/completions"
-
-	payload, err := json.Marshal(chatRequest{
-		Model:       c.cfg.Model,
-		Messages:    oaiMsgs,
-		Temperature: temp,
-		Stream:      true,
-	})
+	payload, err := json.Marshal(c.buildRequest(msgs, temp, true))
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
+	url := c.endpoint()
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
@@ -200,20 +208,12 @@ func truncateString(s string, maxLen int) string {
 }
 
 func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
-	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
-
-	base := strings.TrimRight(c.cfg.BaseURL, "/")
-	url := base + "/chat/completions"
-
-	payload, err := json.Marshal(chatRequest{
-		Model:       c.cfg.Model,
-		Messages:    oaiMsgs,
-		Temperature: temp,
-	})
+	payload, err := json.Marshal(c.buildRequest(msgs, temp, false))
 	if err != nil {
 		return "", fmt.Errorf("marshal request: %w", err)
 	}
 
+	url := c.endpoint()
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
