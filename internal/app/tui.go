@@ -87,10 +87,20 @@ type tuiModel struct {
 	commitMsg     string
 	cachedContent string // built once in Update, read in View — avoids per-frame rebuild
 	cursor        int
-	regenHint     string   // optional user guidance for regeneration
-	candidates    []string // multiple generated candidates (when count > 1)
+	regenHint     string         // optional user guidance for regeneration
+	candidates    []string       // multiple generated candidates (when count > 1)
+	streamView    string         // accumulated text while streaming
+	streamCh      chan streamEvent // delta channel for streaming providers
 	err           error
 	quitting      bool
+}
+
+// streamEvent carries an incremental streaming update or the final result.
+type streamEvent struct {
+	delta string
+	full  string
+	err   error
+	done  bool
 }
 
 type commitResultMsg struct {
@@ -142,6 +152,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 		viewportReady: true, // Mark as ready immediately
 		width:         80,
 		height:        24,
+		streamCh:      make(chan streamEvent, 256),
 	}
 }
 
@@ -154,7 +165,38 @@ func (m tuiModel) generateCmd() tea.Cmd {
 	if m.count > 1 {
 		return m.generateCandidatesCmd()
 	}
+	// Use streaming when the provider supports it (single-message path only).
+	if sp, ok := m.provider.(ai.StreamProvider); ok && m.streamCh != nil {
+		msgs := m.buildGenMessages()
+		if m.conventional {
+			msgs = append(msgs, conventionalReminder())
+		}
+		return tea.Batch(startStreamCmd(sp, m.streamCh, msgs, m.temp, m.timeout), waitStreamCmd(m.streamCh))
+	}
 	return m.generateCommitCmd()
+}
+
+// startStreamCmd launches the streaming generation in a goroutine, pushing
+// deltas and a final event onto ch.
+func startStreamCmd(sp ai.StreamProvider, ch chan streamEvent, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			defer cancel()
+			full, err := sp.GenerateStream(ctx, msgs, clampTemperature(temp), func(d string) {
+				ch <- streamEvent{delta: d}
+			})
+			ch <- streamEvent{done: true, full: full, err: err}
+		}()
+		return nil
+	}
+}
+
+// waitStreamCmd blocks until the next streaming event is available.
+func waitStreamCmd(ch chan streamEvent) tea.Cmd {
+	return func() tea.Msg {
+		return <-ch
+	}
 }
 
 // buildGenMessages returns the prompt messages including optional regen guidance.
@@ -380,6 +422,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				m.regenHint = strings.TrimSpace(m.hintInput.Value())
 				m.state = stateGenerating
+				m.streamView = ""
 				return m, m.generateCmd()
 			}
 			var cmd tea.Cmd
@@ -456,6 +499,28 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.refreshViewport()
 		return m, nil
 
+	case streamEvent:
+		if msg.done {
+			if msg.err != nil {
+				logger.Error("stream generation failed", "error", msg.err)
+				m.err = msg.err
+				m.state = stateDone
+				return m, tea.Quit
+			}
+			content := msg.full
+			if extracted, ok := vscodeprompt.ExtractOneTextCodeBlock(content); ok {
+				content = extracted
+			}
+			m.commitMsg = content
+			m.streamView = ""
+			m.state = stateConfirm
+			m.cursor = 0
+			m = m.refreshViewport()
+			return m, nil
+		}
+		m.streamView += msg.delta
+		return m, waitStreamCmd(m.streamCh)
+
 	case candidatesMsg:
 		if msg.err != nil {
 			logger.Error("candidate generation failed", "error", msg.err)
@@ -500,7 +565,17 @@ func (m tuiModel) View() string {
 
 	switch m.state {
 	case stateGenerating:
-		inner = fmt.Sprintf("\n %s Generating commit message...\n", m.spinner.View())
+		if strings.TrimSpace(m.streamView) != "" {
+			var b strings.Builder
+			b.WriteString("\n")
+			b.WriteString(styleMsgTitle.Render("Generating commit message…"))
+			b.WriteString("\n")
+			b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.streamView))
+			b.WriteString("\n")
+			inner = b.String()
+		} else {
+			inner = fmt.Sprintf("\n %s Generating commit message...\n", m.spinner.View())
+		}
 
 	case stateCommitting:
 		inner = fmt.Sprintf("\n %s Committing...\n", m.spinner.View())

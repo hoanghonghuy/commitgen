@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -41,6 +42,7 @@ type chatRequest struct {
 	Model       string                       `json:"model"`
 	Messages    []vscodeprompt.OpenAIMessage `json:"messages"`
 	Temperature float64                      `json:"temperature,omitempty"`
+	Stream      bool                         `json:"stream,omitempty"`
 }
 
 type chatResponse struct {
@@ -61,6 +63,85 @@ type chatResponse struct {
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
 	return c.generateWithRetry(ctx, msgs, temp, 2)
+}
+
+// GenerateStream streams the completion using SSE, invoking onDelta for each
+// text chunk as it arrives. It returns the full accumulated message.
+func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64, onDelta func(string)) (string, error) {
+	oaiMsgs := vscodeprompt.ToOpenAIMessages(msgs)
+	base := strings.TrimRight(c.cfg.BaseURL, "/")
+	url := base + "/chat/completions"
+
+	payload, err := json.Marshal(chatRequest{
+		Model:       c.cfg.Model,
+		Messages:    oaiMsgs,
+		Temperature: temp,
+		Stream:      true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Accept", "text/event-stream")
+	if strings.TrimSpace(c.cfg.APIKey) != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+	}
+
+	resp, err := c.http.Do(httpReq)
+	if err != nil {
+		return "", logger.LogError(err, "openai: stream request failed", "url", url)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("openai: API error (status %d): %s", resp.StatusCode, truncateString(string(body), 500))
+	}
+
+	var full strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+		data := strings.TrimPrefix(line, "data: ")
+		if data == "[DONE]" {
+			break
+		}
+		var chunk chatResponse
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if len(chunk.Choices) == 0 {
+			continue
+		}
+		delta := chunk.Choices[0].Delta.Content
+		if delta == "" {
+			delta = chunk.Choices[0].Message.Content
+		}
+		if delta != "" {
+			full.WriteString(delta)
+			if onDelta != nil {
+				onDelta(delta)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", logger.LogError(err, "openai: stream read failed")
+	}
+
+	result := full.String()
+	if result == "" {
+		return "", logger.LogError(fmt.Errorf("empty streaming response"), "openai: no content in stream")
+	}
+	return result, nil
 }
 
 func (c *Client) generateWithRetry(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64, maxRetries int) (string, error) {

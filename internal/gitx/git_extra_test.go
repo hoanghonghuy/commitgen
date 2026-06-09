@@ -77,3 +77,31 @@ func TestReadWorkingTreeFile_Missing(t *testing.T) {
 		t.Error("expected error reading missing working tree file")
 	}
 }
+
+func TestCommitAmend(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	writeFile(t, dir, "f.txt", "1\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "feat: original message")
+
+	// Stage another change and amend.
+	writeFile(t, dir, "f.txt", "2\n")
+	runGit(t, dir, "add", ".")
+	if err := CommitAmend(ctx, dir, "feat: amended message"); err != nil {
+		t.Fatalf("CommitAmend error: %v", err)
+	}
+
+	commits, _ := RecentCommits(ctx, dir, 5)
+	if len(commits) != 1 {
+		t.Errorf("amend should not add a commit, got %d commits: %v", len(commits), commits)
+	}
+	if commits[0] != "feat: amended message" {
+		t.Errorf("amended message = %q", commits[0])
+	}
+
+	// Empty message is rejected.
+	if err := CommitAmend(ctx, dir, "  "); err == nil {
+		t.Error("expected error for empty amend message")
+	}
+}

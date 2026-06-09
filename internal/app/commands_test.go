@@ -1,0 +1,207 @@
+package app
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+// captureStdout redirects os.Stdout for the duration of fn and returns what was written.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	done := make(chan string, 1)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = io.Copy(&buf, r)
+		done <- buf.String()
+	}()
+	fn()
+	_ = w.Close()
+	os.Stdout = orig
+	return <-done
+}
+
+func TestGenerateCommitMessage_ExtractAndConventional(t *testing.T) {
+	got, err := generateCommitMessage(context.Background(), fakeProvider{resp: "```text\nfeat: x\n```"}, baseMsgs(), 0.7, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "feat: x" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestGenerateCommitMessage_Error(t *testing.T) {
+	if _, err := generateCommitMessage(context.Background(), fakeProvider{err: errors.New("boom")}, baseMsgs(), 0.7, false); err == nil {
+		t.Error("expected error")
+	}
+}
+
+func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
+	hookFile := filepath.Join(t.TempDir(), "MSG")
+	cfg := Config{DryRun: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
+	out := captureStdout(t, func() {
+		_ = runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: dry"}, baseMsgs())
+	})
+	if !strings.Contains(out, "feat: dry") {
+		t.Errorf("expected message printed, got %q", out)
+	}
+	if _, err := os.Stat(hookFile); !os.IsNotExist(err) {
+		t.Error("dry-run must not write hook file")
+	}
+}
+
+func TestRunSuggestNonInteractive_PrintWritesHook(t *testing.T) {
+	hookFile := filepath.Join(t.TempDir(), "MSG")
+	cfg := Config{Print: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
+	_ = captureStdout(t, func() {
+		if err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: printed"}, baseMsgs()); err != nil {
+			t.Errorf("error: %v", err)
+		}
+	})
+	b, err := os.ReadFile(hookFile)
+	if err != nil {
+		t.Fatalf("hook file not written: %v", err)
+	}
+	if strings.TrimSpace(string(b)) != "feat: printed" {
+		t.Errorf("hook content = %q", string(b))
+	}
+}
+
+func TestRunSuggestNonInteractive_GenerateError(t *testing.T) {
+	cfg := Config{Print: true, Timeout: time.Second}
+	err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{err: errors.New("down")}, baseMsgs())
+	if err == nil {
+		t.Error("expected generation error")
+	}
+}
+
+func TestProviderLabel(t *testing.T) {
+	if providerLabel("") != "openai" {
+		t.Error("empty should map to openai")
+	}
+	if providerLabel("Anthropic") != "anthropic" {
+		t.Error("should lowercase")
+	}
+}
+
+func TestRunModels_UnsupportedProvider(t *testing.T) {
+	err := runModels(context.Background(), Config{Provider: "anthropic", Model: "claude"})
+	if err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Errorf("expected unsupported error, got %v", err)
+	}
+}
+
+func TestRunModels_Ollama(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"models":[{"name":"llama3"},{"name":"mistral"}]}`))
+	}))
+	defer srv.Close()
+
+	out := captureStdout(t, func() {
+		if err := runModels(context.Background(), Config{Provider: "ollama", BaseURL: srv.URL}); err != nil {
+			t.Errorf("error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "llama3") || !strings.Contains(out, "mistral") {
+		t.Errorf("expected model names, got %q", out)
+	}
+}
+
+func TestRunModels_OpenAI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer k" {
+			t.Errorf("missing auth header")
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"gpt-4o"},{"id":"gpt-3.5"}]}`))
+	}))
+	defer srv.Close()
+
+	out := captureStdout(t, func() {
+		if err := runModels(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k"}); err != nil {
+			t.Errorf("error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "gpt-4o") {
+		t.Errorf("expected models, got %q", out)
+	}
+}
+
+func TestRunPing_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"pong"}}]}`))
+	}))
+	defer srv.Close()
+
+	out := captureStdout(t, func() {
+		if err := runPing(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o", Timeout: 5 * time.Second}); err != nil {
+			t.Errorf("ping error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "OK") {
+		t.Errorf("expected OK, got %q", out)
+	}
+}
+
+func TestRunPing_Failure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
+	}))
+	defer srv.Close()
+
+	err := runPing(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "bad", Model: "gpt-4o", Timeout: 5 * time.Second})
+	if err == nil {
+		t.Error("expected ping failure")
+	}
+}
+
+func TestRunPing_MissingProvider(t *testing.T) {
+	if err := runPing(context.Background(), Config{Provider: "openai", Model: "gpt-4o"}); err == nil {
+		t.Error("expected error when no credentials configured")
+	}
+}
+
+func TestRun_ConfigPathAndShow(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("HOME", home)
+
+	pathOut := captureStdout(t, func() {
+		if err := Run(context.Background(), Config{Command: "config", ConfigAction: "path"}); err != nil {
+			t.Errorf("config path error: %v", err)
+		}
+	})
+	if !strings.Contains(filepath.ToSlash(pathOut), ".commitgen.json") {
+		t.Errorf("config path output = %q", pathOut)
+	}
+
+	showOut := captureStdout(t, func() {
+		if err := Run(context.Background(), Config{Command: "config", ConfigAction: "show"}); err != nil {
+			t.Errorf("config show error: %v", err)
+		}
+	})
+	if !strings.Contains(showOut, "Config file:") {
+		t.Errorf("config show output = %q", showOut)
+	}
+}
+
+func TestMaskSecret(t *testing.T) {
+	if maskSecret("") != "" {
+		t.Error("empty should stay empty")
+	}
+	if maskSecret("super-secret-key") != "********" {
+		t.Error("non-empty should be masked")
+	}
+}

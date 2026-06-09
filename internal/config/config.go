@@ -168,14 +168,17 @@ func LoadResolved(explicitPath string) (FileConfig, error) {
 }
 
 // findRepoLocalConfig walks up from the current directory looking for a
-// .commitgen.json that is not the global one in the home directory.
+// .commitgen.json that is not the global one in the home directory. The search
+// is bounded at the home directory so it never descends into system paths.
 func findRepoLocalConfig() (string, bool) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", false
 	}
+	homeDir := ""
 	globalPath := ""
 	if home, herr := os.UserHomeDir(); herr == nil {
+		homeDir = home
 		globalPath = filepath.Join(home, ".commitgen.json")
 	}
 	cur := cwd
@@ -185,6 +188,10 @@ func findRepoLocalConfig() (string, bool) {
 			if _, statErr := os.Stat(p); statErr == nil {
 				return p, true
 			}
+		}
+		// Stop once we have inspected the home directory.
+		if homeDir != "" && cur == homeDir {
+			break
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {

@@ -78,3 +78,44 @@ func TestGenerate_ServerError(t *testing.T) {
 		t.Error("expected error for 500 response")
 	}
 }
+
+func TestGenerateStream_CollectsDeltas(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if !req.Stream {
+			t.Error("stream should be true for GenerateStream")
+		}
+		// NDJSON stream of chat responses.
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"chore: "},"done":false}` + "\n" +
+			`{"message":{"role":"assistant","content":"tidy up"},"done":true}` + "\n"))
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL, Model: "llama3"})
+	var deltas []string
+	full, err := c.GenerateStream(context.Background(), sampleMsgs(), 0.5, func(d string) {
+		deltas = append(deltas, d)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if full != "chore: tidy up" {
+		t.Errorf("full = %q", full)
+	}
+	if len(deltas) != 2 {
+		t.Errorf("expected 2 deltas, got %d", len(deltas))
+	}
+}
+
+func TestGenerateStream_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL, Model: "llama3"})
+	if _, err := c.GenerateStream(context.Background(), sampleMsgs(), 0.5, nil); err == nil {
+		t.Error("expected error for 500 stream response")
+	}
+}
