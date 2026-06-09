@@ -16,6 +16,13 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
 
+// Build information, injected via -ldflags at release time (see .goreleaser.yaml).
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 func main() {
 	// 1. Define flags
 	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | dump-prompt | config | install-hook | uninstall-hook)")
@@ -43,18 +50,51 @@ func main() {
 	logOutputFlag := flag.String("log-output", "", "Log output (stdout, stderr, file, both)")
 	logFileFlag := flag.String("log-file", "", "Log file path")
 
+	timeoutFlag := flag.Int("timeout", 0, "AI request timeout in seconds (default 120)")
+	printFlag := flag.Bool("print", false, "Print the generated message to stdout without launching the TUI")
+	dryRunFlag := flag.Bool("dry-run", false, "Generate and preview without committing")
+	amendFlag := flag.Bool("amend", false, "Amend the last commit instead of creating a new one")
+	countFlag := flag.Int("count", 1, "Number of commit message candidates to generate")
+	versionFlag := flag.Bool("version", false, "Print version information and exit")
+
 	flag.Parse()
 
 	// Support positional commands (e.g., 'commitgen config' instead of 'commitgen -cmd=config')
 	cmd := resolveCommand(*cmdFlag, flag.Args())
 
-	// 2. Load config from file
-	fileCfg, err := config.Load(*configPathFlag)
+	if *versionFlag || cmd == "version" {
+		printVersion()
+		return
+	}
+
+	// `config show` / `config path` sub-actions
+	configAction := ""
+	if cmd == "config" && len(flag.Args()) > 1 {
+		configAction = flag.Args()[1]
+	}
+
+	// 2. Load config from file (global + optional repo-local overlay)
+	fileCfg, err := config.LoadResolved(*configPathFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Error loading config: %v\n", err)
 	}
 
 	// 3. Resolve final config (Flag > Env > File > Default)
+	timeoutSec := config.ResolveInt(*timeoutFlag, isFlagSet("timeout"), fileCfg.Timeout, 120)
+	if timeoutSec <= 0 {
+		timeoutSec = 120
+	}
+
+	// Prompt template: a file (prompt_template_file) takes precedence over the inline template.
+	promptTemplate := fileCfg.PromptTemplate
+	if strings.TrimSpace(fileCfg.PromptTemplateFile) != "" {
+		if b, readErr := os.ReadFile(fileCfg.PromptTemplateFile); readErr == nil {
+			promptTemplate = string(b)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: cannot read prompt_template_file %q: %v\n", fileCfg.PromptTemplateFile, readErr)
+		}
+	}
+
 	cfg := app.Config{
 		Command:  cmd,
 		RepoArg:  *repoFlag,
@@ -76,10 +116,15 @@ func main() {
 		DumpOutPath:      *dumpOutFlag,
 		InstructionsPath: *instructionsFlag,
 		ConfigPath:       *configPathFlag,
-		Timeout:          120 * time.Second,
-		PromptTemplate:   fileCfg.PromptTemplate,
+		Timeout:          time.Duration(timeoutSec) * time.Second,
+		PromptTemplate:   promptTemplate,
 		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 		IgnoredFiles:     fileCfg.IgnoredFiles,
+		Print:            *printFlag,
+		DryRun:           *dryRunFlag,
+		Amend:            *amendFlag,
+		Count:            *countFlag,
+		ConfigAction:     configAction,
 
 		LogLevel:  config.ResolveString(*logLevelFlag, os.Getenv("COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
 		LogOutput: config.ResolveString(*logOutputFlag, os.Getenv("COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
@@ -132,11 +177,17 @@ func resolveCommand(cmdFlag string, args []string) string {
 	cmd := cmdFlag
 	if len(args) > 0 {
 		switch args[0] {
-		case "suggest", "review", "dump-prompt", "config", "install-hook", "uninstall-hook":
+		case "suggest", "review", "dump-prompt", "config", "install-hook", "uninstall-hook",
+			"version", "ping", "models":
 			cmd = args[0]
 		}
 	}
 	return cmd
+}
+
+// printVersion writes build information to stdout.
+func printVersion() {
+	fmt.Printf("commitgen %s\ncommit: %s\nbuilt:  %s\n", version, commit, date)
 }
 
 // resolveLogFilePath returns the path of the log file that errors are written to,

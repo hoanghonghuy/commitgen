@@ -61,8 +61,14 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 
 			huh.NewInput().
 				Title("Base URL").
-				Description("API endpoint (default varies by provider)").
+				Description("API endpoint (OpenAI-compatible providers: OpenRouter, Mistral, Azure...)").
 				Placeholder("https://api.openai.com/v1 or http://localhost:11434").
+				Suggestions([]string{
+					"https://api.openai.com/v1",
+					"https://openrouter.ai/api/v1",
+					"https://api.mistral.ai/v1",
+					"http://localhost:11434",
+				}).
 				Value(&baseURL),
 
 			huh.NewInput().

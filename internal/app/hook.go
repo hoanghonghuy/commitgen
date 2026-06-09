@@ -37,11 +37,13 @@ func resolveHooksDir(ctx context.Context, repoArg string) (string, error) {
 	return hooksDir, nil
 }
 
-// InstallHook installs the prepare-commit-msg hook
-func InstallHook(ctx context.Context, repoArg string) error {
+// InstallHook installs the prepare-commit-msg hook. When nonInteractive is true
+// (or on Windows) the hook runs commitgen in --print mode, which writes the
+// message to the commit file without needing /dev/tty.
+func InstallHook(ctx context.Context, repoArg string, nonInteractive bool) error {
+	useNonInteractive := nonInteractive || runtime.GOOS == "windows"
 	if runtime.GOOS == "windows" {
-		fmt.Println("Warning: The git hook uses /dev/tty and #!/bin/sh which may not work correctly on Windows.")
-		fmt.Println("Consider running commitgen manually instead of using the hook on Windows.")
+		fmt.Println("Note: On Windows the hook runs in non-interactive (--print) mode and writes the message directly.")
 	}
 
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
@@ -68,36 +70,7 @@ func InstallHook(ctx context.Context, repoArg string) error {
 		exe, _ = filepath.Abs(exe)
 	}
 
-	script := fmt.Sprintf(`#!/bin/sh
-# commitgen hook
-# This hook runs commitgen to generate a commit message.
-# It uses /dev/tty to allow interaction even inside a hook.
-
-# Only run if no message is given (e.g. not a merge, not --amend with message)
-# $1 is file, $2 is source, $3 is SHA
-
-COMMIT_MSG_FILE=$1
-COMMIT_SOURCE=$2
-SHA1=$3
-
-# Skip if amending or if message source is arguably "template" or "message" provided?
-# Usually we want it for empty "git commit".
-# If source is "message" (-m), skip.
-if [ "$COMMIT_SOURCE" = "message" ]; then
-  exit 0
-fi
-
-# Run commitgen in hook mode
-# We redirect stdin/stdout to tty to allow interactive UI
-if [ -t 0 ]; then
-    exec < /dev/tty
-fi
-
-echo "commitgen is analyzing changes..."
-"%s" --hook "$COMMIT_MSG_FILE" < /dev/tty > /dev/tty
-
-# If commitgen succeeds, it writes to the file.
-`, exe)
+	script := buildHookScript(exe, useNonInteractive)
 
 	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write hook file: %w", err)
@@ -105,6 +78,37 @@ echo "commitgen is analyzing changes..."
 
 	fmt.Printf("Hook installed to %s\n", hookPath)
 	return nil
+}
+
+// buildHookScript returns the prepare-commit-msg shell script. The interactive
+// variant uses /dev/tty for the TUI; the non-interactive variant uses --print.
+func buildHookScript(exe string, nonInteractive bool) string {
+	header := `#!/bin/sh
+# commitgen hook
+# This hook runs commitgen to generate a commit message.
+
+# $1 is file, $2 is source, $3 is SHA
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+SHA1=$3
+
+# If a message was supplied (e.g. git commit -m), do nothing.
+if [ "$COMMIT_SOURCE" = "message" ]; then
+  exit 0
+fi
+
+echo "commitgen is analyzing changes..."
+`
+	if nonInteractive {
+		// Non-interactive: write the generated message straight to the file.
+		return header + fmt.Sprintf("\"%s\" --hook \"$COMMIT_MSG_FILE\" --print\n", exe)
+	}
+	// Interactive: redirect stdin/stdout to the controlling terminal for the TUI.
+	return header + fmt.Sprintf(`if [ -t 0 ]; then
+    exec < /dev/tty
+fi
+"%s" --hook "$COMMIT_MSG_FILE" < /dev/tty > /dev/tty
+`, exe)
 }
 
 // UninstallHook removes the prepare-commit-msg hook

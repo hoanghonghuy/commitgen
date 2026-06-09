@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -67,6 +66,13 @@ type Config struct {
 	PromptTemplate string
 	ReviewLanguage string
 
+	// Behavior modes
+	Print        bool   // print message to stdout instead of launching TUI
+	DryRun       bool   // generate/preview without committing
+	Amend        bool   // amend the last commit instead of creating a new one
+	Count        int    // number of candidate messages to generate
+	ConfigAction string // subcommand for `config` (e.g. "show", "path")
+
 	// Logging
 	LogLevel  string
 	LogOutput string
@@ -78,10 +84,16 @@ func Run(ctx context.Context, cfg Config) error {
 		return runConfig(cfg)
 	}
 	if cfg.Command == "install-hook" {
-		return InstallHook(ctx, cfg.RepoArg)
+		return InstallHook(ctx, cfg.RepoArg, cfg.Print)
 	}
 	if cfg.Command == "uninstall-hook" {
 		return UninstallHook(ctx, cfg.RepoArg)
+	}
+	if cfg.Command == "ping" {
+		return runPing(ctx, cfg)
+	}
+	if cfg.Command == "models" {
+		return runModels(ctx, cfg)
 	}
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
@@ -117,7 +129,16 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-		finalModel, err := runTUI(newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile))
+
+		// Non-interactive mode: generate once, print to stdout, optionally commit.
+		if cfg.Print || cfg.DryRun {
+			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs)
+		}
+
+		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
+		suggestTUI.amend = cfg.Amend
+		suggestTUI.count = cfg.Count
+		finalModel, err := runTUI(suggestTUI)
 		if err != nil {
 			return logger.LogError(err, "TUI execution failed")
 		}
@@ -147,7 +168,9 @@ func Run(ctx context.Context, cfg Config) error {
 			// User selected "Suggest commit message" from review mode
 			if m.switchToSuggest {
 				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-				suggestModel, err := runTUI(newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile))
+				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
+				suggestTUI.amend = cfg.Amend
+				suggestModel, err := runTUI(suggestTUI)
 				if err != nil {
 					return logger.LogError(err, "TUI execution failed")
 				}
@@ -167,7 +190,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 func newProvider(cfg Config) (ai.Provider, error) {
 	if strings.TrimSpace(cfg.Model) == "" {
-		return nil, logger.LogError(errors.New("missing model"), "model not configured")
+		return nil, logger.LogError(ErrMissingModel, "model not configured")
 	}
 
 	switch strings.ToLower(cfg.Provider) {
@@ -178,7 +201,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 		}), nil
 	case "anthropic":
 		if cfg.AnthropicKey == "" {
-			return nil, logger.LogError(errors.New("missing anthropic key"), "anthropic key not configured")
+			return nil, logger.LogError(ErrMissingAPIKey, "anthropic key not configured")
 		}
 		return anthropic.New(anthropic.Config{
 			APIKey: cfg.AnthropicKey,
@@ -186,7 +209,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 		}), nil
 	case "gemini":
 		if cfg.GeminiKey == "" {
-			return nil, logger.LogError(errors.New("missing gemini key"), "gemini key not configured")
+			return nil, logger.LogError(ErrMissingAPIKey, "gemini key not configured")
 		}
 		return gemini.New(gemini.Config{
 			APIKey: cfg.GeminiKey,
@@ -194,7 +217,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 		}), nil
 	case "openai", "":
 		if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
-			return nil, logger.LogError(errors.New("missing api key"), "openai api key not configured")
+			return nil, logger.LogError(ErrMissingAPIKey, "openai api key not configured")
 		}
 		return openai.New(openai.Config{
 			BaseURL: cfg.BaseURL,
@@ -202,11 +225,15 @@ func newProvider(cfg Config) (ai.Provider, error) {
 			Model:   cfg.Model,
 		}), nil
 	default:
-		return nil, logger.LogError(fmt.Errorf("unknown provider: %s", cfg.Provider), "unsupported provider")
+		return nil, logger.LogError(fmt.Errorf("%w: %s", ErrUnknownProvider, cfg.Provider), "unsupported provider")
 	}
 }
 
 func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int, summarize bool, customInstructions string, ignoredFiles []string) (vscodeprompt.Data, error) {
+	recentN = clampNonNegative(recentN)
+	if maxFiles <= 0 {
+		maxFiles = 10
+	}
 	repoName := gitx.RepoNameFromRoot(repoRoot)
 
 	branch, _ := gitx.CurrentBranch(ctx, repoRoot)
@@ -225,7 +252,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		return vscodeprompt.Data{}, logger.LogError(err, "failed to get staged changes")
 	}
 	if len(changes) == 0 {
-		return vscodeprompt.Data{}, logger.LogError(errors.New("no staged changes"), "no files staged for commit")
+		return vscodeprompt.Data{}, logger.LogError(ErrNoStagedChanges, "no files staged for commit")
 	}
 
 	// Filter changes
@@ -276,7 +303,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 	}
 
 	if len(filteredChanges) == 0 {
-		return vscodeprompt.Data{}, fmt.Errorf("all staged files were ignored (checked %d files)", len(changes))
+		return vscodeprompt.Data{}, fmt.Errorf("%w (checked %d files)", ErrAllFilesIgnored, len(changes))
 	}
 
 	return vscodeprompt.Data{
@@ -303,22 +330,89 @@ func truncateUTF8(s string, maxBytes int) string {
 	return s[:cut]
 }
 
-func shouldIgnore(pattern string, ignores []string) bool {
-	base := filepath.Base(pattern)
+// shouldIgnore reports whether filePath matches any of the ignore patterns.
+// Supports exact matches, basename globs, full-path globs, and directory
+// prefixes ("dir/" or "dir/**").
+func shouldIgnore(filePath string, ignores []string) bool {
+	p := filepath.ToSlash(filePath)
+	base := filepath.Base(p)
 	for _, ign := range ignores {
-		// Simple equality
-		if ign == base || ign == pattern {
+		ign = filepath.ToSlash(strings.TrimSpace(ign))
+		if ign == "" {
+			continue
+		}
+		// Exact match on full path or basename.
+		if ign == p || ign == base {
 			return true
 		}
-		// Glob match
+		// Directory prefix patterns.
+		if strings.HasSuffix(ign, "/") && strings.HasPrefix(p, ign) {
+			return true
+		}
+		if strings.HasSuffix(ign, "/**") {
+			if strings.HasPrefix(p, strings.TrimSuffix(ign, "**")) {
+				return true
+			}
+		}
+		// Glob match on basename and on full path.
 		if matched, _ := filepath.Match(ign, base); matched {
+			return true
+		}
+		if matched, _ := filepath.Match(ign, p); matched {
 			return true
 		}
 	}
 	return false
 }
 
+// resolveConfigPath returns the effective config file path (defaults to
+// ~/.commitgen.json when empty).
+func resolveConfigPath(path string) string {
+	if path != "" {
+		return path
+	}
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".commitgen.json")
+	}
+	return "~/.commitgen.json"
+}
+
+// showConfig prints the saved configuration with secret values masked.
+func showConfig(path string) error {
+	fileCfg, err := config.Load(path)
+	if err != nil {
+		return logger.LogError(err, "failed to load config", "path", resolveConfigPath(path))
+	}
+	fileCfg.APIKey = maskSecret(fileCfg.APIKey)
+	fileCfg.AnthropicKey = maskSecret(fileCfg.AnthropicKey)
+	fileCfg.GeminiKey = maskSecret(fileCfg.GeminiKey)
+
+	b, err := json.MarshalIndent(fileCfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Config file: %s\n%s\n", resolveConfigPath(path), string(b))
+	return nil
+}
+
+// maskSecret replaces a secret with a fixed-length mask, keeping it non-empty
+// only when a value is present.
+func maskSecret(s string) string {
+	if strings.TrimSpace(s) == "" {
+		return ""
+	}
+	return "********"
+}
+
 func runConfig(cfg Config) error {
+	switch strings.ToLower(strings.TrimSpace(cfg.ConfigAction)) {
+	case "path":
+		fmt.Println(resolveConfigPath(cfg.ConfigPath))
+		return nil
+	case "show":
+		return showConfig(cfg.ConfigPath)
+	}
+
 	newCfg, ok, err := runConfigInteractive(cfg)
 	if err != nil {
 		return err

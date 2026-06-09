@@ -77,8 +77,34 @@ func TestTui_EnterRegenerate(t *testing.T) {
 	tm.cursor = 1 // Regenerate
 	u, cmd := tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	tm = u.(tuiModel)
+	if tm.state != stateRegenHint || cmd == nil {
+		t.Fatalf("Regenerate should prompt for guidance; state=%v", tm.state)
+	}
+	// type a hint then confirm
+	u, _ = tm.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("shorter")})
+	tm = u.(tuiModel)
+	u, cmd = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm = u.(tuiModel)
 	if tm.state != stateGenerating || cmd == nil {
-		t.Errorf("Regenerate should re-enter generating state with cmd; state=%v", tm.state)
+		t.Errorf("after guidance, should regenerate; state=%v", tm.state)
+	}
+	if tm.regenHint != "shorter" {
+		t.Errorf("regenHint = %q; want 'shorter'", tm.regenHint)
+	}
+}
+
+func TestTui_RegenHintCancel(t *testing.T) {
+	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	u, _ := m.Update(commitResultMsg{content: "msg"})
+	tm := u.(tuiModel)
+	tm.cursor = 1
+	u, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	tm = u.(tuiModel)
+	// esc cancels guidance back to confirm
+	u, _ = tm.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	tm = u.(tuiModel)
+	if tm.state != stateConfirm {
+		t.Errorf("esc should return to confirm, got %v", tm.state)
 	}
 }
 

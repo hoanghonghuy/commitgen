@@ -211,7 +211,7 @@ func (m reviewModel) generateReviewCmd() tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 		defer cancel()
 
-		raw, err := m.provider.Generate(ctx, currentMsgs, m.temp)
+		raw, err := m.provider.Generate(ctx, currentMsgs, clampTemperature(m.temp))
 		if err != nil {
 			logger.Error("failed to generate review", "error", err)
 			return reviewResultMsg{err: err}

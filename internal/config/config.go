@@ -27,6 +27,10 @@ type FileConfig struct {
 	Summarize    *bool    `json:"summarize,omitempty"`
 	Temperature  *float64 `json:"temperature,omitempty"`
 	Conventional *bool    `json:"conventional,omitempty"`
+	Timeout      *int     `json:"timeout_seconds,omitempty"` // AI request timeout in seconds
+
+	// Prompt template loaded from a file (takes precedence over PromptTemplate when set)
+	PromptTemplateFile string `json:"prompt_template_file,omitempty"`
 
 	// Review Settings
 	ReviewLanguage string `json:"review_language,omitempty"` // en, vi
@@ -78,6 +82,117 @@ func Save(cfg FileConfig, path string) error {
 	}
 
 	return os.WriteFile(path, b, 0644)
+}
+
+// Merge overlays the non-empty/non-nil fields of override onto base and
+// returns the result. Used to apply a repo-local config on top of the global one.
+func Merge(base, override FileConfig) FileConfig {
+	out := base
+	if override.BaseURL != "" {
+		out.BaseURL = override.BaseURL
+	}
+	if override.APIKey != "" {
+		out.APIKey = override.APIKey
+	}
+	if override.Model != "" {
+		out.Model = override.Model
+	}
+	if override.Provider != "" {
+		out.Provider = override.Provider
+	}
+	if override.AnthropicKey != "" {
+		out.AnthropicKey = override.AnthropicKey
+	}
+	if override.GeminiKey != "" {
+		out.GeminiKey = override.GeminiKey
+	}
+	if override.PromptTemplate != "" {
+		out.PromptTemplate = override.PromptTemplate
+	}
+	if override.PromptTemplateFile != "" {
+		out.PromptTemplateFile = override.PromptTemplateFile
+	}
+	if override.IgnoredFiles != nil {
+		out.IgnoredFiles = override.IgnoredFiles
+	}
+	if override.RecentN != nil {
+		out.RecentN = override.RecentN
+	}
+	if override.MaxFiles != nil {
+		out.MaxFiles = override.MaxFiles
+	}
+	if override.Summarize != nil {
+		out.Summarize = override.Summarize
+	}
+	if override.Temperature != nil {
+		out.Temperature = override.Temperature
+	}
+	if override.Conventional != nil {
+		out.Conventional = override.Conventional
+	}
+	if override.Timeout != nil {
+		out.Timeout = override.Timeout
+	}
+	if override.ReviewLanguage != "" {
+		out.ReviewLanguage = override.ReviewLanguage
+	}
+	if override.LogLevel != "" {
+		out.LogLevel = override.LogLevel
+	}
+	if override.LogOutput != "" {
+		out.LogOutput = override.LogOutput
+	}
+	if override.LogFile != "" {
+		out.LogFile = override.LogFile
+	}
+	return out
+}
+
+// LoadResolved loads configuration. When explicitPath is given it loads only
+// that file. Otherwise it loads the global ~/.commitgen.json and overlays a
+// repo-local .commitgen.json (found by walking up from the current directory).
+func LoadResolved(explicitPath string) (FileConfig, error) {
+	if explicitPath != "" {
+		return Load(explicitPath)
+	}
+	global, err := Load("")
+	if err != nil {
+		return global, err
+	}
+	if local, ok := findRepoLocalConfig(); ok {
+		if lc, lerr := Load(local); lerr == nil {
+			return Merge(global, lc), nil
+		}
+	}
+	return global, nil
+}
+
+// findRepoLocalConfig walks up from the current directory looking for a
+// .commitgen.json that is not the global one in the home directory.
+func findRepoLocalConfig() (string, bool) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", false
+	}
+	globalPath := ""
+	if home, herr := os.UserHomeDir(); herr == nil {
+		globalPath = filepath.Join(home, ".commitgen.json")
+	}
+	cur := cwd
+	for {
+		p := filepath.Join(cur, ".commitgen.json")
+		if p != globalPath {
+			if _, statErr := os.Stat(p); statErr == nil {
+				return p, true
+			}
+		}
+		parent := filepath.Dir(cur)
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return "", false
 }
 
 // ResolveString returns the first non-empty value from flag, env, file, or default.

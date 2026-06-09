@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textarea"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -48,6 +49,8 @@ const (
 	stateCommitting                 // Performing git commit
 	stateConfirm
 	stateEditing
+	stateRegenHint
+	stateChoose
 	stateDone
 	stateCopied
 )
@@ -69,10 +72,13 @@ type tuiModel struct {
 	conventional bool
 	hookFile     string
 	repoRoot     string
+	amend        bool
+	count        int
 
 	// Components
 	spinner       spinner.Model
 	textarea      textarea.Model
+	hintInput     textinput.Model
 	viewport      viewport.Model
 	viewportReady bool
 	needsScroll   bool // true when content exceeds inner height
@@ -81,6 +87,8 @@ type tuiModel struct {
 	commitMsg     string
 	cachedContent string // built once in Update, read in View — avoids per-frame rebuild
 	cursor        int
+	regenHint     string   // optional user guidance for regeneration
+	candidates    []string // multiple generated candidates (when count > 1)
 	err           error
 	quitting      bool
 }
@@ -88,6 +96,12 @@ type tuiModel struct {
 type commitResultMsg struct {
 	content string
 	err     error
+}
+
+// candidatesMsg carries multiple generated candidate messages (count > 1).
+type candidatesMsg struct {
+	contents []string
+	err      error
 }
 
 // copyDoneMsg is sent after clipboard copy feedback expires.
@@ -109,6 +123,9 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 	// Initialize viewport with default size
 	vp := newDefaultViewport(80, 20)
 
+	hi := textinput.New()
+	hi.Placeholder = "optional guidance: shorter, in Vietnamese, focus on why..."
+
 	return tuiModel{
 		state:         stateGenerating,
 		provider:      provider,
@@ -120,6 +137,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 		repoRoot:      repoRoot,
 		spinner:       s,
 		textarea:      ta,
+		hintInput:     hi,
 		viewport:      vp,
 		viewportReady: true, // Mark as ready immediately
 		width:         80,
@@ -128,36 +146,59 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 }
 
 func (m tuiModel) Init() tea.Cmd {
-	return tea.Batch(m.spinner.Tick, m.generateCommitCmd())
+	return tea.Batch(m.spinner.Tick, m.generateCmd())
+}
+
+// generateCmd dispatches to single or multi-candidate generation based on count.
+func (m tuiModel) generateCmd() tea.Cmd {
+	if m.count > 1 {
+		return m.generateCandidatesCmd()
+	}
+	return m.generateCommitCmd()
+}
+
+// buildGenMessages returns the prompt messages including optional regen guidance.
+func (m tuiModel) buildGenMessages() []vscodeprompt.VSCodeMessage {
+	if strings.TrimSpace(m.regenHint) == "" {
+		return m.initialMsgs
+	}
+	return append(append([]vscodeprompt.VSCodeMessage{}, m.initialMsgs...), vscodeprompt.VSCodeMessage{
+		Role:    vscodeprompt.RoleUser,
+		Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "Additional guidance for the commit message: " + m.regenHint}},
+	})
+}
+
+// generateCandidatesCmd generates m.count candidate messages sequentially.
+func (m tuiModel) generateCandidatesCmd() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
+		defer cancel()
+
+		msgs := m.buildGenMessages()
+		out := make([]string, 0, m.count)
+		for i := 0; i < m.count; i++ {
+			msg, err := generateCommitMessage(ctx, m.provider, msgs, m.temp, m.conventional)
+			if err != nil {
+				logger.Error("failed to generate candidate", "error", err)
+				return candidatesMsg{err: err}
+			}
+			out = append(out, msg)
+		}
+		return candidatesMsg{contents: out}
+	}
 }
 
 func (m tuiModel) generateCommitCmd() tea.Cmd {
 	return func() tea.Msg {
-		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(m.initialMsgs))
-		copy(currentMsgs, m.initialMsgs)
-
-		if m.conventional {
-			reminderMsg := vscodeprompt.VSCodeMessage{
-				Role: vscodeprompt.RoleUser,
-				Content: []vscodeprompt.VSCodeContentPart{
-					{Type: 1, Text: "CRITICAL INSTRUCTION: You must strictly follow the Conventional Commits specification (e.g. 'feat: add spinner', 'fix: resolve bug').\nDo not just describe the change; prefix it with the type."},
-				},
-			}
-			currentMsgs = append(currentMsgs, reminderMsg)
-		}
+		msgs := m.buildGenMessages()
 
 		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
 		defer cancel()
 
-		raw, err := m.provider.Generate(ctx, currentMsgs, m.temp)
+		msg, err := generateCommitMessage(ctx, m.provider, msgs, m.temp, m.conventional)
 		if err != nil {
 			logger.Error("failed to generate commit message", "error", err)
 			return commitResultMsg{err: err}
-		}
-
-		msg, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
-		if !ok {
-			msg = raw
 		}
 		return commitResultMsg{content: msg}
 	}
@@ -173,6 +214,9 @@ func (m tuiModel) commitCmd() tea.Cmd {
 			return commitDoneMsg{err: err}
 		}
 		err := gitx.Commit(context.Background(), m.repoRoot, m.commitMsg)
+		if m.amend {
+			err = gitx.CommitAmend(context.Background(), m.repoRoot, m.commitMsg)
+		}
 		if err != nil {
 			logger.Error("git commit failed", "error", err)
 		}
@@ -301,8 +345,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = stateCommitting
 					return m, m.commitCmd()
 				case 1: // Regenerate
-					m.state = stateGenerating
-					return m, m.generateCommitCmd()
+					m.state = stateRegenHint
+					m.hintInput.SetValue("")
+					m.hintInput.Focus()
+					return m, textinput.Blink
 				case 2: // Edit
 					m.state = stateEditing
 					m.textarea.SetValue(m.commitMsg)
@@ -323,6 +369,45 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.textarea, cmd = m.textarea.Update(msg)
 			return m, cmd
+
+		case stateRegenHint:
+			switch msg.String() {
+			case "esc":
+				// cancel guidance, return to confirm
+				m.state = stateConfirm
+				m = m.refreshViewport()
+				return m, nil
+			case "enter":
+				m.regenHint = strings.TrimSpace(m.hintInput.Value())
+				m.state = stateGenerating
+				return m, m.generateCmd()
+			}
+			var cmd tea.Cmd
+			m.hintInput, cmd = m.hintInput.Update(msg)
+			return m, cmd
+
+		case stateChoose:
+			switch msg.String() {
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+			case "down", "j":
+				if m.cursor < len(m.candidates)-1 {
+					m.cursor++
+				}
+			case "enter":
+				if len(m.candidates) > 0 {
+					m.commitMsg = m.candidates[m.cursor]
+					m.cursor = 0
+					m.state = stateConfirm
+					m = m.refreshViewport()
+				}
+				return m, nil
+			case "r", "R":
+				m.state = stateGenerating
+				return m, m.generateCmd()
+			}
 		}
 
 	case tea.MouseMsg:
@@ -369,6 +454,25 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.state = stateConfirm
 		m.cursor = 0
 		m = m.refreshViewport()
+		return m, nil
+
+	case candidatesMsg:
+		if msg.err != nil {
+			logger.Error("candidate generation failed", "error", msg.err)
+			m.err = msg.err
+			m.state = stateDone
+			return m, tea.Quit
+		}
+		m.candidates = msg.contents
+		m.cursor = 0
+		// A single candidate skips the chooser.
+		if len(m.candidates) == 1 {
+			m.commitMsg = m.candidates[0]
+			m.state = stateConfirm
+			m = m.refreshViewport()
+			return m, nil
+		}
+		m.state = stateChoose
 		return m, nil
 
 	case commitDoneMsg:
@@ -423,6 +527,33 @@ func (m tuiModel) View() string {
 		b.WriteString("\n")
 		b.WriteString(m.textarea.View())
 		b.WriteString("\n\n (Press Esc to finish editing)\n")
+		inner = b.String()
+
+	case stateRegenHint:
+		var b strings.Builder
+		b.WriteString(styleEditTitle.Render("Regenerate — Optional Guidance"))
+		b.WriteString("\n")
+		b.WriteString(m.hintInput.View())
+		b.WriteString("\n\n (Enter to regenerate, Esc to cancel)\n")
+		inner = b.String()
+
+	case stateChoose:
+		var b strings.Builder
+		b.WriteString("\n")
+		b.WriteString(styleMsgTitle.Render("Choose a Commit Message"))
+		b.WriteString("\n")
+		barStr := styleBar.Render("┃")
+		for i, c := range m.candidates {
+			line := strings.SplitN(c, "\n", 2)[0] // show first line of each candidate
+			if m.cursor == i {
+				b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(line)))
+			} else {
+				b.WriteString(fmt.Sprintf("%s   %s\n", barStr, line))
+			}
+		}
+		b.WriteString("\n")
+		b.WriteString(styleHint.Render(" ↑↓ select  •  Enter choose  •  r regenerate all "))
+		b.WriteString("\n")
 		inner = b.String()
 
 	case stateDone:

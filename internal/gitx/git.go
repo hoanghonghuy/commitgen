@@ -134,6 +134,19 @@ func Commit(ctx context.Context, repoRoot, message string) error {
 	return nil
 }
 
+// CommitAmend amends the most recent commit, replacing its message.
+func CommitAmend(ctx context.Context, repoRoot, message string) error {
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return logger.LogError(fmt.Errorf("commit message cannot be empty"), "empty commit message")
+	}
+	_, err := Git(ctx, repoRoot, "commit", "--amend", "-m", msg)
+	if err != nil {
+		return logger.LogError(err, "git commit --amend failed")
+	}
+	return nil
+}
+
 func splitNonEmptyLines(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	var out []string

@@ -2,6 +2,9 @@ package vscodeprompt
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -60,6 +63,69 @@ func summarizeByType(relPath string, lines []string) map[int]string {
 	}
 }
 
+// summarizeGo summarizes Go source using the standard AST parser, falling back
+// to a brace-counting heuristic when the source does not parse (e.g. mid-edit).
+func summarizeGo(lines []string) map[int]string {
+	if kept, ok := summarizeGoAST(strings.Join(lines, "\n"), lines); ok {
+		return kept
+	}
+	return summarizeGoHeuristic(lines)
+}
+
+// summarizeGoAST keeps package/import/type/const/var declarations and comments
+// in full, and collapses each function body to a single "{…}" marker. It returns
+// (nil, false) when the source cannot be parsed.
+func summarizeGoAST(src string, lines []string) (map[int]string, bool) {
+	fset := token.NewFileSet()
+	f, err := parser.ParseFile(fset, "", src, parser.ParseComments)
+	if err != nil {
+		return nil, false
+	}
+
+	n := len(lines)
+	kept := map[int]string{}
+	lineOf := func(p token.Pos) int { return fset.Position(p).Line }
+	keepRange := func(start, end int) {
+		for i := start; i <= end && i >= 1 && i <= n; i++ {
+			kept[i] = strings.TrimRight(lines[i-1], "\r")
+		}
+	}
+
+	// Package clause.
+	keepRange(lineOf(f.Package), lineOf(f.Package))
+
+	// All comments (doc comments, inline notes).
+	for _, cg := range f.Comments {
+		keepRange(lineOf(cg.Pos()), lineOf(cg.End()))
+	}
+
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *ast.GenDecl: // import / const / var / type
+			keepRange(lineOf(d.Pos()), lineOf(d.End()))
+		case *ast.FuncDecl:
+			sigStart := lineOf(d.Pos())
+			if d.Body == nil {
+				keepRange(sigStart, lineOf(d.End()))
+				continue
+			}
+			lb := lineOf(d.Body.Lbrace)
+			keepRange(sigStart, lb-1)
+			sigLine := strings.TrimRight(lines[lb-1], "\r")
+			if idx := strings.Index(sigLine, "{"); idx >= 0 {
+				sigLine = strings.TrimRight(sigLine[:idx], " \t") + " {…}"
+			}
+			kept[lb] = sigLine
+		}
+	}
+
+	// Keep the last line marker (parity with the head/tail summaries).
+	if n >= 1 {
+		kept[n] = strings.TrimRight(lines[n-1], "\r")
+	}
+	return kept, true
+}
+
 // Like VSCode dump for .md: keep head and last-line marker.
 func summarizeHeadPlusLast(lines []string, headN int) map[int]string {
 	kept := map[int]string{}
@@ -93,10 +159,11 @@ func summarizeHeadTail(lines []string, headN, tailN int) map[int]string {
 	return kept
 }
 
-// Goal: mimic what you saw in VSCode dump for Go:
+// summarizeGoHeuristic is the fallback summarizer used when Go source fails to
+// parse. Goal: mimic what you saw in VSCode dump for Go:
 // - keep package/import/type/const/var blocks, comments
 // - collapse each func body to one line with "{…}"
-func summarizeGo(lines []string) map[int]string {
+func summarizeGoHeuristic(lines []string) map[int]string {
 	kept := map[int]string{}
 	n := len(lines)
 

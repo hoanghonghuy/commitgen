@@ -33,7 +33,7 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	ctx := context.Background()
 	dir := initRepo(t)
 
-	if err := InstallHook(ctx, dir); err != nil {
+	if err := InstallHook(ctx, dir, false); err != nil {
 		t.Fatalf("InstallHook error: %v", err)
 	}
 
@@ -47,7 +47,7 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	}
 
 	// Installing again should fail (hook exists)
-	if err := InstallHook(ctx, dir); err == nil {
+	if err := InstallHook(ctx, dir, false); err == nil {
 		t.Error("expected error installing over existing hook")
 	}
 
