@@ -95,16 +95,20 @@ func main() {
 		}
 	}
 
+	// Resolve the provider first so the default model can be provider-specific
+	// (e.g. an Ollama user should not fall back to an OpenAI model name).
+	provider := config.ResolveString(*providerFlag, getenvWithFallback("COMMITGEN_PROVIDER", "COMMITAI_PROVIDER"), fileCfg.Provider, "openai")
+
 	cfg := app.Config{
 		Command:  cmd,
 		RepoArg:  *repoFlag,
-		BaseURL:  config.ResolveString(*baseURLFlag, os.Getenv("COMMITAI_BASE_URL"), fileCfg.BaseURL, ""),
-		APIKey:   config.ResolveString(*apiKeyFlag, os.Getenv("COMMITAI_API_KEY"), fileCfg.APIKey, ""),
-		Model:    config.ResolveString(*modelFlag, os.Getenv("COMMITAI_MODEL"), fileCfg.Model, "gpt-4o"),
-		Provider: config.ResolveString(*providerFlag, os.Getenv("COMMITAI_PROVIDER"), fileCfg.Provider, "openai"),
+		BaseURL:  config.ResolveString(*baseURLFlag, getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL"), fileCfg.BaseURL, ""),
+		APIKey:   config.ResolveString(*apiKeyFlag, getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY"), fileCfg.APIKey, ""),
+		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL"), fileCfg.Model, defaultModelForProvider(provider)),
+		Provider: provider,
 
-		AnthropicKey: config.ResolveString(*anthropicKeyFlag, os.Getenv("COMMITAI_ANTHROPIC_KEY"), fileCfg.AnthropicKey, ""),
-		GeminiKey:    config.ResolveString(*geminiKeyFlag, os.Getenv("COMMITAI_GEMINI_KEY"), fileCfg.GeminiKey, ""),
+		AnthropicKey: config.ResolveString(*anthropicKeyFlag, getenvWithFallback("COMMITGEN_ANTHROPIC_KEY", "COMMITAI_ANTHROPIC_KEY"), fileCfg.AnthropicKey, ""),
+		GeminiKey:    config.ResolveString(*geminiKeyFlag, getenvWithFallback("COMMITGEN_GEMINI_KEY", "COMMITAI_GEMINI_KEY"), fileCfg.GeminiKey, ""),
 
 		RecentN:      config.ResolveInt(*recentNFlag, isFlagSet("recent-n"), fileCfg.RecentN, 5),
 		MaxFiles:     config.ResolveInt(*maxFilesFlag, isFlagSet("max-files"), fileCfg.MaxFiles, 10),
@@ -126,9 +130,9 @@ func main() {
 		Count:            *countFlag,
 		ConfigAction:     configAction,
 
-		LogLevel:  config.ResolveString(*logLevelFlag, os.Getenv("COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
-		LogOutput: config.ResolveString(*logOutputFlag, os.Getenv("COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
-		LogFile:   config.ResolveString(*logFileFlag, os.Getenv("COMMITAI_LOG_FILE"), fileCfg.LogFile, ""),
+		LogLevel:  config.ResolveString(*logLevelFlag, getenvWithFallback("COMMITGEN_LOG_LEVEL", "COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
+		LogOutput: config.ResolveString(*logOutputFlag, getenvWithFallback("COMMITGEN_LOG_OUTPUT", "COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
+		LogFile:   config.ResolveString(*logFileFlag, getenvWithFallback("COMMITGEN_LOG_FILE", "COMMITAI_LOG_FILE"), fileCfg.LogFile, ""),
 	}
 
 	// 4. Initialize logger
@@ -207,6 +211,36 @@ func resolveLogFilePath(logFile, logOutput string) string {
 		// stdout / stderr / unknown → no file written
 		return ""
 	}
+}
+
+// defaultModelForProvider returns a sensible default model name for each
+// supported provider, so users who only set --provider still get a working
+// model instead of always falling back to an OpenAI model.
+func defaultModelForProvider(provider string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "ollama":
+		return "llama3"
+	case "anthropic":
+		return "claude-3-opus"
+	case "gemini":
+		return "gemini-1.5-pro"
+	default: // openai or empty
+		return "gpt-4o"
+	}
+}
+
+// getenvWithFallback reads the primary environment variable, falling back to a
+// deprecated alias for backward compatibility. When only the deprecated alias
+// is set, it prints a one-time deprecation warning to stderr.
+func getenvWithFallback(primary, deprecated string) string {
+	if v := os.Getenv(primary); v != "" {
+		return v
+	}
+	if v := os.Getenv(deprecated); v != "" {
+		fmt.Fprintf(os.Stderr, "Warning: %s is deprecated, please use %s instead\n", deprecated, primary)
+		return v
+	}
+	return ""
 }
 
 func isFlagSet(name string) bool {

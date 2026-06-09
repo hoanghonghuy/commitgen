@@ -255,9 +255,11 @@ func (m tuiModel) commitCmd() tea.Cmd {
 			}
 			return commitDoneMsg{err: err}
 		}
-		err := gitx.Commit(context.Background(), m.repoRoot, m.commitMsg)
+		var err error
 		if m.amend {
 			err = gitx.CommitAmend(context.Background(), m.repoRoot, m.commitMsg)
+		} else {
+			err = gitx.Commit(context.Background(), m.repoRoot, m.commitMsg)
 		}
 		if err != nil {
 			logger.Error("git commit failed", "error", err)

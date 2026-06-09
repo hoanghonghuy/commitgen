@@ -81,8 +81,8 @@ commitgen --log-output both  # logs to both stderr and file
 commitgen --log-file /path/to/custom.log
 
 # Or configure via environment variables
-export COMMITAI_LOG_LEVEL=debug
-export COMMITAI_LOG_OUTPUT=both
+export COMMITGEN_LOG_LEVEL=debug
+export COMMITGEN_LOG_OUTPUT=both
 ```
 
 **Default log location**: `~/.commitgen/commitgen.log`

@@ -72,3 +72,46 @@ func TestSummarizeGo_TypeAndImportBlocks(t *testing.T) {
 		}
 	}
 }
+
+func TestSummarizeGo_FallbackOnInvalidSource(t *testing.T) {
+	// Invalid Go (syntax error) forces the heuristic fallback path.
+	src := "package main\n\n" +
+		"import (\n\t\"fmt\"\n)\n\n" +
+		"type (\n\tA int\n)\n\n" +
+		"func broken( {\n\tx := 1\n\t_ = x\n}\n\n" +
+		"func ok() { return }\n"
+	out := BuildAttachment("/repo", "x.go", src, true)
+	if !strings.Contains(out, "import (") {
+		t.Error("fallback should keep import block")
+	}
+	if !strings.Contains(out, "{…}") {
+		t.Error("fallback should collapse function bodies")
+	}
+}
+
+func TestSummarizeGo_ASTMethodAndGenerics(t *testing.T) {
+	src := "package main\n\n" +
+		"// Box holds a value.\n" +
+		"type Box[T any] struct {\n\tv T\n}\n\n" +
+		"// Get returns the value.\n" +
+		"func (b Box[T]) Get() T {\n\treturn b.v\n}\n\n" +
+		"func Map[T any](xs []T, f func(T) T) []T {\n\tout := make([]T, 0)\n\treturn out\n}\n"
+	out := BuildAttachment("/repo", "x.go", src, true)
+	for _, want := range []string{"Box holds a value", "type Box[T any]", "Get returns the value", "{…}"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("AST summary missing %q", want)
+		}
+	}
+	if strings.Contains(out, "return b.v") {
+		t.Error("method body should be collapsed")
+	}
+}
+
+func TestSummarizeGo_FuncWithoutBody(t *testing.T) {
+	// A bodyless function declaration (e.g. implemented in assembly) is kept whole.
+	src := "package main\n\n//go:noescape\nfunc asmAdd(a, b int) int\n"
+	out := BuildAttachment("/repo", "asm.go", src, true)
+	if !strings.Contains(out, "func asmAdd") {
+		t.Error("bodyless func should be kept")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,8 +52,8 @@ type chatResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 		Delta struct {
-			Content           string `json:"content"`
-			ReasoningContent  string `json:"reasoning_content"`
+			Content          string `json:"content"`
+			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
 	} `json:"choices"`
 	Error *struct {
@@ -144,6 +145,34 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	return result, nil
 }
 
+// apiStatusError carries the HTTP status code from a non-2xx API response so
+// retry logic can decide based on the status instead of matching error strings.
+type apiStatusError struct {
+	status int
+	msg    string
+}
+
+func (e *apiStatusError) Error() string { return e.msg }
+
+// isRetryableErr reports whether a failed request should be retried. API errors
+// are retried only for 429 (rate limit) and 5xx (server) responses; client
+// errors (e.g. 401/403/400/404) are not. Non-API errors (network/transport)
+// are retried unless the context deadline was exceeded or the call timed out.
+func isRetryableErr(err error) bool {
+	var se *apiStatusError
+	if errors.As(err, &se) {
+		return se.status == http.StatusTooManyRequests || (se.status >= 500 && se.status <= 599)
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "context deadline exceeded") ||
+		strings.Contains(msg, "context canceled") ||
+		strings.Contains(msg, "deadline exceeded") ||
+		strings.Contains(msg, "Client.Timeout") {
+		return false
+	}
+	return true
+}
+
 func (c *Client) generateWithRetry(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64, maxRetries int) (string, error) {
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -156,12 +185,7 @@ func (c *Client) generateWithRetry(ctx context.Context, msgs []vscodeprompt.VSCo
 			return result, nil
 		}
 		lastErr = err
-		errMsg := err.Error()
-		// Don't retry on auth, timeout, or network errors
-		if strings.Contains(errMsg, "401") || strings.Contains(errMsg, "403") ||
-			strings.Contains(errMsg, "context deadline exceeded") ||
-			strings.Contains(errMsg, "deadline exceeded") ||
-			strings.Contains(errMsg, "Client.Timeout") {
+		if !isRetryableErr(err) {
 			return "", err
 		}
 	}
@@ -214,10 +238,16 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		var out chatResponse
 		if jsonErr := json.Unmarshal(b, &out); jsonErr == nil && out.Error != nil {
 			logger.Error("openai: API error", "status", resp.StatusCode, "message", out.Error.Message, "type", out.Error.Type)
-			return "", fmt.Errorf("openai: API error (status %d): %s (%s)", resp.StatusCode, out.Error.Message, out.Error.Type)
+			return "", &apiStatusError{
+				status: resp.StatusCode,
+				msg:    fmt.Sprintf("openai: API error (status %d): %s (%s)", resp.StatusCode, out.Error.Message, out.Error.Type),
+			}
 		}
 		logger.Error("openai: API error", "status", resp.StatusCode, "body", truncateString(string(b), 500))
-		return "", fmt.Errorf("openai: API error (status %d): %s", resp.StatusCode, truncateString(string(b), 500))
+		return "", &apiStatusError{
+			status: resp.StatusCode,
+			msg:    fmt.Sprintf("openai: API error (status %d): %s", resp.StatusCode, truncateString(string(b), 500)),
+		}
 	}
 
 	// Check if response is streaming (SSE format)

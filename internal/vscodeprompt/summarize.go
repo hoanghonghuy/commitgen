@@ -233,10 +233,6 @@ func summarizeGoHeuristic(lines []string) map[int]string {
 					inFunc = false
 					funcStartLine = 0
 					funcSig = ""
-				} else {
-					// store depth in local variable by scanning ahead
-					// (we'll handle via scanning until matched)
-					// We'll mark depth by using negative sentinel in kept map isn't good.
 				}
 			} else {
 				// multiline signature: keep first line for now; will collapse at first "{"

@@ -1,8 +1,12 @@
 package anthropic
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -43,6 +47,7 @@ type messageRequest struct {
 	MaxTokens   int       `json:"max_tokens"`
 	System      string    `json:"system,omitempty"`
 	Temperature float64   `json:"temperature,omitempty"`
+	Stream      bool      `json:"stream,omitempty"`
 }
 
 type message struct {
@@ -60,18 +65,15 @@ func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	return c.generate(ctx, msgs, temperature)
 }
 
-func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
-	// Anthropic API uses a specific format:
-	// System prompt is top-level.
-	// Users/Assistants alternate.
-
+// buildRequest converts VSCode messages into Anthropic's request format. The
+// system prompt is top-level; user/assistant messages alternate in Messages.
+func (c *Client) buildRequest(msgs []vscodeprompt.VSCodeMessage, temperature float64, stream bool) messageRequest {
 	var systemPrompt string
 	var anthropicMsgs []message
 
 	for _, m := range msgs {
 		role := "user"
 		if m.Role == vscodeprompt.RoleSystem {
-			// Extract system prompt
 			for _, part := range m.Content {
 				systemPrompt += part.Text + "\n"
 			}
@@ -91,13 +93,18 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		})
 	}
 
-	reqBody := messageRequest{
+	return messageRequest{
 		Model:       c.model,
 		Messages:    anthropicMsgs,
 		MaxTokens:   anthropicMaxTokens,
 		System:      strings.TrimSpace(systemPrompt),
 		Temperature: temperature,
+		Stream:      stream,
 	}
+}
+
+func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
+	reqBody := c.buildRequest(msgs, temperature, false)
 
 	headers := map[string]string{
 		"x-api-key":         c.apiKey,
@@ -115,4 +122,68 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	}
 
 	return msgResp.Content[0].Text, nil
+}
+
+// anthropicStreamChunk is a single SSE event from the streaming messages API.
+// Only content_block_delta events carry text in delta.text.
+type anthropicStreamChunk struct {
+	Type  string `json:"type"`
+	Delta struct {
+		Text string `json:"text"`
+	} `json:"delta"`
+}
+
+// GenerateStream streams the completion using Anthropic's SSE protocol,
+// invoking onDelta for each text chunk. It returns the full accumulated text.
+func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64, onDelta func(string)) (string, error) {
+	reqBody := c.buildRequest(msgs, temperature, true)
+	payload, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", fmt.Errorf("marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("x-api-key", c.apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("content-type", "application/json")
+	req.Header.Set("accept", "text/event-stream")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", logger.LogError(err, "anthropic: stream request failed")
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("anthropic: API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var full strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		var chunk anthropicStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			continue
+		}
+		if chunk.Type == "content_block_delta" && chunk.Delta.Text != "" {
+			full.WriteString(chunk.Delta.Text)
+			if onDelta != nil {
+				onDelta(chunk.Delta.Text)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", logger.LogError(err, "anthropic: stream read failed")
+	}
+	return full.String(), nil
 }

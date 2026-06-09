@@ -99,3 +99,56 @@ func TestGenerate_APIError(t *testing.T) {
 		t.Error("expected error for 429 response")
 	}
 }
+
+func TestGenerateStream_CollectsDeltas(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") != "test-key" {
+			t.Errorf("missing api key header: %q", r.Header.Get("x-api-key"))
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(
+			"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"feat: \"}}\n\n" +
+				"event: content_block_delta\n" +
+				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"add stream\"}}\n\n" +
+				"event: message_stop\n" +
+				"data: {\"type\":\"message_stop\"}\n\n"))
+	}))
+	defer srv.Close()
+
+	c := &Client{apiKey: "test-key", model: "claude-3-opus", baseURL: srv.URL, client: &http.Client{Timeout: 5 * time.Second}}
+	var deltas []string
+	full, err := c.GenerateStream(context.Background(), streamSampleMsgs(), 0.7, func(d string) {
+		deltas = append(deltas, d)
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if full != "feat: add stream" {
+		t.Errorf("full = %q", full)
+	}
+	if len(deltas) != 2 {
+		t.Errorf("expected 2 deltas, got %d: %v", len(deltas), deltas)
+	}
+}
+
+func TestGenerateStream_HTTPError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"type":"error","error":{"message":"bad key"}}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{apiKey: "bad", model: "claude-3-opus", baseURL: srv.URL, client: &http.Client{Timeout: 5 * time.Second}}
+	_, err := c.GenerateStream(context.Background(), streamSampleMsgs(), 0.7, nil)
+	if err == nil {
+		t.Error("expected error for non-200 stream response")
+	}
+}
+
+func streamSampleMsgs() []vscodeprompt.VSCodeMessage {
+	return []vscodeprompt.VSCodeMessage{
+		{Role: vscodeprompt.RoleSystem, Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "sys"}}},
+		{Role: vscodeprompt.RoleUser, Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "hi"}}},
+	}
+}

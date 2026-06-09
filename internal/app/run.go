@@ -130,7 +130,8 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 		vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
 
-		// Non-interactive mode: generate once, print to stdout, optionally commit.
+		// Non-interactive mode: generate once and print to stdout. With --print
+		// it also writes the hook file when configured; it never creates a commit.
 		if cfg.Print || cfg.DryRun {
 			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs)
 		}
