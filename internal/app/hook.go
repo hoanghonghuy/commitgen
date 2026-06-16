@@ -39,8 +39,9 @@ func resolveHooksDir(ctx context.Context, repoArg string) (string, error) {
 
 // InstallHook installs the prepare-commit-msg hook. When nonInteractive is true
 // (or on Windows) the hook runs commitgen in --print mode, which writes the
-// message to the commit file without needing /dev/tty.
-func InstallHook(ctx context.Context, repoArg string, nonInteractive bool) error {
+// message to the commit file without needing /dev/tty. configPath, when set,
+// is forwarded to the hook so a custom config location is honored at commit time.
+func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, configPath string) error {
 	useNonInteractive := nonInteractive || runtime.GOOS == "windows"
 	if runtime.GOOS == "windows" {
 		fmt.Println("Note: On Windows the hook runs in non-interactive (--print) mode and writes the message directly.")
@@ -57,9 +58,14 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool) error
 
 	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
 
-	// Don't overwrite an existing hook blindly.
+	// Back up an existing hook instead of failing, so a pre-existing hook is
+	// never silently lost. The user can restore it from the .bak file.
 	if _, err := os.Stat(hookPath); err == nil {
-		return fmt.Errorf("hook %s already exists. Please remove it first", hookPath)
+		backupPath := hookPath + ".bak"
+		if err := os.Rename(hookPath, backupPath); err != nil {
+			return fmt.Errorf("back up existing hook %s: %w", hookPath, err)
+		}
+		fmt.Printf("Existing hook backed up to %s\n", backupPath)
 	}
 
 	// Resolve the absolute path to the commitgen binary so the hook can call it.
@@ -70,7 +76,15 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool) error
 		exe, _ = filepath.Abs(exe)
 	}
 
-	script := buildHookScript(exe, useNonInteractive)
+	configArg := ""
+	if strings.TrimSpace(configPath) != "" {
+		if abs, absErr := filepath.Abs(configPath); absErr == nil {
+			configPath = abs
+		}
+		configArg = fmt.Sprintf(" --config \"%s\"", configPath)
+	}
+
+	script := buildHookScript(exe, useNonInteractive, configArg)
 
 	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write hook file: %w", err)
@@ -82,7 +96,8 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool) error
 
 // buildHookScript returns the prepare-commit-msg shell script. The interactive
 // variant uses /dev/tty for the TUI; the non-interactive variant uses --print.
-func buildHookScript(exe string, nonInteractive bool) string {
+// configArg is an optional pre-formatted ` --config "<path>"` fragment.
+func buildHookScript(exe string, nonInteractive bool, configArg string) string {
 	header := `#!/bin/sh
 # commitgen hook
 # This hook runs commitgen to generate a commit message.
@@ -92,23 +107,35 @@ COMMIT_MSG_FILE=$1
 COMMIT_SOURCE=$2
 SHA1=$3
 
-# If a message was supplied (e.g. git commit -m), do nothing.
-if [ "$COMMIT_SOURCE" = "message" ]; then
-  exit 0
-fi
+# Skip when the message is already provided or managed by git:
+#   message       -> git commit -m / -F
+#   merge/squash  -> merge or squash commit messages
+#   commit        -> git commit --amend / -c / -C (reusing an existing message)
+case "$COMMIT_SOURCE" in
+  message|merge|squash|commit)
+    exit 0
+    ;;
+esac
 
 echo "commitgen is analyzing changes..."
 `
 	if nonInteractive {
 		// Non-interactive: write the generated message straight to the file.
-		return header + fmt.Sprintf("\"%s\" --hook \"$COMMIT_MSG_FILE\" --print\n", exe)
+		// Abort the commit if commitgen fails so git never commits an empty or
+		// stale message.
+		return header + fmt.Sprintf(`if ! "%s" --hook "$COMMIT_MSG_FILE" --print%s; then
+  echo "commitgen failed, aborting commit" >&2
+  exit 1
+fi
+`, exe, configArg)
 	}
 	// Interactive: redirect stdin/stdout to the controlling terminal for the TUI.
-	return header + fmt.Sprintf(`if [ -t 0 ]; then
-    exec < /dev/tty
+	// Abort the commit when commitgen exits non-zero.
+	return header + fmt.Sprintf(`if ! "%s" --hook "$COMMIT_MSG_FILE"%s < /dev/tty > /dev/tty; then
+  echo "commitgen failed, aborting commit" >&2
+  exit 1
 fi
-"%s" --hook "$COMMIT_MSG_FILE" < /dev/tty > /dev/tty
-`, exe)
+`, exe, configArg)
 }
 
 // UninstallHook removes the prepare-commit-msg hook

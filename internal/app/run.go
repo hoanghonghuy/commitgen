@@ -84,7 +84,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return runConfig(cfg)
 	}
 	if cfg.Command == "install-hook" {
-		return InstallHook(ctx, cfg.RepoArg, cfg.Print)
+		return InstallHook(ctx, cfg.RepoArg, cfg.Print, cfg.ConfigPath)
 	}
 	if cfg.Command == "uninstall-hook" {
 		return UninstallHook(ctx, cfg.RepoArg)
@@ -157,7 +157,14 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		reviewMsgs := vscodeprompt.BuildReviewMessages(data, true)
-		finalModel, err := runTUI(newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true))
+		reviewTUI := newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true)
+		// Pre-build the full-review system message so "View Details" honors a
+		// custom prompt template instead of always using the built-in default.
+		if fullMsgs := vscodeprompt.BuildReviewMessages(data, false); len(fullMsgs) >= 1 {
+			fullSystem := fullMsgs[0]
+			reviewTUI.fullReviewSystem = &fullSystem
+		}
+		finalModel, err := runTUI(reviewTUI)
 		if err != nil {
 			return logger.LogError(err, "review TUI execution failed")
 		}
@@ -171,6 +178,7 @@ func Run(ctx context.Context, cfg Config) error {
 				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
 				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
 				suggestTUI.amend = cfg.Amend
+				suggestTUI.count = cfg.Count
 				suggestModel, err := runTUI(suggestTUI)
 				if err != nil {
 					return logger.LogError(err, "TUI execution failed")

@@ -33,7 +33,7 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	ctx := context.Background()
 	dir := initRepo(t)
 
-	if err := InstallHook(ctx, dir, false); err != nil {
+	if err := InstallHook(ctx, dir, false, ""); err != nil {
 		t.Fatalf("InstallHook error: %v", err)
 	}
 
@@ -46,9 +46,12 @@ func TestInstallAndUninstallHook(t *testing.T) {
 		t.Error("hook script should reference commitgen")
 	}
 
-	// Installing again should fail (hook exists)
-	if err := InstallHook(ctx, dir, false); err == nil {
-		t.Error("expected error installing over existing hook")
+	// Installing again should back up the existing hook, not fail.
+	if err := InstallHook(ctx, dir, false, ""); err != nil {
+		t.Errorf("InstallHook over existing hook should back up, not error: %v", err)
+	}
+	if _, err := os.Stat(hookPath + ".bak"); err != nil {
+		t.Errorf("expected backup hook at %s.bak: %v", hookPath, err)
 	}
 
 	// Uninstall removes it

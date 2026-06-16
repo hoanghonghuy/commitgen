@@ -596,6 +596,7 @@ func (m tuiModel) View() string {
 			} else {
 				inner = m.cachedContent
 			}
+			inner += "\n" + styleHint.Render(" y Copy ")
 		}
 
 	case stateEditing:

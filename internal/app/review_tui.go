@@ -169,6 +169,11 @@ type reviewModel struct {
 	quitting        bool
 	switchToSuggest bool // true when user selects "Suggest commit message" from review
 	isQuickMode     bool // true when current report is from quick review
+
+	// fullReviewSystem is the system message used when switching from a quick
+	// scan to the full review ("View Details"). It is pre-built so a custom
+	// prompt template is honored; when nil the built-in default is used.
+	fullReviewSystem *vscodeprompt.VSCodeMessage
 }
 
 type reviewResultMsg struct {
@@ -335,12 +340,18 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.state = reviewStateAnalyzing
 					m.report = ""
 					m.cachedContent = ""
-					// Rebuild messages: keep user message (contains diff data), replace system with full prompt
+					// Rebuild messages: keep user message (contains diff data), replace
+					// system with the full-review prompt. Prefer the pre-built system
+					// message (which honors a custom prompt template) and fall back to
+					// the built-in default when none was provided.
 					fullSystem := vscodeprompt.VSCodeMessage{
 						Role: vscodeprompt.RoleSystem,
 						Content: []vscodeprompt.VSCodeContentPart{
 							{Type: 1, Text: vscodeprompt.DefaultFullReviewPromptTemplate()},
 						},
+					}
+					if m.fullReviewSystem != nil {
+						fullSystem = *m.fullReviewSystem
 					}
 					if len(m.initialMsgs) >= 2 {
 						m.initialMsgs[0] = fullSystem
