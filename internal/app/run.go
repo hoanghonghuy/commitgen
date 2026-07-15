@@ -19,6 +19,7 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
 	"github.com/hoanghonghuy/commitgen/internal/openai"
+	"github.com/hoanghonghuy/commitgen/internal/validator"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -67,6 +68,7 @@ type Config struct {
 	PromptTemplate string
 	ReviewLanguage string
 	Locale         string // UI language (en, vi, ja, zh)
+	RulesFile      string // path to validation rules file (.commitgen-rules.json)
 
 	// Behavior modes
 	Print        bool   // print message to stdout instead of launching TUI
@@ -83,6 +85,18 @@ type Config struct {
 
 func Run(ctx context.Context, cfg Config) error {
 	tr := i18n.New(i18n.Locale(cfg.Locale))
+
+	// Load validation rules if configured.
+	var v *validator.Validator
+	if strings.TrimSpace(cfg.RulesFile) != "" {
+		if rulesCfg, err := loadRulesConfig(cfg.RulesFile); err == nil {
+			v = validator.New(*rulesCfg)
+		}
+	}
+	// Fallback: use defaults when no rules file is specified.
+	if v == nil {
+		v = validator.New(*validator.DefaultConfig())
+	}
 
 	if cfg.Command == "config" {
 		return runConfig(cfg)
@@ -140,7 +154,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs, tr)
 		}
 
-		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr)
+		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
 		suggestTUI.amend = cfg.Amend
 		suggestTUI.count = cfg.Count
 		finalModel, err := runTUI(suggestTUI)
@@ -180,7 +194,7 @@ func Run(ctx context.Context, cfg Config) error {
 			// User selected "Suggest commit message" from review mode
 			if m.switchToSuggest {
 				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr)
+				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
 				suggestTUI.amend = cfg.Amend
 				suggestTUI.count = cfg.Count
 				suggestModel, err := runTUI(suggestTUI)
@@ -199,6 +213,19 @@ func Run(ctx context.Context, cfg Config) error {
 	default:
 		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
 	}
+}
+
+// loadRulesConfig reads a JSON rules configuration file and merges it with defaults.
+func loadRulesConfig(path string) (*validator.Config, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var cfg validator.Config
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		return nil, fmt.Errorf("parse rules config: %w", err)
+	}
+	return validator.LoadConfig(&cfg), nil
 }
 
 func newProvider(cfg Config) (ai.Provider, error) {

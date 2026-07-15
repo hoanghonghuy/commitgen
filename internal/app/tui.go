@@ -17,6 +17,7 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
+	"github.com/hoanghonghuy/commitgen/internal/validator"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -54,6 +55,7 @@ const (
 	stateChoose
 	stateDone
 	stateCopied
+	stateValidationFailed
 )
 
 const (
@@ -66,16 +68,18 @@ type tuiModel struct {
 	height int
 
 	// Dependencies
-	provider     ai.Provider
-	initialMsgs  []vscodeprompt.VSCodeMessage
-	temp         float64
-	timeout      time.Duration
-	conventional bool
-	hookFile     string
-	repoRoot     string
-	amend        bool
-	count        int
-	i18n         *i18n.Translator
+	provider         ai.Provider
+	initialMsgs      []vscodeprompt.VSCodeMessage
+	temp             float64
+	timeout          time.Duration
+	conventional     bool
+	hookFile         string
+	repoRoot         string
+	amend            bool
+	count            int
+	i18n             *i18n.Translator
+	validator        *validator.Validator
+	validationIssues []validator.Issue
 
 	// Components
 	spinner       spinner.Model
@@ -123,7 +127,7 @@ type commitDoneMsg struct {
 	err error
 }
 
-func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string, tr *i18n.Translator) tuiModel {
+func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string, tr *i18n.Translator, v *validator.Validator) tuiModel {
 	s := newSpinnerModel()
 
 	ta := textarea.New()
@@ -156,6 +160,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 		height:        24,
 		streamCh:      make(chan streamEvent, 256),
 		i18n:          tr,
+		validator:     v,
 	}
 }
 
@@ -400,8 +405,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				switch m.cursor {
 				case 0: // Commit
+					if m.validator != nil {
+						issues := m.validator.Validate(m.commitMsg)
+						if len(issues) > 0 {
+							m.validationIssues = issues
+							m.state = stateValidationFailed
+							m = m.refreshViewport()
+							return m, nil
+						}
+					}
 					m.state = stateCommitting
-					return m, m.commitCmd()
+					return m, tea.Batch(m.commitCmd(), m.spinner.Tick)
 				case 1: // Regenerate
 					m.state = stateRegenHint
 					m.hintInput.SetValue("")
@@ -444,6 +458,35 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var cmd tea.Cmd
 			m.hintInput, cmd = m.hintInput.Update(msg)
 			return m, cmd
+
+		case stateValidationFailed:
+			switch msg.String() {
+			case "a", "A":
+				// Auto-fix
+				if m.validator != nil {
+					if fixed, changed := m.validator.AutoFix(m.commitMsg); changed {
+						m.commitMsg = fixed
+						m.validationIssues = nil
+						m.state = stateConfirm
+						m = m.refreshViewport()
+						return m, nil
+					}
+				}
+			case "e", "E":
+				// Edit manually
+				m.textarea.SetValue(m.commitMsg)
+				m.state = stateEditing
+				return m, nil
+			case "i", "I":
+				// Ignore and commit anyway
+				m.state = stateCommitting
+				return m, tea.Batch(m.commitCmd(), m.spinner.Tick)
+			case "c", "C", "esc":
+				// Cancel — go back to confirm
+				m.state = stateConfirm
+				m = m.refreshViewport()
+				return m, nil
+			}
 
 		case stateChoose:
 			switch msg.String() {
@@ -657,6 +700,41 @@ func (m tuiModel) View() string {
 
 	case stateCopied:
 		inner = fmt.Sprintf("\n  %s\n", m.i18n.T("tui.state.copied"))
+
+	case stateValidationFailed:
+		var b strings.Builder
+		b.WriteString("\n")
+		b.WriteString(styleReviewError.Render(m.i18n.T("tui.title.validation_failed")))
+		b.WriteString("\n\n")
+		b.WriteString(m.i18n.T("tui.hint.validation_issues"))
+		b.WriteString("\n")
+		for _, issue := range m.validationIssues {
+			level := "ERROR"
+			if issue.Level == "warning" {
+				level = "WARN"
+			}
+			b.WriteString(fmt.Sprintf("  • [%s] %s\n", level, issue.Message))
+		}
+		b.WriteString("\n")
+		b.WriteString(styleActionTitle.Render(m.i18n.T("tui.title.action")))
+		b.WriteString("\n")
+		barStr := styleBar.Render("┃")
+		actions := []string{
+			m.i18n.T("tui.action.autofix"),
+			m.i18n.T("tui.action.edit"),
+			m.i18n.T("tui.action.ignore"),
+			m.i18n.T("tui.action.cancel"),
+		}
+		for i, action := range actions {
+			if m.cursor == i {
+				b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(action)))
+			} else {
+				b.WriteString(fmt.Sprintf("%s   %s\n", barStr, action))
+			}
+		}
+		b.WriteString("\n")
+		b.WriteString(styleHint.Render(" a Auto-fix  •  e Edit  •  i Ignore  •  Esc Cancel "))
+		inner = b.String()
 	}
 
 	if inner == "" {

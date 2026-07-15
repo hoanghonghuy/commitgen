@@ -35,6 +35,9 @@ type FileConfig struct {
 	// Locale for UI language (en, vi, ja, zh). Defaults to "en".
 	Locale string `json:"locale,omitempty"`
 
+	// Path to commit message validation rules file (e.g. .commitgen-rules.json).
+	RulesFile string `json:"rules_file,omitempty"`
+
 	// Review Settings
 	ReviewLanguage string `json:"review_language,omitempty"` // en, vi
 
@@ -141,6 +144,9 @@ func Merge(base, override FileConfig) FileConfig {
 	}
 	if override.Locale != "" {
 		out.Locale = override.Locale
+	}
+	if override.RulesFile != "" {
+		out.RulesFile = override.RulesFile
 	}
 	if override.LogLevel != "" {
 		out.LogLevel = override.LogLevel

@@ -57,7 +57,7 @@ func TestDumpPrompt_ToStdout(t *testing.T) {
 
 func TestTui_ViewStates(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
 
 	m.state = stateGenerating
 	if m.View() == "" {
@@ -95,7 +95,7 @@ func TestTui_ViewStates(t *testing.T) {
 
 func TestTui_RefreshViewportScroll(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
 	// small terminal forces scrolling
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
 	m = u.(tuiModel)

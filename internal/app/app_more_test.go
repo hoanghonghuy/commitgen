@@ -13,7 +13,7 @@ import (
 
 func TestTuiInit(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	if m.Init() == nil {
 		t.Error("tuiModel.Init should return a command batch")
 	}
@@ -30,7 +30,7 @@ func TestReviewInit(t *testing.T) {
 func TestGenerateCommitCmd_RawFallback(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
 	// Provider returns plain prose without a code block → raw text is used.
-	m := newTuiModel("/repo", fakeProvider{resp: "just a plain message"}, baseMsgs(), 0.7, time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{resp: "just a plain message"}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	msg := m.generateCommitCmd()()
 	res := msg.(commitResultMsg)
 	if res.err != nil {
@@ -78,7 +78,7 @@ func TestBuildPromptData_TruncatesLargeNewFile(t *testing.T) {
 
 func TestTui_EditingTypingUpdatesTextarea(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	u, _ := m.Update(commitResultMsg{content: "msg"})
 	tm := u.(tuiModel)
 	tm.cursor = 2 // Edit

@@ -23,7 +23,7 @@ func TestCommitCmd_GitPath(t *testing.T) {
 	runGit(t, dir, "add", ".")
 
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel(dir, fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel(dir, fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	m.commitMsg = "feat: add feature file"
 
 	msg := m.commitCmd()()
@@ -43,7 +43,7 @@ func TestCommitCmd_GitPath(t *testing.T) {
 
 func TestGenerateCommitCmd_Error(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{err: errors.New("boom")}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{err: errors.New("boom")}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	msg := m.generateCommitCmd()()
 	res, ok := msg.(commitResultMsg)
 	if !ok {
@@ -56,7 +56,7 @@ func TestGenerateCommitCmd_Error(t *testing.T) {
 
 func TestTui_CopyDoneReturnsToConfirm(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	m.state = stateCopied
 	u, _ := m.Update(copyDoneMsg{})
 	tm := u.(tuiModel)
@@ -67,7 +67,7 @@ func TestTui_CopyDoneReturnsToConfirm(t *testing.T) {
 
 func TestTui_CommitDoneError(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	u, cmd := m.Update(commitDoneMsg{err: errors.New("commit failed")})
 	tm := u.(tuiModel)
 	if tm.state != stateDone || tm.err == nil || cmd == nil {
@@ -77,7 +77,7 @@ func TestTui_CommitDoneError(t *testing.T) {
 
 func TestTui_EnterRegenerate(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{resp: "feat: regen"}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{resp: "feat: regen"}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	u, _ := m.Update(commitResultMsg{content: "first"})
 	tm := u.(tuiModel)
 	tm.cursor = 1 // Regenerate
@@ -101,7 +101,7 @@ func TestTui_EnterRegenerate(t *testing.T) {
 
 func TestTui_RegenHintCancel(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	u, _ := m.Update(commitResultMsg{content: "msg"})
 	tm := u.(tuiModel)
 	tm.cursor = 1
@@ -117,7 +117,7 @@ func TestTui_RegenHintCancel(t *testing.T) {
 
 func TestTui_PgUpPgDownWhenScrolling(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr, nil)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
 	m = u.(tuiModel)
 	long := strings.Repeat("body line of text\n", 50)

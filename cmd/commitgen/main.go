@@ -130,6 +130,7 @@ func main() {
 		PromptTemplate:   promptTemplate,
 		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 		Locale:           locale,
+		RulesFile:        fileCfg.RulesFile,
 		IgnoredFiles:     fileCfg.IgnoredFiles,
 		Print:            *printFlag,
 		DryRun:           *dryRunFlag,
