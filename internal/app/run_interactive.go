@@ -72,6 +72,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 					"https://api.openai.com/v1",
 					"https://openrouter.ai/api/v1",
 					"https://api.mistral.ai/v1",
+					"https://api.ollama.cloud",
 					"http://localhost:11434",
 				}).
 				Value(&baseURL),

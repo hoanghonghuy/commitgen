@@ -147,7 +147,11 @@ func listOllamaModels(ctx context.Context, cfg Config, tr *i18n.Translator) erro
 			Name string `json:"name"`
 		} `json:"models"`
 	}
-	if err := getJSON(ctx, base+"/api/tags", nil, &resp); err != nil {
+	headers := map[string]string{}
+	if strings.TrimSpace(cfg.APIKey) != "" {
+		headers["Authorization"] = "Bearer " + cfg.APIKey
+	}
+	if err := getJSON(ctx, base+"/api/tags", headers, &resp); err != nil {
 		return logger.LogError(err, "failed to list ollama models")
 	}
 	names := make([]string, 0, len(resp.Models))
