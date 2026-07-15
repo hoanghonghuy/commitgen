@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -48,7 +49,7 @@ func TestApplyInlineStyles(t *testing.T) {
 
 func newTestReviewModel(quick bool) reviewModel {
 	tr := i18n.New(i18n.LocaleEN)
-	return newReviewModel(fakeProvider{resp: "## Conclusion\nok"}, baseMsgs(), 0.7, 5*time.Second, quick, tr)
+	return newReviewModel(context.Background(),fakeProvider{resp: "## Conclusion\nok"}, baseMsgs(), 0.7, 5*time.Second, quick, tr)
 }
 
 func TestReview_ResultQuickDone(t *testing.T) {
@@ -145,7 +146,7 @@ func TestReview_NavigationClampQuick(t *testing.T) {
 
 func TestReview_GenerateReviewCmd(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 5*time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	msg := m.generateReviewCmd()()
 	res, ok := msg.(reviewResultMsg)
 	if !ok {

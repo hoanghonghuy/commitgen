@@ -69,6 +69,7 @@ type tuiModel struct {
 	height int
 
 	// Dependencies
+	runCtx           context.Context
 	provider         ai.Provider
 	initialMsgs      []vscodeprompt.VSCodeMessage
 	temp             float64
@@ -128,7 +129,10 @@ type commitDoneMsg struct {
 	err error
 }
 
-func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string, tr *i18n.Translator, v *validator.Validator) tuiModel {
+func newTuiModel(ctx context.Context, repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string, tr *i18n.Translator, v *validator.Validator) tuiModel {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s := newSpinnerModel()
 
 	ta := textarea.New()
@@ -145,6 +149,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 
 	return tuiModel{
 		state:         stateGenerating,
+		runCtx:        ctx,
 		provider:      provider,
 		initialMsgs:   msgs,
 		temp:          temp,
@@ -180,17 +185,20 @@ func (m tuiModel) generateCmd() tea.Cmd {
 		if m.conventional {
 			msgs = append(msgs, conventionalReminder())
 		}
-		return tea.Batch(startStreamCmd(sp, m.streamCh, msgs, m.temp, m.timeout), waitStreamCmd(m.streamCh))
+		return tea.Batch(startStreamCmd(m.runCtx, sp, m.streamCh, msgs, m.temp, m.timeout), waitStreamCmd(m.streamCh))
 	}
 	return m.generateCommitCmd()
 }
 
 // startStreamCmd launches the streaming generation in a goroutine, pushing
 // deltas and a final event onto ch.
-func startStreamCmd(sp ai.StreamProvider, ch chan streamEvent, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration) tea.Cmd {
+func startStreamCmd(ctx context.Context, sp ai.StreamProvider, ch chan streamEvent, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
+			if ctx == nil {
+				ctx = context.Background()
+			}
+			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			full, err := sp.GenerateStream(ctx, msgs, clampTemperature(temp), func(d string) {
 				ch <- streamEvent{delta: d}
@@ -222,7 +230,7 @@ func (m tuiModel) buildGenMessages() []vscodeprompt.VSCodeMessage {
 // generateCandidatesCmd generates m.count candidate messages sequentially.
 func (m tuiModel) generateCandidatesCmd() tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
+		ctx, cancel := context.WithTimeout(m.runCtx, m.timeout)
 		defer cancel()
 
 		msgs := m.buildGenMessages()
@@ -243,7 +251,7 @@ func (m tuiModel) generateCommitCmd() tea.Cmd {
 	return func() tea.Msg {
 		msgs := m.buildGenMessages()
 
-		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
+		ctx, cancel := context.WithTimeout(m.runCtx, m.timeout)
 		defer cancel()
 
 		msg, err := generateCommitMessage(ctx, m.provider, msgs, m.temp, m.conventional)

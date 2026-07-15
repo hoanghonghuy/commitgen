@@ -154,6 +154,7 @@ type reviewModel struct {
 	height int
 
 	provider    ai.Provider
+	runCtx      context.Context
 	initialMsgs []vscodeprompt.VSCodeMessage
 	temp        float64
 	timeout     time.Duration
@@ -187,13 +188,17 @@ type reviewResultMsg struct {
 // reviewCopyDoneMsg is sent after clipboard copy feedback expires.
 type reviewCopyDoneMsg struct{}
 
-func newReviewModel(provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, quickMode bool, tr *i18n.Translator) reviewModel {
+func newReviewModel(ctx context.Context, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, quickMode bool, tr *i18n.Translator) reviewModel {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	s := newSpinnerModel()
 
 	vp := newDefaultViewport(80, 20)
 
 	return reviewModel{
 		state:         reviewStateAnalyzing,
+		runCtx:        ctx,
 		provider:      provider,
 		initialMsgs:   msgs,
 		temp:          temp,
@@ -217,7 +222,7 @@ func (m reviewModel) generateReviewCmd() tea.Cmd {
 		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(m.initialMsgs))
 		copy(currentMsgs, m.initialMsgs)
 
-		ctx, cancel := context.WithTimeout(context.Background(), m.timeout)
+		ctx, cancel := context.WithTimeout(m.runCtx, m.timeout)
 		defer cancel()
 
 		raw, err := m.provider.Generate(ctx, currentMsgs, clampTemperature(m.temp))

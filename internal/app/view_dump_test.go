@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -57,7 +58,7 @@ func TestDumpPrompt_ToStdout(t *testing.T) {
 
 func TestTui_ViewStates(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
 
 	m.state = stateGenerating
 	if m.View() == "" {
@@ -95,7 +96,7 @@ func TestTui_ViewStates(t *testing.T) {
 
 func TestTui_RefreshViewportScroll(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
 	// small terminal forces scrolling
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
 	m = u.(tuiModel)
@@ -116,7 +117,7 @@ func TestTui_RefreshViewportScroll(t *testing.T) {
 
 func TestReview_ViewAnalyzingAndCopied(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	m.state = reviewStateAnalyzing
 	if m.View() == "" {
 		t.Error("analyzing view empty")

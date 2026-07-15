@@ -41,7 +41,7 @@ func (f fakeStreamProvider) GenerateStream(_ context.Context, _ []vscodeprompt.V
 
 func TestTui_StreamDeltaAccumulates(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 
 	u, cmd := m.Update(streamEvent{delta: "feat: "})
 	tm := u.(tuiModel)
@@ -61,7 +61,7 @@ func TestTui_StreamDeltaAccumulates(t *testing.T) {
 
 func TestTui_StreamDoneFinalizes(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	m.streamView = "partial"
 
 	u, _ := m.Update(streamEvent{done: true, full: "```text\nfeat: streamed\n```"})
@@ -79,7 +79,7 @@ func TestTui_StreamDoneFinalizes(t *testing.T) {
 
 func TestTui_StreamDoneError(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	u, cmd := m.Update(streamEvent{done: true, err: errors.New("stream broke")})
 	tm := u.(tuiModel)
 	if tm.state != stateDone || tm.err == nil || cmd == nil {
@@ -91,7 +91,7 @@ func TestTui_StreamGenerateCmdEndToEnd(t *testing.T) {
 	// startStreamCmd should push deltas then a final done event onto the channel.
 	sp := fakeStreamProvider{deltas: []string{"feat: ", "stream"}}
 	ch := make(chan streamEvent, 16)
-	cmd := startStreamCmd(sp, ch, baseMsgs(), 0.7, time.Second)
+	cmd := startStreamCmd(context.Background(), sp, ch, baseMsgs(), 0.7, time.Second)
 	cmd() // launches the goroutine
 
 	var got string
@@ -114,7 +114,7 @@ func TestTui_StreamGenerateCmdEndToEnd(t *testing.T) {
 
 func TestTui_StreamViewRendersPartial(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(), "/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	m.state = stateGenerating
 	m.streamView = "feat: partial message"
 	view := m.View()
@@ -124,3 +124,31 @@ func TestTui_StreamViewRendersPartial(t *testing.T) {
 }
 
 var _ tea.Model = tuiModel{}
+
+type waitCtxStreamProvider struct{}
+
+func (waitCtxStreamProvider) Generate(context.Context, []vscodeprompt.VSCodeMessage, float64) (string, error) {
+	return "", errors.New("not used")
+}
+
+func (waitCtxStreamProvider) GenerateStream(ctx context.Context, _ []vscodeprompt.VSCodeMessage, _ float64, _ func(string)) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
+}
+
+func TestStartStreamCmd_RespectsCancel(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ch := make(chan streamEvent, 2)
+	_ = startStreamCmd(ctx, waitCtxStreamProvider{}, ch, baseMsgs(), 0.7, time.Second)()
+
+	select {
+	case ev := <-ch:
+		if ev.err == nil {
+			t.Fatal("expected canceled error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for stream event")
+	}
+}

@@ -150,6 +150,9 @@ func providerLabel(p string) string {
 
 func listOllamaModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	base := strings.TrimRight(ollama.ResolveBaseURL(cfg.BaseURL, cfg.APIKey), "/")
+	if ollama.IsCloudBaseURL(base) && strings.TrimSpace(cfg.APIKey) == "" {
+		fmt.Fprintf(os.Stderr, "%s\n", tr.T("warn.ollama_models_no_auth"))
+	}
 	var resp struct {
 		Models []struct {
 			Name string `json:"name"`

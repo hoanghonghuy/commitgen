@@ -147,7 +147,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs, v, tr)
 		}
 
-		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
+		suggestTUI := newTuiModel(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
 		suggestTUI.amend = cfg.Amend
 		suggestTUI.count = cfg.Count
 		finalModel, err := runTUI(suggestTUI)
@@ -169,7 +169,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		reviewMsgs := vscodeprompt.BuildReviewMessages(data, true)
-		reviewTUI := newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true, tr)
+		reviewTUI := newReviewModel(ctx, provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true, tr)
 		// Pre-build the full-review system message so "View Details" honors a
 		// custom prompt template instead of always using the built-in default.
 		if fullMsgs := vscodeprompt.BuildReviewMessages(data, false); len(fullMsgs) >= 1 {
@@ -188,7 +188,7 @@ func Run(ctx context.Context, cfg Config) error {
 			// User selected "Suggest commit message" from review mode
 			if m.switchToSuggest {
 				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
+				suggestTUI := newTuiModel(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
 				suggestTUI.amend = cfg.Amend
 				suggestTUI.count = cfg.Count
 				suggestModel, err := runTUI(suggestTUI)
@@ -439,6 +439,11 @@ func showConfig(path string) error {
 	if err != nil {
 		return logger.LogError(err, "failed to load config", "path", resolveConfigPath(path))
 	}
+	tr := i18n.New(i18n.Locale(firstNonEmpty(fileCfg.Locale, "en")))
+	resolvedPath := resolveConfigPath(path)
+	fmt.Printf("Config file: %s\n", resolvedPath)
+	fmt.Printf("%s\n", tr.T("config.show.provider", providerConfigLabel(fileCfg.Provider, fileCfg.BaseURL, fileCfg.APIKey)))
+
 	fileCfg.APIKey = maskSecret(fileCfg.APIKey)
 	fileCfg.AnthropicKey = maskSecret(fileCfg.AnthropicKey)
 	fileCfg.GeminiKey = maskSecret(fileCfg.GeminiKey)
@@ -447,7 +452,7 @@ func showConfig(path string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Config file: %s\n%s\n", resolveConfigPath(path), string(b))
+	fmt.Println(string(b))
 	return nil
 }
 

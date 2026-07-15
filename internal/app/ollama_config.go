@@ -52,3 +52,20 @@ func applyOllamaOptionSelection(option, baseURL, apiKey string) (provider, resol
 		return option, baseURL
 	}
 }
+
+// providerConfigLabel returns a human-readable provider name for config display.
+func providerConfigLabel(provider, baseURL, apiKey string) string {
+	p := strings.ToLower(strings.TrimSpace(provider))
+	if p == "" {
+		p = "openai"
+	}
+	if p != "ollama" {
+		return p
+	}
+	switch ollamaOptionForConfig(p, baseURL, apiKey) {
+	case ollamaCloudOption:
+		return "ollama (cloud)"
+	default:
+		return "ollama (local)"
+	}
+}

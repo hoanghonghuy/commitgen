@@ -115,12 +115,17 @@ func main() {
 	}
 	apiKey = strings.TrimSpace(apiKey)
 
+	defaultModel := defaultModelForProvider(provider)
+	if strings.EqualFold(provider, "ollama") {
+		defaultModel = ollama.DefaultModel(baseURL, apiKey)
+	}
+
 	cfg := app.Config{
 		Command:  cmd,
 		RepoArg:  *repoFlag,
 		BaseURL:  baseURL,
 		APIKey:   apiKey,
-		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModelForProvider(provider)),
+		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModel),
 		Provider: provider,
 
 		AnthropicKey: config.ResolveString(*anthropicKeyFlag, getenvWithFallback("COMMITGEN_ANTHROPIC_KEY", "COMMITAI_ANTHROPIC_KEY", tr), fileCfg.AnthropicKey, ""),

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -24,7 +25,7 @@ func waitForText(t *testing.T, tm *teatest.TestModel, substr string) {
 
 func TestTeatest_SuggestCancel(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{resp: "```text\nfeat: add cancel\n```"}, baseMsgs(), 0.7, 2*time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{resp: "```text\nfeat: add cancel\n```"}, baseMsgs(), 0.7, 2*time.Second, false, "", tr, nil)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	waitForText(t, tm, "feat: add cancel")
@@ -45,7 +46,7 @@ func TestTeatest_SuggestCancel(t *testing.T) {
 func TestTeatest_SuggestCommitViaHook(t *testing.T) {
 	hookFile := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{resp: "```text\nfeat: hooked commit\n```"}, baseMsgs(), 0.7, 2*time.Second, false, hookFile, tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{resp: "```text\nfeat: hooked commit\n```"}, baseMsgs(), 0.7, 2*time.Second, false, hookFile, tr, nil)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	waitForText(t, tm, "feat: hooked commit")
@@ -67,7 +68,7 @@ func TestTeatest_SuggestCommitViaHook(t *testing.T) {
 
 func TestTeatest_SuggestGenerateError(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{err: errors.New("provider offline")}, baseMsgs(), 0.7, 2*time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{err: errors.New("provider offline")}, baseMsgs(), 0.7, 2*time.Second, false, "", tr, nil)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	tm.WaitFinished(t, teatest.WithFinalTimeout(teatestWait))
@@ -79,7 +80,7 @@ func TestTeatest_SuggestGenerateError(t *testing.T) {
 
 func TestTeatest_ReviewQuickExit(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{resp: "```markdown\n## Conclusion\nlooks good\n```"}, baseMsgs(), 0.7, 2*time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{resp: "```markdown\n## Conclusion\nlooks good\n```"}, baseMsgs(), 0.7, 2*time.Second, true, tr)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	waitForText(t, tm, "Quick Scan Result")
@@ -99,7 +100,7 @@ func TestTeatest_ReviewQuickExit(t *testing.T) {
 
 func TestTeatest_ReviewSwitchToSuggest(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 2*time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 2*time.Second, true, tr)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	waitForText(t, tm, "Quick Scan Result")
@@ -117,7 +118,7 @@ func TestTeatest_ReviewSwitchToSuggest(t *testing.T) {
 
 func TestTeatest_ReviewQuickViewDetails(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 2*time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 2*time.Second, true, tr)
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	waitForText(t, tm, "Quick Scan Result")

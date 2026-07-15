@@ -49,3 +49,12 @@ func TestResolveAPIKey(t *testing.T) {
 		t.Fatalf("commitgen env = %q, want commitgen-env", got)
 	}
 }
+
+func TestDefaultModel(t *testing.T) {
+	if got := DefaultModel("", ""); got != "llama3" {
+		t.Fatalf("local default = %q", got)
+	}
+	if got := DefaultModel("https://ollama.com", "sk-key"); got != "deepseek-v4-pro" {
+		t.Fatalf("cloud default = %q", got)
+	}
+}

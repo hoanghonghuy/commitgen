@@ -13,7 +13,7 @@ import (
 
 func TestTuiInit(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	if m.Init() == nil {
 		t.Error("tuiModel.Init should return a command batch")
 	}
@@ -21,7 +21,7 @@ func TestTuiInit(t *testing.T) {
 
 func TestReviewInit(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{resp: "x"}, baseMsgs(), 0.7, time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{resp: "x"}, baseMsgs(), 0.7, time.Second, true, tr)
 	if m.Init() == nil {
 		t.Error("reviewModel.Init should return a command batch")
 	}
@@ -30,7 +30,7 @@ func TestReviewInit(t *testing.T) {
 func TestGenerateCommitCmd_RawFallback(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
 	// Provider returns plain prose without a code block → raw text is used.
-	m := newTuiModel("/repo", fakeProvider{resp: "just a plain message"}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{resp: "just a plain message"}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	msg := m.generateCommitCmd()()
 	res := msg.(commitResultMsg)
 	if res.err != nil {
@@ -43,7 +43,7 @@ func TestGenerateCommitCmd_RawFallback(t *testing.T) {
 
 func TestGenerateReviewCmd_Error(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{err: errors.New("net down")}, baseMsgs(), 0.7, time.Second, true, tr)
+	m := newReviewModel(context.Background(),fakeProvider{err: errors.New("net down")}, baseMsgs(), 0.7, time.Second, true, tr)
 	msg := m.generateReviewCmd()()
 	res := msg.(reviewResultMsg)
 	if res.err == nil {
@@ -78,7 +78,7 @@ func TestBuildPromptData_TruncatesLargeNewFile(t *testing.T) {
 
 func TestTui_EditingTypingUpdatesTextarea(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(),"/repo", fakeProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	u, _ := m.Update(commitResultMsg{content: "msg"})
 	tm := u.(tuiModel)
 	tm.cursor = 2 // Edit
@@ -98,7 +98,7 @@ func TestTui_EditingTypingUpdatesTextarea(t *testing.T) {
 func TestReview_ViewErrorBranches(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
 	// full done with error
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, time.Second, false, tr)
+	m := newReviewModel(context.Background(),fakeProvider{}, baseMsgs(), 0.7, time.Second, false, tr)
 	m.state = reviewStateDone
 	m.err = errors.New("boom")
 	if !strings.Contains(m.View(), "boom") {
@@ -106,7 +106,7 @@ func TestReview_ViewErrorBranches(t *testing.T) {
 	}
 
 	// quick done with error
-	m2 := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, time.Second, true, tr)
+	m2 := newReviewModel(context.Background(),fakeProvider{}, baseMsgs(), 0.7, time.Second, true, tr)
 	m2.state = reviewStateQuickDone
 	m2.err = errors.New("kaput")
 	if !strings.Contains(m2.View(), "kaput") {
@@ -116,7 +116,7 @@ func TestReview_ViewErrorBranches(t *testing.T) {
 
 func TestReview_PgUpPgDown(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, time.Second, false, tr)
+	m := newReviewModel(context.Background(),fakeProvider{}, baseMsgs(), 0.7, time.Second, false, tr)
 	u, _ := m.Update(reviewResultMsg{content: strings.Repeat("## Section\nbody text here\n", 40)})
 	rm := u.(reviewModel)
 	u, _ = rm.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
@@ -132,7 +132,7 @@ func TestReview_PgUpPgDown(t *testing.T) {
 
 func TestReview_MouseScroll(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, time.Second, false, tr)
+	m := newReviewModel(context.Background(),fakeProvider{}, baseMsgs(), 0.7, time.Second, false, tr)
 	u, _ := m.Update(reviewResultMsg{content: strings.Repeat("line\n", 40)})
 	rm := u.(reviewModel)
 	u, _ = rm.Update(tea.WindowSizeMsg{Width: 40, Height: 8})

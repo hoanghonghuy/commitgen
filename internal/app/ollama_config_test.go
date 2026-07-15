@@ -39,3 +39,15 @@ func TestApplyOllamaOptionSelection(t *testing.T) {
 		t.Fatalf("openai passthrough: provider=%q baseURL=%q", p, u)
 	}
 }
+
+func TestProviderConfigLabel(t *testing.T) {
+	if got := providerConfigLabel("ollama", "https://ollama.com", "sk"); got != "ollama (cloud)" {
+		t.Fatalf("cloud label = %q", got)
+	}
+	if got := providerConfigLabel("ollama", "http://localhost:11434", ""); got != "ollama (local)" {
+		t.Fatalf("local label = %q", got)
+	}
+	if got := providerConfigLabel("openai", "", ""); got != "openai" {
+		t.Fatalf("openai label = %q", got)
+	}
+}

@@ -17,6 +17,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	geminiKey := cfg.GeminiKey
 	model := cfg.Model
 	promptTemplate := cfg.PromptTemplate
+	rulesFile := cfg.RulesFile
 	provider := cfg.Provider
 	if provider == "" {
 		provider = "openai"
@@ -53,24 +54,24 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	form := huh.NewForm(
 		huh.NewGroup(
 			huh.NewNote().
-				Title("CommitGen Configuration").
+				Title(tr.T("config.form.title")).
 				Description(tr.T("config.form_intro") + "\n" + tr.T("config.save_target", savePath)),
 
 			huh.NewSelect[string]().
-				Title("AI Provider").
+				Title(tr.T("config.field.provider")).
 				Options(
-					huh.NewOption("OpenAI", "openai"),
-					huh.NewOption("Ollama (Local)", ollamaLocalOption),
-					huh.NewOption("Ollama (Cloud)", ollamaCloudOption),
-					huh.NewOption("Anthropic (Claude)", "anthropic"),
-					huh.NewOption("Google Gemini", "gemini"),
+					huh.NewOption(tr.T("config.provider.openai"), "openai"),
+					huh.NewOption(tr.T("config.provider.ollama_local"), ollamaLocalOption),
+					huh.NewOption(tr.T("config.provider.ollama_cloud"), ollamaCloudOption),
+					huh.NewOption(tr.T("config.provider.anthropic"), "anthropic"),
+					huh.NewOption(tr.T("config.provider.gemini"), "gemini"),
 				).
 				Value(&provider),
 
 			huh.NewInput().
-				Title("Base URL").
-				Description("API endpoint — Ollama Local: localhost:11434; Ollama Cloud: ollama.com; or OpenAI-compatible URL").
-				Placeholder("https://api.openai.com/v1 | http://localhost:11434 | https://ollama.com").
+				Title(tr.T("config.field.base_url")).
+				Description(tr.T("config.field.base_url.desc")).
+				Placeholder(tr.T("config.field.base_url.placeholder")).
 				Suggestions([]string{
 					"https://api.openai.com/v1",
 					"https://openrouter.ai/api/v1",
@@ -81,39 +82,39 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				Value(&baseURL),
 
 			huh.NewInput().
-				Title("API Key").
-				Description("Key for OpenAI / Ollama Cloud / Compatible providers").
+				Title(tr.T("config.field.api_key")).
+				Description(tr.T("config.field.api_key.desc")).
 				Value(&apiKey).
 				EchoMode(huh.EchoModePassword),
 
 			huh.NewInput().
-				Title("Anthropic API Key").
-				Description("Key for Claude models").
+				Title(tr.T("config.field.anthropic_key")).
+				Description(tr.T("config.field.anthropic_key.desc")).
 				Value(&anthropicKey).
 				EchoMode(huh.EchoModePassword),
 
 			huh.NewInput().
-				Title("Gemini API Key").
-				Description("Key for Google Gemini").
+				Title(tr.T("config.field.gemini_key")).
+				Description(tr.T("config.field.gemini_key.desc")).
 				Value(&geminiKey).
 				EchoMode(huh.EchoModePassword),
 
 			huh.NewInput().
-				Title("Model").
-				Description("Model name").
+				Title(tr.T("config.field.model")).
+				Description(tr.T("config.field.model.desc")).
 				Suggestions([]string{"gpt-4o", "claude-3-opus", "gemini-1.5-pro", "llama3", "deepseek-v4-pro"}).
 				Value(&model),
 
 			huh.NewInput().
-				Title("System Prompt Template").
-				Description("Custom system prompt (leave empty for default)").
+				Title(tr.T("config.field.prompt_template")).
+				Description(tr.T("config.field.prompt_template.desc")).
 				Value(&promptTemplate),
 		),
 
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Recent Commits").
-				Description("Number of recent commits to include").
+				Title(tr.T("config.field.recent_n")).
+				Description(tr.T("config.field.recent_n.desc")).
 				Value(&recentNStr).
 				Validate(func(s string) error {
 					_, err := strconv.Atoi(s)
@@ -121,8 +122,8 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				}),
 
 			huh.NewInput().
-				Title("Max Files").
-				Description("Max staged files to verify").
+				Title(tr.T("config.field.max_files")).
+				Description(tr.T("config.field.max_files.desc")).
 				Value(&maxFilesStr).
 				Validate(func(s string) error {
 					_, err := strconv.Atoi(s)
@@ -130,8 +131,8 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				}),
 
 			huh.NewInput().
-				Title("Temperature").
-				Description("LLM Temperature (0.0 - 2.0)").
+				Title(tr.T("config.field.temperature")).
+				Description(tr.T("config.field.temperature.desc")).
 				Value(&tempStr).
 				Validate(func(s string) error {
 					v, err := strconv.ParseFloat(s, 64)
@@ -139,7 +140,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 						return err
 					}
 					if v < 0 || v > 2.0 {
-						return fmt.Errorf("must be between 0.0 and 2.0")
+						return fmt.Errorf("%s", tr.T("config.field.temperature.error"))
 					}
 					return nil
 				}),
@@ -147,27 +148,32 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Summarize Changes").
-				Description("Summarize file content for larger files?").
+				Title(tr.T("config.field.summarize")).
+				Description(tr.T("config.field.summarize.desc")).
 				Value(&summarize),
 
 			huh.NewConfirm().
-				Title("Conventional Commits").
-				Description("Enforce Conventional Commits specification?").
+				Title(tr.T("config.field.conventional")).
+				Description(tr.T("config.field.conventional.desc")).
 				Value(&conventional),
 		),
 
 		huh.NewGroup(
 			huh.NewInput().
-				Title("Ignored Files").
-				Description("Glob patterns (comma separated)").
+				Title(tr.T("config.field.ignored_files")).
+				Description(tr.T("config.field.ignored_files.desc")).
 				Value(&ignoredFilesStr),
+
+			huh.NewInput().
+				Title(tr.T("config.field.rules_file")).
+				Description(tr.T("config.field.rules_file.desc")).
+				Value(&rulesFile),
 		),
 
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("UI Language").
-				Description("Language for the terminal interface").
+				Title(tr.T("config.field.ui_language")).
+				Description(tr.T("config.field.ui_language.desc")).
 				Options(
 					huh.NewOption("English", "en"),
 					huh.NewOption("Tiếng Việt", "vi"),
@@ -179,8 +185,8 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 
 		huh.NewGroup(
 			huh.NewSelect[string]().
-				Title("Review Language").
-				Description("Language for review output").
+				Title(tr.T("config.field.review_language")).
+				Description(tr.T("config.field.review_language.desc")).
 				Options(
 					huh.NewOption("English", "en"),
 					huh.NewOption("Tiếng Việt", "vi"),
@@ -190,31 +196,31 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 
 		huh.NewGroup(
 			huh.NewNote().
-				Title("Logging Settings").
-				Description("Configure logging behavior"),
+				Title(tr.T("config.logging.title")).
+				Description(tr.T("config.logging.desc")),
 
 			huh.NewSelect[string]().
-				Title("Log Level").
+				Title(tr.T("config.field.log_level")).
 				Options(
-					huh.NewOption("Debug", "debug"),
-					huh.NewOption("Info", "info"),
-					huh.NewOption("Warning", "warn"),
-					huh.NewOption("Error", "error"),
+					huh.NewOption(tr.T("config.log_level.debug"), "debug"),
+					huh.NewOption(tr.T("config.log_level.info"), "info"),
+					huh.NewOption(tr.T("config.log_level.warn"), "warn"),
+					huh.NewOption(tr.T("config.log_level.error"), "error"),
 				).
 				Value(&logLevel),
 
 			huh.NewSelect[string]().
-				Title("Log Output").
+				Title(tr.T("config.field.log_output")).
 				Options(
-					huh.NewOption("Console (stderr)", "stderr"),
-					huh.NewOption("File only", "file"),
-					huh.NewOption("Both console and file", "both"),
+					huh.NewOption(tr.T("config.log_output.stderr"), "stderr"),
+					huh.NewOption(tr.T("config.log_output.file"), "file"),
+					huh.NewOption(tr.T("config.log_output.both"), "both"),
 				).
 				Value(&logOutput),
 
 			huh.NewInput().
-				Title("Log File Path").
-				Description("Leave empty for default (~/.commitgen/commitgen.log)").
+				Title(tr.T("config.field.log_file")).
+				Description(tr.T("config.field.log_file.desc")).
 				Value(&logFile),
 		),
 	)
@@ -224,12 +230,12 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 		return cfg, false, err
 	}
 
-	// Update the config object
 	cfg.APIKey = apiKey
 	cfg.AnthropicKey = anthropicKey
 	cfg.GeminiKey = geminiKey
 	cfg.Model = model
 	cfg.PromptTemplate = promptTemplate
+	cfg.RulesFile = rulesFile
 	cfg.Provider, cfg.BaseURL = applyOllamaOptionSelection(provider, baseURL, apiKey)
 
 	if v, err := strconv.Atoi(recentNStr); err == nil {
@@ -244,7 +250,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	cfg.Summarize = summarize
 	cfg.Conventional = conventional
 
-	// Split ignored files
 	rawIgnores := strings.Split(ignoredFilesStr, ",")
 	var ignores []string
 	for _, s := range rawIgnores {

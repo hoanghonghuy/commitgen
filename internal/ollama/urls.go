@@ -60,3 +60,11 @@ func ResolveAPIKey(flagVal, fileKey, commitgenEnvKey string) string {
 	}
 	return strings.TrimSpace(commitgenEnvKey)
 }
+
+// DefaultModel returns a sensible default model name for local vs cloud Ollama.
+func DefaultModel(baseURL, apiKey string) string {
+	if IsCloudBaseURL(ResolveBaseURL(baseURL, apiKey)) {
+		return "deepseek-v4-pro"
+	}
+	return "llama3"
+}
