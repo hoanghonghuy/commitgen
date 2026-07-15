@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -55,7 +56,8 @@ func TestDumpPrompt_ToStdout(t *testing.T) {
 }
 
 func TestTui_ViewStates(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr)
 
 	m.state = stateGenerating
 	if m.View() == "" {
@@ -92,7 +94,8 @@ func TestTui_ViewStates(t *testing.T) {
 }
 
 func TestTui_RefreshViewportScroll(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, "", tr)
 	// small terminal forces scrolling
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
 	m = u.(tuiModel)
@@ -112,7 +115,8 @@ func TestTui_RefreshViewportScroll(t *testing.T) {
 }
 
 func TestReview_ViewAnalyzingAndCopied(t *testing.T) {
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	m.state = reviewStateAnalyzing
 	if m.View() == "" {
 		t.Error("analyzing view empty")

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -53,7 +54,7 @@ func conventionalReminder() vscodeprompt.VSCodeMessage {
 // runSuggestNonInteractive generates a commit message once and prints it to
 // stdout without launching the TUI. With --print it also writes the hook file
 // when one is configured; with --dry-run it never produces side effects.
-func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage) error {
+func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, tr *i18n.Translator) error {
 	cctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
@@ -93,7 +94,7 @@ func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, 
 }
 
 // runPing verifies provider connectivity and credentials with a minimal request.
-func runPing(ctx context.Context, cfg Config) error {
+func runPing(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	provider, err := newProvider(cfg)
 	if err != nil {
 		return err
@@ -112,20 +113,20 @@ func runPing(ctx context.Context, cfg Config) error {
 	if _, err := provider.Generate(cctx, msgs, 0); err != nil {
 		return logger.LogError(err, "ping failed", "provider", providerLabel(cfg.Provider))
 	}
-	fmt.Printf("OK: %s responded (model: %s)\n", providerLabel(cfg.Provider), cfg.Model)
+	fmt.Println(tr.T("ping.ok", providerLabel(cfg.Provider), cfg.Model))
 	return nil
 }
 
 // runModels lists available models for providers that support discovery
 // (Ollama and OpenAI-compatible endpoints).
-func runModels(ctx context.Context, cfg Config) error {
+func runModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	switch strings.ToLower(cfg.Provider) {
 	case "ollama":
-		return listOllamaModels(ctx, cfg)
+		return listOllamaModels(ctx, cfg, tr)
 	case "openai", "":
-		return listOpenAIModels(ctx, cfg)
+		return listOpenAIModels(ctx, cfg, tr)
 	default:
-		return fmt.Errorf("model listing is not supported for provider %q; use 'commitgen ping' to verify connectivity", providerLabel(cfg.Provider))
+		return fmt.Errorf("%s", tr.T("models.unsupported", providerLabel(cfg.Provider)))
 	}
 }
 
@@ -136,7 +137,7 @@ func providerLabel(p string) string {
 	return strings.ToLower(p)
 }
 
-func listOllamaModels(ctx context.Context, cfg Config) error {
+func listOllamaModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	if base == "" {
 		base = "http://localhost:11434"
@@ -153,11 +154,11 @@ func listOllamaModels(ctx context.Context, cfg Config) error {
 	for _, m := range resp.Models {
 		names = append(names, m.Name)
 	}
-	printModels(names)
+	printModels(names, tr)
 	return nil
 }
 
-func listOpenAIModels(ctx context.Context, cfg Config) error {
+func listOpenAIModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	if base == "" {
 		base = "https://api.openai.com/v1"
@@ -178,13 +179,13 @@ func listOpenAIModels(ctx context.Context, cfg Config) error {
 	for _, m := range resp.Data {
 		names = append(names, m.ID)
 	}
-	printModels(names)
+	printModels(names, tr)
 	return nil
 }
 
-func printModels(names []string) {
+func printModels(names []string, tr *i18n.Translator) {
 	if len(names) == 0 {
-		fmt.Println("No models found.")
+		fmt.Println(tr.T("models.none"))
 		return
 	}
 	sort.Strings(names)

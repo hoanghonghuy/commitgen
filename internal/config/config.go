@@ -32,6 +32,9 @@ type FileConfig struct {
 	// Prompt template loaded from a file (takes precedence over PromptTemplate when set)
 	PromptTemplateFile string `json:"prompt_template_file,omitempty"`
 
+	// Locale for UI language (en, vi, ja, zh). Defaults to "en".
+	Locale string `json:"locale,omitempty"`
+
 	// Review Settings
 	ReviewLanguage string `json:"review_language,omitempty"` // en, vi
 
@@ -135,6 +138,9 @@ func Merge(base, override FileConfig) FileConfig {
 	}
 	if override.ReviewLanguage != "" {
 		out.ReviewLanguage = override.ReviewLanguage
+	}
+	if override.Locale != "" {
+		out.Locale = override.Locale
 	}
 	if override.LogLevel != "" {
 		out.LogLevel = override.LogLevel

@@ -33,6 +33,11 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 		reviewLanguage = "en"
 	}
 
+	locale := cfg.Locale
+	if locale == "" {
+		locale = "en"
+	}
+
 	logLevel := cfg.LogLevel
 	if logLevel == "" {
 		logLevel = "info"
@@ -157,6 +162,19 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 
 		huh.NewGroup(
 			huh.NewSelect[string]().
+				Title("UI Language").
+				Description("Language for the terminal interface").
+				Options(
+					huh.NewOption("English", "en"),
+					huh.NewOption("Tiếng Việt", "vi"),
+					huh.NewOption("日本語", "ja"),
+					huh.NewOption("中文", "zh"),
+				).
+				Value(&locale),
+		),
+
+		huh.NewGroup(
+			huh.NewSelect[string]().
 				Title("Review Language").
 				Description("Language for review output").
 				Options(
@@ -235,6 +253,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	cfg.IgnoredFiles = ignores
 
 	cfg.ReviewLanguage = reviewLanguage
+	cfg.Locale = locale
 
 	cfg.LogLevel = logLevel
 	cfg.LogOutput = logOutput

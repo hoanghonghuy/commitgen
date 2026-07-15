@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
 // captureStdout redirects os.Stdout for the duration of fn and returns what was written.
@@ -51,8 +53,9 @@ func TestGenerateCommitMessage_Error(t *testing.T) {
 func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
 	hookFile := filepath.Join(t.TempDir(), "MSG")
 	cfg := Config{DryRun: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
+	tr := i18n.New(i18n.LocaleEN)
 	out := captureStdout(t, func() {
-		_ = runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: dry"}, baseMsgs())
+		_ = runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: dry"}, baseMsgs(), tr)
 	})
 	if !strings.Contains(out, "feat: dry") {
 		t.Errorf("expected message printed, got %q", out)
@@ -65,8 +68,9 @@ func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
 func TestRunSuggestNonInteractive_PrintWritesHook(t *testing.T) {
 	hookFile := filepath.Join(t.TempDir(), "MSG")
 	cfg := Config{Print: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
+	tr := i18n.New(i18n.LocaleEN)
 	_ = captureStdout(t, func() {
-		if err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: printed"}, baseMsgs()); err != nil {
+		if err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: printed"}, baseMsgs(), tr); err != nil {
 			t.Errorf("error: %v", err)
 		}
 	})
@@ -81,7 +85,8 @@ func TestRunSuggestNonInteractive_PrintWritesHook(t *testing.T) {
 
 func TestRunSuggestNonInteractive_GenerateError(t *testing.T) {
 	cfg := Config{Print: true, Timeout: time.Second}
-	err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{err: errors.New("down")}, baseMsgs())
+	tr := i18n.New(i18n.LocaleEN)
+	err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{err: errors.New("down")}, baseMsgs(), tr)
 	if err == nil {
 		t.Error("expected generation error")
 	}
@@ -97,7 +102,8 @@ func TestProviderLabel(t *testing.T) {
 }
 
 func TestRunModels_UnsupportedProvider(t *testing.T) {
-	err := runModels(context.Background(), Config{Provider: "anthropic", Model: "claude"})
+	tr := i18n.New(i18n.LocaleEN)
+	err := runModels(context.Background(), Config{Provider: "anthropic", Model: "claude"}, tr)
 	if err == nil || !strings.Contains(err.Error(), "not supported") {
 		t.Errorf("expected unsupported error, got %v", err)
 	}
@@ -109,8 +115,9 @@ func TestRunModels_Ollama(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	tr := i18n.New(i18n.LocaleEN)
 	out := captureStdout(t, func() {
-		if err := runModels(context.Background(), Config{Provider: "ollama", BaseURL: srv.URL}); err != nil {
+		if err := runModels(context.Background(), Config{Provider: "ollama", BaseURL: srv.URL}, tr); err != nil {
 			t.Errorf("error: %v", err)
 		}
 	})
@@ -128,8 +135,9 @@ func TestRunModels_OpenAI(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	tr := i18n.New(i18n.LocaleEN)
 	out := captureStdout(t, func() {
-		if err := runModels(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k"}); err != nil {
+		if err := runModels(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k"}, tr); err != nil {
 			t.Errorf("error: %v", err)
 		}
 	})
@@ -144,8 +152,9 @@ func TestRunPing_Success(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	tr := i18n.New(i18n.LocaleEN)
 	out := captureStdout(t, func() {
-		if err := runPing(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o", Timeout: 5 * time.Second}); err != nil {
+		if err := runPing(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "k", Model: "gpt-4o", Timeout: 5 * time.Second}, tr); err != nil {
 			t.Errorf("ping error: %v", err)
 		}
 	})
@@ -161,14 +170,16 @@ func TestRunPing_Failure(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := runPing(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "bad", Model: "gpt-4o", Timeout: 5 * time.Second})
+	tr := i18n.New(i18n.LocaleEN)
+	err := runPing(context.Background(), Config{Provider: "openai", BaseURL: srv.URL, APIKey: "bad", Model: "gpt-4o", Timeout: 5 * time.Second}, tr)
 	if err == nil {
 		t.Error("expected ping failure")
 	}
 }
 
 func TestRunPing_MissingProvider(t *testing.T) {
-	if err := runPing(context.Background(), Config{Provider: "openai", Model: "gpt-4o"}); err == nil {
+	tr := i18n.New(i18n.LocaleEN)
+	if err := runPing(context.Background(), Config{Provider: "openai", Model: "gpt-4o"}, tr); err == nil {
 		t.Error("expected error when no credentials configured")
 	}
 }

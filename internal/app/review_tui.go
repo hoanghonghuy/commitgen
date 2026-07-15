@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -174,6 +175,8 @@ type reviewModel struct {
 	// scan to the full review ("View Details"). It is pre-built so a custom
 	// prompt template is honored; when nil the built-in default is used.
 	fullReviewSystem *vscodeprompt.VSCodeMessage
+
+	tr *i18n.Translator
 }
 
 type reviewResultMsg struct {
@@ -184,7 +187,7 @@ type reviewResultMsg struct {
 // reviewCopyDoneMsg is sent after clipboard copy feedback expires.
 type reviewCopyDoneMsg struct{}
 
-func newReviewModel(provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, quickMode bool) reviewModel {
+func newReviewModel(provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, quickMode bool, tr *i18n.Translator) reviewModel {
 	s := newSpinnerModel()
 
 	vp := newDefaultViewport(80, 20)
@@ -201,6 +204,7 @@ func newReviewModel(provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, tem
 		width:         80,
 		height:        24,
 		isQuickMode:   quickMode,
+		tr:            tr,
 	}
 }
 
@@ -243,9 +247,9 @@ func (m reviewModel) buildDoneContent() string {
 
 	b.WriteString("\n")
 	if m.isQuickMode {
-		b.WriteString(styleReviewTitle.Render("Quick Scan Result"))
+		b.WriteString(styleReviewTitle.Render(m.tr.T("tui.review.quick_scan")))
 	} else {
-		b.WriteString(styleReviewTitle.Render("Review Report"))
+		b.WriteString(styleReviewTitle.Render(m.tr.T("tui.review.report")))
 	}
 	b.WriteString("\n")
 
@@ -257,14 +261,14 @@ func (m reviewModel) buildDoneContent() string {
 	b.WriteString(styleReviewBorder.Render(wrapped))
 	b.WriteString("\n\n")
 
-	b.WriteString(styleActionTitle.Render("Action"))
+	b.WriteString(styleActionTitle.Render(m.tr.T("tui.title.action")))
 	b.WriteString("\n")
 
 	var options []string
 	if m.isQuickMode {
-		options = []string{"View Details", "Suggest Commit Message", "Regenerate", "Exit"}
+		options = []string{m.tr.T("tui.action.view_details"), m.tr.T("tui.action.suggest_commit"), m.tr.T("tui.action.regenerate"), m.tr.T("tui.action.exit")}
 	} else {
-		options = []string{"Suggest Commit Message", "Regenerate", "Exit"}
+		options = []string{m.tr.T("tui.action.suggest_commit"), m.tr.T("tui.action.regenerate"), m.tr.T("tui.action.exit")}
 	}
 	barStr := styleBar.Render("┃")
 	for i, opt := range options {
@@ -487,11 +491,11 @@ func (m reviewModel) View() string {
 
 	switch m.state {
 	case reviewStateAnalyzing:
-		inner = fmt.Sprintf("\n %s Analyzing staged changes...\n", m.spinner.View())
+		inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.tr.T("tui.hint.analyzing"))
 
 	case reviewStateDone:
 		if m.err != nil {
-			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render("Error: "+m.err.Error()))
+			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render(m.tr.T("tui.state.error", m.err)))
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
@@ -504,7 +508,7 @@ func (m reviewModel) View() string {
 
 	case reviewStateQuickDone:
 		if m.err != nil {
-			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render("Error: "+m.err.Error()))
+			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render(m.tr.T("tui.state.error", m.err)))
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
@@ -516,7 +520,7 @@ func (m reviewModel) View() string {
 		}
 
 	case reviewStateCopied:
-		inner = fmt.Sprintf("\n  ✓ Copied to clipboard!\n")
+		inner = fmt.Sprintf("\n  %s\n", m.tr.T("tui.state.copied"))
 	}
 
 	if inner == "" {

@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
 func TestCommitCmd_GitPath(t *testing.T) {
@@ -21,7 +22,8 @@ func TestCommitCmd_GitPath(t *testing.T) {
 	writeFile(t, dir, "feature.txt", "new feature\n")
 	runGit(t, dir, "add", ".")
 
-	m := newTuiModel(dir, fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel(dir, fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	m.commitMsg = "feat: add feature file"
 
 	msg := m.commitCmd()()
@@ -40,7 +42,8 @@ func TestCommitCmd_GitPath(t *testing.T) {
 }
 
 func TestGenerateCommitCmd_Error(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{err: errors.New("boom")}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{err: errors.New("boom")}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	msg := m.generateCommitCmd()()
 	res, ok := msg.(commitResultMsg)
 	if !ok {
@@ -52,7 +55,8 @@ func TestGenerateCommitCmd_Error(t *testing.T) {
 }
 
 func TestTui_CopyDoneReturnsToConfirm(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	m.state = stateCopied
 	u, _ := m.Update(copyDoneMsg{})
 	tm := u.(tuiModel)
@@ -62,7 +66,8 @@ func TestTui_CopyDoneReturnsToConfirm(t *testing.T) {
 }
 
 func TestTui_CommitDoneError(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	u, cmd := m.Update(commitDoneMsg{err: errors.New("commit failed")})
 	tm := u.(tuiModel)
 	if tm.state != stateDone || tm.err == nil || cmd == nil {
@@ -71,7 +76,8 @@ func TestTui_CommitDoneError(t *testing.T) {
 }
 
 func TestTui_EnterRegenerate(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{resp: "feat: regen"}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{resp: "feat: regen"}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	u, _ := m.Update(commitResultMsg{content: "first"})
 	tm := u.(tuiModel)
 	tm.cursor = 1 // Regenerate
@@ -94,7 +100,8 @@ func TestTui_EnterRegenerate(t *testing.T) {
 }
 
 func TestTui_RegenHintCancel(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{resp: "x"}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	u, _ := m.Update(commitResultMsg{content: "msg"})
 	tm := u.(tuiModel)
 	tm.cursor = 1
@@ -109,7 +116,8 @@ func TestTui_RegenHintCancel(t *testing.T) {
 }
 
 func TestTui_PgUpPgDownWhenScrolling(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, "", tr)
 	u, _ := m.Update(tea.WindowSizeMsg{Width: 40, Height: 8})
 	m = u.(tuiModel)
 	long := strings.Repeat("body line of text\n", 50)
@@ -129,7 +137,8 @@ func TestTui_PgUpPgDownWhenScrolling(t *testing.T) {
 }
 
 func TestReview_CopyDoneReturnsToDone(t *testing.T) {
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, tr)
 	m.state = reviewStateCopied
 	u, _ := m.Update(reviewCopyDoneMsg{})
 	rm := u.(reviewModel)
@@ -139,7 +148,8 @@ func TestReview_CopyDoneReturnsToDone(t *testing.T) {
 }
 
 func TestReview_FullRegenerate(t *testing.T) {
-	m := newReviewModel(fakeProvider{resp: "## x"}, baseMsgs(), 0.7, 5*time.Second, false)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{resp: "## x"}, baseMsgs(), 0.7, 5*time.Second, false, tr)
 	u, _ := m.Update(reviewResultMsg{content: "## Code Quality\nok"})
 	rm := u.(reviewModel)
 	rm.cursor = 1 // Regenerate
@@ -151,7 +161,8 @@ func TestReview_FullRegenerate(t *testing.T) {
 }
 
 func TestReview_QuickRegenerateStaysQuick(t *testing.T) {
-	m := newReviewModel(fakeProvider{resp: "## c"}, baseMsgs(), 0.7, 5*time.Second, true)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{resp: "## c"}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	u, _ := m.Update(reviewResultMsg{content: "## Conclusion\nok"})
 	rm := u.(reviewModel)
 	rm.cursor = 2 // Regenerate (quick)
@@ -163,7 +174,8 @@ func TestReview_QuickRegenerateStaysQuick(t *testing.T) {
 }
 
 func TestReview_QuickExitQuits(t *testing.T) {
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	u, _ := m.Update(reviewResultMsg{content: "## Conclusion\nok"})
 	rm := u.(reviewModel)
 	rm.cursor = 3 // Exit
@@ -175,7 +187,8 @@ func TestReview_QuickExitQuits(t *testing.T) {
 }
 
 func TestReview_CtrlCQuits(t *testing.T) {
-	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	u, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	rm := u.(reviewModel)
 	if !rm.quitting || cmd == nil {

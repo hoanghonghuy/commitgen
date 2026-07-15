@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
 func TestResolveHooksDir(t *testing.T) {
@@ -33,7 +35,8 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	ctx := context.Background()
 	dir := initRepo(t)
 
-	if err := InstallHook(ctx, dir, false, ""); err != nil {
+	tr := i18n.New(i18n.LocaleEN)
+	if err := InstallHook(ctx, dir, false, "", tr); err != nil {
 		t.Fatalf("InstallHook error: %v", err)
 	}
 
@@ -47,7 +50,7 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	}
 
 	// Installing again should back up the existing hook, not fail.
-	if err := InstallHook(ctx, dir, false, ""); err != nil {
+	if err := InstallHook(ctx, dir, false, "", tr); err != nil {
 		t.Errorf("InstallHook over existing hook should back up, not error: %v", err)
 	}
 	if _, err := os.Stat(hookPath + ".bak"); err != nil {
@@ -55,7 +58,7 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	}
 
 	// Uninstall removes it
-	if err := UninstallHook(ctx, dir); err != nil {
+	if err := UninstallHook(ctx, dir, tr); err != nil {
 		t.Fatalf("UninstallHook error: %v", err)
 	}
 	if _, err := os.Stat(hookPath); !os.IsNotExist(err) {
@@ -63,7 +66,7 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	}
 
 	// Uninstall when absent is a no-op (no error)
-	if err := UninstallHook(ctx, dir); err != nil {
+	if err := UninstallHook(ctx, dir, tr); err != nil {
 		t.Errorf("UninstallHook on absent hook should not error: %v", err)
 	}
 }

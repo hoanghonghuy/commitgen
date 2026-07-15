@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -59,7 +60,8 @@ func TestScrollHintText(t *testing.T) {
 }
 
 func newTestModel() tuiModel {
-	return newTuiModel("/repo", fakeProvider{resp: "feat: x"}, baseMsgs(), 0.7, 5*time.Second, true, "")
+	tr := i18n.New(i18n.LocaleEN)
+	return newTuiModel("/repo", fakeProvider{resp: "feat: x"}, baseMsgs(), 0.7, 5*time.Second, true, "", tr)
 }
 
 func TestTui_CommitResultMovesToConfirm(t *testing.T) {
@@ -166,7 +168,8 @@ func TestTui_CtrlCQuits(t *testing.T) {
 func TestTui_CommitCmdWritesHookFile(t *testing.T) {
 	dir := t.TempDir()
 	hookFile := filepath.Join(dir, "COMMIT_EDITMSG")
-	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, hookFile)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, hookFile, tr)
 	m.commitMsg = "feat: via hook"
 
 	msg := m.commitCmd()()
@@ -187,7 +190,8 @@ func TestTui_CommitCmdWritesHookFile(t *testing.T) {
 }
 
 func TestTui_GenerateCommitCmd(t *testing.T) {
-	m := newTuiModel("/repo", fakeProvider{resp: "```text\nfeat: gen\n```"}, baseMsgs(), 0.7, 5*time.Second, true, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeProvider{resp: "```text\nfeat: gen\n```"}, baseMsgs(), 0.7, 5*time.Second, true, "", tr)
 	msg := m.generateCommitCmd()()
 	res, ok := msg.(commitResultMsg)
 	if !ok {

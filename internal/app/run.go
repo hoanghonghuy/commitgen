@@ -15,6 +15,7 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/gemini"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
 	"github.com/hoanghonghuy/commitgen/internal/openai"
@@ -65,6 +66,7 @@ type Config struct {
 	HookFile       string
 	PromptTemplate string
 	ReviewLanguage string
+	Locale         string // UI language (en, vi, ja, zh)
 
 	// Behavior modes
 	Print        bool   // print message to stdout instead of launching TUI
@@ -80,20 +82,22 @@ type Config struct {
 }
 
 func Run(ctx context.Context, cfg Config) error {
+	tr := i18n.New(i18n.Locale(cfg.Locale))
+
 	if cfg.Command == "config" {
 		return runConfig(cfg)
 	}
 	if cfg.Command == "install-hook" {
-		return InstallHook(ctx, cfg.RepoArg, cfg.Print, cfg.ConfigPath)
+		return InstallHook(ctx, cfg.RepoArg, cfg.Print, cfg.ConfigPath, tr)
 	}
 	if cfg.Command == "uninstall-hook" {
-		return UninstallHook(ctx, cfg.RepoArg)
+		return UninstallHook(ctx, cfg.RepoArg, tr)
 	}
 	if cfg.Command == "ping" {
-		return runPing(ctx, cfg)
+		return runPing(ctx, cfg, tr)
 	}
 	if cfg.Command == "models" {
-		return runModels(ctx, cfg)
+		return runModels(ctx, cfg, tr)
 	}
 
 	repoRoot, err := gitx.ResolveRepoRoot(ctx, cfg.RepoArg)
@@ -133,10 +137,10 @@ func Run(ctx context.Context, cfg Config) error {
 		// Non-interactive mode: generate once and print to stdout. With --print
 		// it also writes the hook file when configured; it never creates a commit.
 		if cfg.Print || cfg.DryRun {
-			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs)
+			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs, tr)
 		}
 
-		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
+		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr)
 		suggestTUI.amend = cfg.Amend
 		suggestTUI.count = cfg.Count
 		finalModel, err := runTUI(suggestTUI)
@@ -157,7 +161,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return err
 		}
 		reviewMsgs := vscodeprompt.BuildReviewMessages(data, true)
-		reviewTUI := newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true)
+		reviewTUI := newReviewModel(provider, reviewMsgs, cfg.Temperature, cfg.Timeout, true, tr)
 		// Pre-build the full-review system message so "View Details" honors a
 		// custom prompt template instead of always using the built-in default.
 		if fullMsgs := vscodeprompt.BuildReviewMessages(data, false); len(fullMsgs) >= 1 {
@@ -176,7 +180,7 @@ func Run(ctx context.Context, cfg Config) error {
 			// User selected "Suggest commit message" from review mode
 			if m.switchToSuggest {
 				vscodeMsgs := vscodeprompt.BuildVSCodeMessages(data)
-				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile)
+				suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr)
 				suggestTUI.amend = cfg.Amend
 				suggestTUI.count = cfg.Count
 				suggestModel, err := runTUI(suggestTUI)
@@ -447,6 +451,7 @@ func runConfig(cfg Config) error {
 		GeminiKey:      newCfg.GeminiKey,
 		PromptTemplate: newCfg.PromptTemplate,
 		ReviewLanguage: newCfg.ReviewLanguage,
+		Locale:         newCfg.Locale,
 
 		LogLevel:  newCfg.LogLevel,
 		LogOutput: newCfg.LogOutput,

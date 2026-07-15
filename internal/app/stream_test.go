@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -39,7 +40,8 @@ func (f fakeStreamProvider) GenerateStream(_ context.Context, _ []vscodeprompt.V
 }
 
 func TestTui_StreamDeltaAccumulates(t *testing.T) {
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr)
 
 	u, cmd := m.Update(streamEvent{delta: "feat: "})
 	tm := u.(tuiModel)
@@ -58,7 +60,8 @@ func TestTui_StreamDeltaAccumulates(t *testing.T) {
 }
 
 func TestTui_StreamDoneFinalizes(t *testing.T) {
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr)
 	m.streamView = "partial"
 
 	u, _ := m.Update(streamEvent{done: true, full: "```text\nfeat: streamed\n```"})
@@ -75,7 +78,8 @@ func TestTui_StreamDoneFinalizes(t *testing.T) {
 }
 
 func TestTui_StreamDoneError(t *testing.T) {
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr)
 	u, cmd := m.Update(streamEvent{done: true, err: errors.New("stream broke")})
 	tm := u.(tuiModel)
 	if tm.state != stateDone || tm.err == nil || cmd == nil {
@@ -109,7 +113,8 @@ func TestTui_StreamGenerateCmdEndToEnd(t *testing.T) {
 }
 
 func TestTui_StreamViewRendersPartial(t *testing.T) {
-	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "")
+	tr := i18n.New(i18n.LocaleEN)
+	m := newTuiModel("/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr)
 	m.state = stateGenerating
 	m.streamView = "feat: partial message"
 	view := m.View()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/hoanghonghuy/commitgen/internal/app"
 	"github.com/hoanghonghuy/commitgen/internal/config"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
 
@@ -56,6 +57,7 @@ func main() {
 	amendFlag := flag.Bool("amend", false, "Amend the last commit instead of creating a new one")
 	countFlag := flag.Int("count", 1, "Number of commit message candidates to generate")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
+	localeFlag := flag.String("locale", "", "UI language (en, vi, ja, zh). Default: en")
 
 	flag.Parse()
 
@@ -79,6 +81,10 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: Error loading config: %v\n", err)
 	}
 
+	// Resolve locale early so we can use it for warning/error messages.
+	locale := config.ResolveString(*localeFlag, os.Getenv("COMMITGEN_LOCALE"), fileCfg.Locale, "en")
+	tr := i18n.New(i18n.Locale(locale))
+
 	// 3. Resolve final config (Flag > Env > File > Default)
 	timeoutSec := config.ResolveInt(*timeoutFlag, isFlagSet("timeout"), fileCfg.Timeout, 120)
 	if timeoutSec <= 0 {
@@ -91,24 +97,24 @@ func main() {
 		if b, readErr := os.ReadFile(fileCfg.PromptTemplateFile); readErr == nil {
 			promptTemplate = string(b)
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: cannot read prompt_template_file %q: %v\n", fileCfg.PromptTemplateFile, readErr)
+			fmt.Fprintf(os.Stderr, "%s\n", tr.T("warn.prompt_template_file", fileCfg.PromptTemplateFile, readErr))
 		}
 	}
 
 	// Resolve the provider first so the default model can be provider-specific
 	// (e.g. an Ollama user should not fall back to an OpenAI model name).
-	provider := config.ResolveString(*providerFlag, getenvWithFallback("COMMITGEN_PROVIDER", "COMMITAI_PROVIDER"), fileCfg.Provider, "openai")
+	provider := config.ResolveString(*providerFlag, getenvWithFallback("COMMITGEN_PROVIDER", "COMMITAI_PROVIDER", tr), fileCfg.Provider, "openai")
 
 	cfg := app.Config{
 		Command:  cmd,
 		RepoArg:  *repoFlag,
-		BaseURL:  config.ResolveString(*baseURLFlag, getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL"), fileCfg.BaseURL, ""),
-		APIKey:   config.ResolveString(*apiKeyFlag, getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY"), fileCfg.APIKey, ""),
-		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL"), fileCfg.Model, defaultModelForProvider(provider)),
+		BaseURL:  config.ResolveString(*baseURLFlag, getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL", tr), fileCfg.BaseURL, ""),
+		APIKey:   config.ResolveString(*apiKeyFlag, getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY", tr), fileCfg.APIKey, ""),
+		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModelForProvider(provider)),
 		Provider: provider,
 
-		AnthropicKey: config.ResolveString(*anthropicKeyFlag, getenvWithFallback("COMMITGEN_ANTHROPIC_KEY", "COMMITAI_ANTHROPIC_KEY"), fileCfg.AnthropicKey, ""),
-		GeminiKey:    config.ResolveString(*geminiKeyFlag, getenvWithFallback("COMMITGEN_GEMINI_KEY", "COMMITAI_GEMINI_KEY"), fileCfg.GeminiKey, ""),
+		AnthropicKey: config.ResolveString(*anthropicKeyFlag, getenvWithFallback("COMMITGEN_ANTHROPIC_KEY", "COMMITAI_ANTHROPIC_KEY", tr), fileCfg.AnthropicKey, ""),
+		GeminiKey:    config.ResolveString(*geminiKeyFlag, getenvWithFallback("COMMITGEN_GEMINI_KEY", "COMMITAI_GEMINI_KEY", tr), fileCfg.GeminiKey, ""),
 
 		RecentN:      config.ResolveInt(*recentNFlag, isFlagSet("recent-n"), fileCfg.RecentN, 5),
 		MaxFiles:     config.ResolveInt(*maxFilesFlag, isFlagSet("max-files"), fileCfg.MaxFiles, 10),
@@ -123,6 +129,7 @@ func main() {
 		Timeout:          time.Duration(timeoutSec) * time.Second,
 		PromptTemplate:   promptTemplate,
 		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
+		Locale:           locale,
 		IgnoredFiles:     fileCfg.IgnoredFiles,
 		Print:            *printFlag,
 		DryRun:           *dryRunFlag,
@@ -130,9 +137,9 @@ func main() {
 		Count:            *countFlag,
 		ConfigAction:     configAction,
 
-		LogLevel:  config.ResolveString(*logLevelFlag, getenvWithFallback("COMMITGEN_LOG_LEVEL", "COMMITAI_LOG_LEVEL"), fileCfg.LogLevel, "info"),
-		LogOutput: config.ResolveString(*logOutputFlag, getenvWithFallback("COMMITGEN_LOG_OUTPUT", "COMMITAI_LOG_OUTPUT"), fileCfg.LogOutput, "both"),
-		LogFile:   config.ResolveString(*logFileFlag, getenvWithFallback("COMMITGEN_LOG_FILE", "COMMITAI_LOG_FILE"), fileCfg.LogFile, ""),
+		LogLevel:  config.ResolveString(*logLevelFlag, getenvWithFallback("COMMITGEN_LOG_LEVEL", "COMMITAI_LOG_LEVEL", tr), fileCfg.LogLevel, "info"),
+		LogOutput: config.ResolveString(*logOutputFlag, getenvWithFallback("COMMITGEN_LOG_OUTPUT", "COMMITAI_LOG_OUTPUT", tr), fileCfg.LogOutput, "both"),
+		LogFile:   config.ResolveString(*logFileFlag, getenvWithFallback("COMMITGEN_LOG_FILE", "COMMITAI_LOG_FILE", tr), fileCfg.LogFile, ""),
 	}
 
 	// 4. Initialize logger
@@ -167,9 +174,9 @@ func main() {
 		// Log error to file/stderr AFTER TUI exits
 		logger.Error("application error", "error", err)
 		// Also print to stderr so user sees it immediately
-		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+		fmt.Fprintf(os.Stderr, "\n%s\n", tr.T("app.error", err))
 		if logPath := resolveLogFilePath(cfg.LogFile, cfg.LogOutput); logPath != "" {
-			fmt.Fprintf(os.Stderr, "Check logs at: %s\n", logPath)
+			fmt.Fprintf(os.Stderr, "%s\n", tr.T("app.check_logs", logPath))
 		}
 		os.Exit(1)
 	}
@@ -232,12 +239,12 @@ func defaultModelForProvider(provider string) string {
 // getenvWithFallback reads the primary environment variable, falling back to a
 // deprecated alias for backward compatibility. When only the deprecated alias
 // is set, it prints a one-time deprecation warning to stderr.
-func getenvWithFallback(primary, deprecated string) string {
+func getenvWithFallback(primary, deprecated string, tr *i18n.Translator) string {
 	if v := os.Getenv(primary); v != "" {
 		return v
 	}
 	if v := os.Getenv(deprecated); v != "" {
-		fmt.Fprintf(os.Stderr, "Warning: %s is deprecated, please use %s instead\n", deprecated, primary)
+		fmt.Fprintf(os.Stderr, "%s\n", tr.T("warn.deprecated_env", deprecated, primary))
 		return v
 	}
 	return ""

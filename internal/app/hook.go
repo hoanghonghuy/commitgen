@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
 // resolveHooksDir returns the absolute path to the repository's git hooks
@@ -41,10 +42,10 @@ func resolveHooksDir(ctx context.Context, repoArg string) (string, error) {
 // (or on Windows) the hook runs commitgen in --print mode, which writes the
 // message to the commit file without needing /dev/tty. configPath, when set,
 // is forwarded to the hook so a custom config location is honored at commit time.
-func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, configPath string) error {
+func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, configPath string, tr *i18n.Translator) error {
 	useNonInteractive := nonInteractive || runtime.GOOS == "windows"
 	if runtime.GOOS == "windows" {
-		fmt.Println("Note: On Windows the hook runs in non-interactive (--print) mode and writes the message directly.")
+		fmt.Println(tr.T("hook.windows_note"))
 	}
 
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
@@ -65,7 +66,7 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, confi
 		if err := os.Rename(hookPath, backupPath); err != nil {
 			return fmt.Errorf("back up existing hook %s: %w", hookPath, err)
 		}
-		fmt.Printf("Existing hook backed up to %s\n", backupPath)
+		fmt.Println(tr.T("hook.backed_up", backupPath))
 	}
 
 	// Resolve the absolute path to the commitgen binary so the hook can call it.
@@ -90,7 +91,7 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, confi
 		return fmt.Errorf("write hook file: %w", err)
 	}
 
-	fmt.Printf("Hook installed to %s\n", hookPath)
+	fmt.Println(tr.T("hook.installed", hookPath))
 	return nil
 }
 
@@ -139,7 +140,7 @@ fi
 }
 
 // UninstallHook removes the prepare-commit-msg hook
-func UninstallHook(ctx context.Context, repoArg string) error {
+func UninstallHook(ctx context.Context, repoArg string, tr *i18n.Translator) error {
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
 	if err != nil {
 		return err
@@ -148,7 +149,7 @@ func UninstallHook(ctx context.Context, repoArg string) error {
 	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
 
 	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
-		fmt.Println("Hook is not installed.")
+		fmt.Println(tr.T("hook.not_installed"))
 		return nil
 	}
 
@@ -156,6 +157,6 @@ func UninstallHook(ctx context.Context, repoArg string) error {
 		return fmt.Errorf("failed to remove hook: %w", err)
 	}
 
-	fmt.Println("Hook uninstalled successfully.")
+	fmt.Println(tr.T("hook.uninstalled"))
 	return nil
 }

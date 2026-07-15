@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
 func TestFormatReviewText(t *testing.T) {
@@ -46,7 +47,8 @@ func TestApplyInlineStyles(t *testing.T) {
 }
 
 func newTestReviewModel(quick bool) reviewModel {
-	return newReviewModel(fakeProvider{resp: "## Conclusion\nok"}, baseMsgs(), 0.7, 5*time.Second, quick)
+	tr := i18n.New(i18n.LocaleEN)
+	return newReviewModel(fakeProvider{resp: "## Conclusion\nok"}, baseMsgs(), 0.7, 5*time.Second, quick, tr)
 }
 
 func TestReview_ResultQuickDone(t *testing.T) {
@@ -142,7 +144,8 @@ func TestReview_NavigationClampQuick(t *testing.T) {
 }
 
 func TestReview_GenerateReviewCmd(t *testing.T) {
-	m := newReviewModel(fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 5*time.Second, true)
+	tr := i18n.New(i18n.LocaleEN)
+	m := newReviewModel(fakeProvider{resp: "```markdown\n## Conclusion\nok\n```"}, baseMsgs(), 0.7, 5*time.Second, true, tr)
 	msg := m.generateReviewCmd()()
 	res, ok := msg.(reviewResultMsg)
 	if !ok {

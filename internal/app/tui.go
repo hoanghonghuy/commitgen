@@ -15,6 +15,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -74,6 +75,7 @@ type tuiModel struct {
 	repoRoot     string
 	amend        bool
 	count        int
+	i18n         *i18n.Translator
 
 	// Components
 	spinner       spinner.Model
@@ -87,9 +89,9 @@ type tuiModel struct {
 	commitMsg     string
 	cachedContent string // built once in Update, read in View — avoids per-frame rebuild
 	cursor        int
-	regenHint     string         // optional user guidance for regeneration
-	candidates    []string       // multiple generated candidates (when count > 1)
-	streamView    string         // accumulated text while streaming
+	regenHint     string           // optional user guidance for regeneration
+	candidates    []string         // multiple generated candidates (when count > 1)
+	streamView    string           // accumulated text while streaming
 	streamCh      chan streamEvent // delta channel for streaming providers
 	err           error
 	quitting      bool
@@ -121,7 +123,7 @@ type commitDoneMsg struct {
 	err error
 }
 
-func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string) tuiModel {
+func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, conventional bool, hookFile string, tr *i18n.Translator) tuiModel {
 	s := newSpinnerModel()
 
 	ta := textarea.New()
@@ -153,6 +155,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 		width:         80,
 		height:        24,
 		streamCh:      make(chan streamEvent, 256),
+		i18n:          tr,
 	}
 }
 
@@ -293,15 +296,20 @@ func (m tuiModel) buildConfirmContent() string {
 	var b strings.Builder
 
 	b.WriteString("\n")
-	b.WriteString(styleMsgTitle.Render("Generated Commit Message"))
+	b.WriteString(styleMsgTitle.Render(m.i18n.T("tui.title.generated_message")))
 	b.WriteString("\n")
 	b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.commitMsg))
 	b.WriteString("\n\n") // blank line before Action section
 
-	b.WriteString(styleActionTitle.Render("Action"))
+	b.WriteString(styleActionTitle.Render(m.i18n.T("tui.title.action")))
 	b.WriteString("\n")
 
-	options := []string{"Commit (Apply)", "Regenerate", "Edit", "Cancel"}
+	options := []string{
+		m.i18n.T("tui.action.commit"),
+		m.i18n.T("tui.action.regenerate"),
+		m.i18n.T("tui.action.edit"),
+		m.i18n.T("tui.action.cancel"),
+	}
 	barStr := styleBar.Render("┃")
 	for i, opt := range options {
 		if m.cursor == i {
@@ -318,31 +326,37 @@ func (m tuiModel) buildConfirmContent() string {
 // and auto-scrolls to keep the current action cursor visible.
 // Must be called from Update() only (modifies model state).
 func (m tuiModel) refreshViewport() tuiModel {
-	if m.state != stateConfirm || m.commitMsg == "" {
-		return m
-	}
 	content := m.buildConfirmContent()
 	m.cachedContent = content
-	totalLines := countLines(content)
-	m.needsScroll = totalLines > m.innerHeight()
 
-	if m.needsScroll && m.viewportReady {
+	// Determine if content exceeds viewport height.
+	contentLines := countLines(content)
+	m.needsScroll = contentLines > m.viewport.Height
+
+	if m.needsScroll {
 		m.viewport.SetContent(content)
-
-		// Auto-scroll to keep cursor action item in view.
-		// Action lines are at the end of content:
-		//   cursor=0 → last option, cursor=max → first action item
-		lineFromEnd := confirmActionCount - m.cursor
-		cursorLine := totalLines - 1 - lineFromEnd // 0-indexed
-
-		viewTop := m.viewport.YOffset
-		viewBottom := m.viewport.YOffset + m.viewport.Height - 1
-		if cursorLine < viewTop {
-			m.viewport.SetYOffset(cursorLine)
-		} else if cursorLine > viewBottom {
-			m.viewport.SetYOffset(cursorLine - m.viewport.Height + 1)
+		// Auto-scroll to keep the current action cursor visible.
+		// Each action line is 1 line; the cursor is at position (header lines + cursor).
+		// Header: 1 blank + 1 title + 1 blank + content lines + 1 blank + 1 action title + 1 blank = 6 + content lines.
+		// But we use a simpler heuristic: scroll to show the selected action.
+		actionLine := 3 + countLines(m.commitMsg) + 2 + m.cursor // rough estimate
+		totalLines := contentLines
+		if totalLines > m.viewport.Height {
+			// Scroll so the selected action is in the visible area.
+			scrollTo := actionLine - m.viewport.Height/2
+			if scrollTo < 0 {
+				scrollTo = 0
+			}
+			if scrollTo > totalLines-m.viewport.Height {
+				scrollTo = totalLines - m.viewport.Height
+			}
+			m.viewport.SetYOffset(scrollTo)
 		}
+	} else {
+		// Content fits — no scroll needed.
+		m.viewport.SetContent("")
 	}
+
 	return m
 }
 
@@ -570,17 +584,17 @@ func (m tuiModel) View() string {
 		if strings.TrimSpace(m.streamView) != "" {
 			var b strings.Builder
 			b.WriteString("\n")
-			b.WriteString(styleMsgTitle.Render("Generating commit message…"))
+			b.WriteString(styleMsgTitle.Render(m.i18n.T("tui.hint.generating_stream")))
 			b.WriteString("\n")
 			b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.streamView))
 			b.WriteString("\n")
 			inner = b.String()
 		} else {
-			inner = fmt.Sprintf("\n %s Generating commit message...\n", m.spinner.View())
+			inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.i18n.T("tui.hint.generating"))
 		}
 
 	case stateCommitting:
-		inner = fmt.Sprintf("\n %s Committing...\n", m.spinner.View())
+		inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.i18n.T("tui.hint.committing"))
 
 	case stateConfirm:
 		if m.needsScroll && m.viewportReady {
@@ -596,29 +610,29 @@ func (m tuiModel) View() string {
 			} else {
 				inner = m.cachedContent
 			}
-			inner += "\n" + styleHint.Render(" y Copy ")
+			inner += "\n" + styleHint.Render(m.i18n.T("tui.hint.copy"))
 		}
 
 	case stateEditing:
 		var b strings.Builder
-		b.WriteString(styleEditTitle.Render("Edit Commit Message"))
+		b.WriteString(styleEditTitle.Render(m.i18n.T("tui.title.edit")))
 		b.WriteString("\n")
 		b.WriteString(m.textarea.View())
-		b.WriteString("\n\n (Press Esc to finish editing)\n")
+		b.WriteString("\n\n " + m.i18n.T("tui.hint.edit_instructions") + "\n")
 		inner = b.String()
 
 	case stateRegenHint:
 		var b strings.Builder
-		b.WriteString(styleEditTitle.Render("Regenerate — Optional Guidance"))
+		b.WriteString(styleEditTitle.Render(m.i18n.T("tui.title.regen_hint")))
 		b.WriteString("\n")
 		b.WriteString(m.hintInput.View())
-		b.WriteString("\n\n (Enter to regenerate, Esc to cancel)\n")
+		b.WriteString("\n\n " + m.i18n.T("tui.hint.regen_instructions") + "\n")
 		inner = b.String()
 
 	case stateChoose:
 		var b strings.Builder
 		b.WriteString("\n")
-		b.WriteString(styleMsgTitle.Render("Choose a Commit Message"))
+		b.WriteString(styleMsgTitle.Render(m.i18n.T("tui.title.choose")))
 		b.WriteString("\n")
 		barStr := styleBar.Render("┃")
 		for i, c := range m.candidates {
@@ -630,19 +644,19 @@ func (m tuiModel) View() string {
 			}
 		}
 		b.WriteString("\n")
-		b.WriteString(styleHint.Render(" ↑↓ select  •  Enter choose  •  r regenerate all "))
+		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.choose_nav")))
 		b.WriteString("\n")
 		inner = b.String()
 
 	case stateDone:
 		if m.err != nil {
-			inner = fmt.Sprintf("\n ✗ Error: %v\n", m.err)
+			inner = fmt.Sprintf("\n %s\n", m.i18n.T("tui.state.error", m.err))
 		} else {
-			inner = "\n ✓ Committed successfully!\n"
+			inner = "\n " + m.i18n.T("tui.state.success") + "\n"
 		}
 
 	case stateCopied:
-		inner = fmt.Sprintf("\n  ✓ Copied to clipboard!\n")
+		inner = fmt.Sprintf("\n  %s\n", m.i18n.T("tui.state.copied"))
 	}
 
 	if inner == "" {
