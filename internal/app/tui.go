@@ -59,7 +59,8 @@ const (
 )
 
 const (
-	confirmActionCount = 4 // number of options in confirm menu
+	confirmActionCount    = 4 // number of options in confirm menu
+	validationActionCount = 4 // auto-fix, edit, ignore, cancel
 )
 
 type tuiModel struct {
@@ -131,7 +132,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 	s := newSpinnerModel()
 
 	ta := textarea.New()
-	ta.Placeholder = "Enter commit message..."
+	ta.Placeholder = tr.T("tui.placeholder.edit")
 	ta.Focus()
 	ta.SetWidth(80)
 	ta.SetHeight(5)
@@ -140,7 +141,7 @@ func newTuiModel(repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCo
 	vp := newDefaultViewport(80, 20)
 
 	hi := textinput.New()
-	hi.Placeholder = "optional guidance: shorter, in Vietnamese, focus on why..."
+	hi.Placeholder = tr.T("tui.placeholder.regen_hint")
 
 	return tuiModel{
 		state:         stateGenerating,
@@ -405,12 +406,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				switch m.cursor {
 				case 0: // Commit
-					if m.validator != nil {
+					if m.validator != nil && m.validator.Enabled() {
 						issues := m.validator.Validate(m.commitMsg)
 						if len(issues) > 0 {
 							m.validationIssues = issues
 							m.state = stateValidationFailed
-							m = m.refreshViewport()
+							m.cursor = 0
 							return m, nil
 						}
 					}
@@ -460,30 +461,56 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case stateValidationFailed:
+			act := -1
 			switch msg.String() {
+			case "up", "k":
+				if m.cursor > 0 {
+					m.cursor--
+				}
+				return m, nil
+			case "down", "j":
+				if m.cursor < validationActionCount-1 {
+					m.cursor++
+				}
+				return m, nil
 			case "a", "A":
-				// Auto-fix
+				act = 0
+			case "e", "E":
+				act = 1
+			case "i", "I":
+				act = 2
+			case "c", "C", "esc":
+				act = 3
+			case "enter":
+				act = m.cursor
+			default:
+				return m, nil
+			}
+			switch act {
+			case 0:
 				if m.validator != nil {
 					if fixed, changed := m.validator.AutoFix(m.commitMsg); changed {
 						m.commitMsg = fixed
 						m.validationIssues = nil
 						m.state = stateConfirm
+						m.cursor = 0
 						m = m.refreshViewport()
 						return m, nil
 					}
 				}
-			case "e", "E":
-				// Edit manually
+			case 1:
 				m.textarea.SetValue(m.commitMsg)
 				m.state = stateEditing
 				return m, nil
-			case "i", "I":
-				// Ignore and commit anyway
+			case 2:
+				if validator.HasErrors(m.validationIssues) {
+					return m, nil
+				}
 				m.state = stateCommitting
 				return m, tea.Batch(m.commitCmd(), m.spinner.Tick)
-			case "c", "C", "esc":
-				// Cancel — go back to confirm
+			case 3:
 				m.state = stateConfirm
+				m.cursor = 0
 				m = m.refreshViewport()
 				return m, nil
 			}
@@ -709,11 +736,11 @@ func (m tuiModel) View() string {
 		b.WriteString(m.i18n.T("tui.hint.validation_issues"))
 		b.WriteString("\n")
 		for _, issue := range m.validationIssues {
-			level := "ERROR"
+			levelKey := "tui.level.error"
 			if issue.Level == "warning" {
-				level = "WARN"
+				levelKey = "tui.level.warning"
 			}
-			b.WriteString(fmt.Sprintf("  • [%s] %s\n", level, issue.Message))
+			b.WriteString(fmt.Sprintf("  • [%s] %s\n", m.i18n.T(levelKey), issue.Message))
 		}
 		b.WriteString("\n")
 		b.WriteString(styleActionTitle.Render(m.i18n.T("tui.title.action")))
@@ -733,7 +760,7 @@ func (m tuiModel) View() string {
 			}
 		}
 		b.WriteString("\n")
-		b.WriteString(styleHint.Render(" a Auto-fix  •  e Edit  •  i Ignore  •  Esc Cancel "))
+		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.validation_keys")))
 		inner = b.String()
 	}
 

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
@@ -21,8 +20,6 @@ func resolveHooksDir(ctx context.Context, repoArg string) (string, error) {
 		return "", err
 	}
 
-	// `git rev-parse --git-path hooks` resolves the correct hooks directory
-	// even for worktrees and submodules (where .git is a file, not a dir).
 	out, err := gitx.Git(ctx, repoRoot, "rev-parse", "--git-path", "hooks")
 	if err != nil {
 		return "", fmt.Errorf("resolve hooks dir: %w", err)
@@ -32,22 +29,16 @@ func resolveHooksDir(ctx context.Context, repoArg string) (string, error) {
 		return "", fmt.Errorf("could not determine git hooks directory")
 	}
 	if !filepath.IsAbs(hooksDir) {
-		// git returns the path relative to the repo root.
 		hooksDir = filepath.Join(repoRoot, hooksDir)
 	}
 	return hooksDir, nil
 }
 
-// InstallHook installs the prepare-commit-msg hook. When nonInteractive is true
-// (or on Windows) the hook runs commitgen in --print mode, which writes the
-// message to the commit file without needing /dev/tty. configPath, when set,
-// is forwarded to the hook so a custom config location is honored at commit time.
-func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, configPath string, tr *i18n.Translator) error {
-	useNonInteractive := nonInteractive || runtime.GOOS == "windows"
-	if runtime.GOOS == "windows" {
-		fmt.Println(tr.T("hook.windows_note"))
-	}
-
+// InstallHook installs the prepare-commit-msg hook. The hook always runs
+// commitgen in headless --print mode so git never opens the alternate-screen TUI.
+// configPath, when set, is forwarded to the hook so a custom config location is
+// honored at commit time.
+func InstallHook(ctx context.Context, repoArg string, _ bool, configPath string, tr *i18n.Translator) error {
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
 	if err != nil {
 		return err
@@ -59,8 +50,6 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, confi
 
 	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
 
-	// Back up an existing hook instead of failing, so a pre-existing hook is
-	// never silently lost. The user can restore it from the .bak file.
 	if _, err := os.Stat(hookPath); err == nil {
 		backupPath := hookPath + ".bak"
 		if err := os.Rename(hookPath, backupPath); err != nil {
@@ -69,10 +58,9 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, confi
 		fmt.Println(tr.T("hook.backed_up", backupPath))
 	}
 
-	// Resolve the absolute path to the commitgen binary so the hook can call it.
 	exe, err := os.Executable()
 	if err != nil {
-		exe = "commitgen" // fallback: assume it's in PATH
+		exe = "commitgen"
 	} else {
 		exe, _ = filepath.Abs(exe)
 	}
@@ -85,7 +73,7 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, confi
 		configArg = fmt.Sprintf(" --config \"%s\"", configPath)
 	}
 
-	script := buildHookScript(exe, useNonInteractive, configArg)
+	script := buildHookScript(exe, configArg, tr.T("hook.analyzing"), tr.T("hook.failed"))
 
 	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write hook file: %w", err)
@@ -95,51 +83,33 @@ func InstallHook(ctx context.Context, repoArg string, nonInteractive bool, confi
 	return nil
 }
 
-// buildHookScript returns the prepare-commit-msg shell script. The interactive
-// variant uses /dev/tty for the TUI; the non-interactive variant uses --print.
-// configArg is an optional pre-formatted ` --config "<path>"` fragment.
-func buildHookScript(exe string, nonInteractive bool, configArg string) string {
-	header := `#!/bin/sh
+// buildHookScript returns the prepare-commit-msg shell script. It always uses
+// --print so the hook never launches the TUI inside git.
+func buildHookScript(exe, configArg, analyzingMsg, failedMsg string) string {
+	return fmt.Sprintf(`#!/bin/sh
 # commitgen hook
 # This hook runs commitgen to generate a commit message.
 
-# $1 is file, $2 is source, $3 is SHA
 COMMIT_MSG_FILE=$1
 COMMIT_SOURCE=$2
 SHA1=$3
 
-# Skip when the message is already provided or managed by git:
-#   message       -> git commit -m / -F
-#   merge/squash  -> merge or squash commit messages
-#   commit        -> git commit --amend / -c / -C (reusing an existing message)
 case "$COMMIT_SOURCE" in
   message|merge|squash|commit)
     exit 0
     ;;
 esac
 
-echo "commitgen is analyzing changes..."
-`
-	if nonInteractive {
-		// Non-interactive: write the generated message straight to the file.
-		// Abort the commit if commitgen fails so git never commits an empty or
-		// stale message.
-		return header + fmt.Sprintf(`if ! "%s" --hook "$COMMIT_MSG_FILE" --print%s; then
-  echo "commitgen failed, aborting commit" >&2
+echo "%s"
+if ! "%s" --hook "$COMMIT_MSG_FILE" --print%s; then
+  echo "%s" >&2
   exit 1
 fi
-`, exe, configArg)
-	}
-	// Interactive: redirect stdin/stdout to the controlling terminal for the TUI.
-	// Abort the commit when commitgen exits non-zero.
-	return header + fmt.Sprintf(`if ! "%s" --hook "$COMMIT_MSG_FILE"%s < /dev/tty > /dev/tty; then
-  echo "commitgen failed, aborting commit" >&2
-  exit 1
-fi
-`, exe, configArg)
+`, analyzingMsg, exe, configArg, failedMsg)
 }
 
-// UninstallHook removes the prepare-commit-msg hook
+// UninstallHook removes the prepare-commit-msg hook. When a .bak file exists
+// (from a prior install), it is restored as the active hook.
 func UninstallHook(ctx context.Context, repoArg string, tr *i18n.Translator) error {
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
 	if err != nil {
@@ -147,14 +117,30 @@ func UninstallHook(ctx context.Context, repoArg string, tr *i18n.Translator) err
 	}
 
 	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
+	backupPath := hookPath + ".bak"
 
 	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
+		if _, berr := os.Stat(backupPath); berr == nil {
+			if err := os.Rename(backupPath, hookPath); err != nil {
+				return fmt.Errorf("restore hook from backup: %w", err)
+			}
+			fmt.Println(tr.T("hook.restored_backup", hookPath))
+			return nil
+		}
 		fmt.Println(tr.T("hook.not_installed"))
 		return nil
 	}
 
 	if err := os.Remove(hookPath); err != nil {
 		return fmt.Errorf("failed to remove hook: %w", err)
+	}
+
+	if _, err := os.Stat(backupPath); err == nil {
+		if err := os.Rename(backupPath, hookPath); err != nil {
+			return fmt.Errorf("restore hook from backup: %w", err)
+		}
+		fmt.Println(tr.T("hook.restored_backup", hookPath))
+		return nil
 	}
 
 	fmt.Println(tr.T("hook.uninstalled"))

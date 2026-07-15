@@ -14,6 +14,8 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
+	"github.com/hoanghonghuy/commitgen/internal/ollama"
+	"github.com/hoanghonghuy/commitgen/internal/validator"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -54,7 +56,7 @@ func conventionalReminder() vscodeprompt.VSCodeMessage {
 // runSuggestNonInteractive generates a commit message once and prints it to
 // stdout without launching the TUI. With --print it also writes the hook file
 // when one is configured; with --dry-run it never produces side effects.
-func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, tr *i18n.Translator) error {
+func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, v *validator.Validator, tr *i18n.Translator) error {
 	cctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 	defer cancel()
 
@@ -83,10 +85,19 @@ func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, 
 	if cfg.DryRun {
 		return nil
 	}
+
+	msg := messages[0]
+	if v != nil && v.Enabled() {
+		issues := v.Validate(msg)
+		if validator.HasErrors(issues) {
+			return &ValidationFailedError{Issues: issues}
+		}
+	}
+
 	// --print (without --dry-run): write the first candidate to the hook file
 	// when running inside a git hook.
 	if cfg.HookFile != "" {
-		if err := os.WriteFile(cfg.HookFile, []byte(messages[0]), 0644); err != nil {
+		if err := os.WriteFile(cfg.HookFile, []byte(msg), 0644); err != nil {
 			return logger.LogError(err, "failed to write hook file", "path", cfg.HookFile)
 		}
 	}
@@ -138,10 +149,7 @@ func providerLabel(p string) string {
 }
 
 func listOllamaModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
-	base := strings.TrimRight(cfg.BaseURL, "/")
-	if base == "" {
-		base = "http://localhost:11434"
-	}
+	base := strings.TrimRight(ollama.ResolveBaseURL(cfg.BaseURL, cfg.APIKey), "/")
 	var resp struct {
 		Models []struct {
 			Name string `json:"name"`

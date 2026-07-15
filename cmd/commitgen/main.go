@@ -15,6 +15,7 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
+	"github.com/hoanghonghuy/commitgen/internal/ollama"
 )
 
 // Build information, injected via -ldflags at release time (see .goreleaser.yaml).
@@ -105,11 +106,20 @@ func main() {
 	// (e.g. an Ollama user should not fall back to an OpenAI model name).
 	provider := config.ResolveString(*providerFlag, getenvWithFallback("COMMITGEN_PROVIDER", "COMMITAI_PROVIDER", tr), fileCfg.Provider, "openai")
 
+	baseURL := config.ResolveString(*baseURLFlag, getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL", tr), fileCfg.BaseURL, "")
+	commitgenAPIKey := getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY", tr)
+	apiKey := config.ResolveString(*apiKeyFlag, commitgenAPIKey, fileCfg.APIKey, "")
+	if strings.EqualFold(provider, "ollama") {
+		apiKey = ollama.ResolveAPIKey(*apiKeyFlag, fileCfg.APIKey, commitgenAPIKey)
+		baseURL = ollama.ResolveBaseURL(baseURL, apiKey)
+	}
+	apiKey = strings.TrimSpace(apiKey)
+
 	cfg := app.Config{
 		Command:  cmd,
 		RepoArg:  *repoFlag,
-		BaseURL:  config.ResolveString(*baseURLFlag, getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL", tr), fileCfg.BaseURL, ""),
-		APIKey:   config.ResolveString(*apiKeyFlag, getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY", tr), fileCfg.APIKey, ""),
+		BaseURL:  baseURL,
+		APIKey:   apiKey,
 		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModelForProvider(provider)),
 		Provider: provider,
 
@@ -131,6 +141,8 @@ func main() {
 		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 		Locale:           locale,
 		RulesFile:        fileCfg.RulesFile,
+		PromptTemplateFile: fileCfg.PromptTemplateFile,
+		TimeoutSeconds:   fileCfg.Timeout,
 		IgnoredFiles:     fileCfg.IgnoredFiles,
 		Print:            *printFlag,
 		DryRun:           *dryRunFlag,
@@ -175,7 +187,7 @@ func main() {
 		// Log error to file/stderr AFTER TUI exits
 		logger.Error("application error", "error", err)
 		// Also print to stderr so user sees it immediately
-		fmt.Fprintf(os.Stderr, "\n%s\n", tr.T("app.error", err))
+		fmt.Fprintf(os.Stderr, "\n%s\n", tr.T("app.error", app.TranslateError(tr, err)))
 		if logPath := resolveLogFilePath(cfg.LogFile, cfg.LogOutput); logPath != "" {
 			fmt.Fprintf(os.Stderr, "%s\n", tr.T("app.check_logs", logPath))
 		}

@@ -48,6 +48,9 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	if !strings.Contains(string(b), "commitgen") {
 		t.Error("hook script should reference commitgen")
 	}
+	if !strings.Contains(string(b), "--print") {
+		t.Error("hook script should always use --print headless mode")
+	}
 
 	// Installing again should back up the existing hook, not fail.
 	if err := InstallHook(ctx, dir, false, "", tr); err != nil {
@@ -57,12 +60,15 @@ func TestInstallAndUninstallHook(t *testing.T) {
 		t.Errorf("expected backup hook at %s.bak: %v", hookPath, err)
 	}
 
-	// Uninstall removes it
+	// Uninstall removes the active hook and restores the backed-up hook when present.
 	if err := UninstallHook(ctx, dir, tr); err != nil {
 		t.Fatalf("UninstallHook error: %v", err)
 	}
-	if _, err := os.Stat(hookPath); !os.IsNotExist(err) {
-		t.Error("hook file should be removed")
+	if _, err := os.Stat(hookPath + ".bak"); err == nil {
+		t.Error("backup should be consumed after restore")
+	}
+	if _, err := os.Stat(hookPath); err != nil {
+		t.Fatalf("hook should be restored from backup: %v", err)
 	}
 
 	// Uninstall when absent is a no-op (no error)

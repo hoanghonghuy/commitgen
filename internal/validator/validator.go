@@ -72,13 +72,36 @@ func New(cfg Config) *Validator {
 	return &Validator{rules: rules}
 }
 
+// Enabled reports whether any validation rules are active.
+func (v *Validator) Enabled() bool {
+	return v != nil && len(v.rules) > 0
+}
+
 // Validate runs all enabled rules and returns all issues found.
 func (v *Validator) Validate(msg string) []Issue {
+	if v == nil {
+		return nil
+	}
 	var all []Issue
 	for _, r := range v.rules {
 		all = append(all, r.Validate(msg)...)
 	}
 	return all
+}
+
+// HasErrors reports whether any issue is at error level.
+func HasErrors(issues []Issue) bool {
+	for _, issue := range issues {
+		if issue.Level == "error" {
+			return true
+		}
+	}
+	return false
+}
+
+// runeLen returns the number of Unicode runes in s.
+func runeLen(s string) int {
+	return len([]rune(s))
 }
 
 // AutoFix attempts to automatically fix all issues. It returns the fixed
@@ -104,10 +127,10 @@ type SubjectLengthRule struct {
 func (r *SubjectLengthRule) Validate(msg string) []Issue {
 	lines := strings.Split(msg, "\n")
 	subject := lines[0]
-	if len(subject) > r.MaxLength {
+	if runeLen(subject) > r.MaxLength {
 		return []Issue{{
 			Level:   "error",
-			Message: fmt.Sprintf("Subject line too long: %d > %d", len(subject), r.MaxLength),
+			Message: fmt.Sprintf("Subject line too long: %d > %d", runeLen(subject), r.MaxLength),
 			Line:    1,
 			Column:  r.MaxLength + 1,
 			Rule:    "subject-length",
@@ -119,18 +142,18 @@ func (r *SubjectLengthRule) Validate(msg string) []Issue {
 func (r *SubjectLengthRule) AutoFix(msg string) (string, bool) {
 	lines := strings.Split(msg, "\n")
 	subject := lines[0]
-	if len(subject) <= r.MaxLength {
+	if runeLen(subject) <= r.MaxLength {
 		return msg, false
 	}
-	// Truncate at the last space before MaxLength, or hard-cut.
+	runes := []rune(subject)
 	cut := r.MaxLength
 	for i := r.MaxLength - 1; i >= 0; i-- {
-		if subject[i] == ' ' {
+		if runes[i] == ' ' {
 			cut = i
 			break
 		}
 	}
-	lines[0] = subject[:cut]
+	lines[0] = string(runes[:cut])
 	return strings.Join(lines, "\n"), true
 }
 
@@ -152,10 +175,10 @@ func (r *BodyLineLengthRule) Validate(msg string) []Issue {
 			continue // skip blank lines between subject and body
 		}
 		inBody = true
-		if len(line) > r.MaxLength {
+		if runeLen(line) > r.MaxLength {
 			issues = append(issues, Issue{
 				Level:   "warning",
-				Message: fmt.Sprintf("Body line %d too long: %d > %d", i+1, len(line), r.MaxLength),
+				Message: fmt.Sprintf("Body line %d too long: %d > %d", i+1, runeLen(line), r.MaxLength),
 				Line:    i + 1,
 				Column:  r.MaxLength + 1,
 				Rule:    "body-line-length",

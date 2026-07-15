@@ -5,6 +5,30 @@ import (
 	"testing"
 )
 
+func TestHasErrors(t *testing.T) {
+	issues := []Issue{{Level: "warning"}}
+	if HasErrors(issues) {
+		t.Error("warnings alone should not count as errors")
+	}
+	issues = append(issues, Issue{Level: "error"})
+	if !HasErrors(issues) {
+		t.Error("expected errors when an error-level issue is present")
+	}
+}
+
+func TestSubjectLengthRule_UnicodeRunes(t *testing.T) {
+	r := SubjectLengthRule{MaxLength: 5}
+	// 5 Vietnamese characters — should pass (count runes, not bytes).
+	subject := "ăâêôư"
+	if issues := r.Validate(subject); len(issues) != 0 {
+		t.Fatalf("expected pass for 5 runes, got %+v", issues)
+	}
+	long := subject + "x"
+	if issues := r.Validate(long); len(issues) == 0 {
+		t.Fatal("expected fail when rune count exceeds max")
+	}
+}
+
 func TestSubjectLengthRule_Validate_Pass(t *testing.T) {
 	r := SubjectLengthRule{MaxLength: 50}
 	issues := r.Validate("feat: add login")

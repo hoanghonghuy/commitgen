@@ -81,22 +81,14 @@ type Config struct {
 	LogLevel  string
 	LogOutput string
 	LogFile   string
+
+	// Preserved from file config (not edited in the interactive form).
+	PromptTemplateFile string
+	TimeoutSeconds     *int
 }
 
 func Run(ctx context.Context, cfg Config) error {
 	tr := i18n.New(i18n.Locale(cfg.Locale))
-
-	// Load validation rules if configured.
-	var v *validator.Validator
-	if strings.TrimSpace(cfg.RulesFile) != "" {
-		if rulesCfg, err := loadRulesConfig(cfg.RulesFile); err == nil {
-			v = validator.New(*rulesCfg)
-		}
-	}
-	// Fallback: use defaults when no rules file is specified.
-	if v == nil {
-		v = validator.New(*validator.DefaultConfig())
-	}
 
 	if cfg.Command == "config" {
 		return runConfig(cfg)
@@ -142,6 +134,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return dumpPrompt(vscodeMsgs, cfg.DumpOutPath)
 
 	case "suggest":
+		v := resolveValidator(cfg, repoRoot, tr)
 		provider, err := newProvider(cfg)
 		if err != nil {
 			return err
@@ -151,7 +144,7 @@ func Run(ctx context.Context, cfg Config) error {
 		// Non-interactive mode: generate once and print to stdout. With --print
 		// it also writes the hook file when configured; it never creates a commit.
 		if cfg.Print || cfg.DryRun {
-			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs, tr)
+			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs, v, tr)
 		}
 
 		suggestTUI := newTuiModel(repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
@@ -170,6 +163,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	case "review":
+		v := resolveValidator(cfg, repoRoot, tr)
 		provider, err := newProvider(cfg)
 		if err != nil {
 			return err
@@ -213,6 +207,34 @@ func Run(ctx context.Context, cfg Config) error {
 	default:
 		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
 	}
+}
+
+// resolveValidator loads validation rules when a rules file is configured or
+// auto-discovered at <repo>/.commitgen-rules.json. Returns nil when validation
+// is disabled (no rules file).
+func resolveValidator(cfg Config, repoRoot string, tr *i18n.Translator) *validator.Validator {
+	rulesPath := strings.TrimSpace(cfg.RulesFile)
+	if rulesPath == "" {
+		candidate := filepath.Join(repoRoot, ".commitgen-rules.json")
+		if _, err := os.Stat(candidate); err == nil {
+			rulesPath = candidate
+		}
+	} else if !filepath.IsAbs(rulesPath) {
+		rulesPath = filepath.Join(repoRoot, rulesPath)
+	}
+	if rulesPath == "" {
+		return nil
+	}
+	rulesCfg, err := loadRulesConfig(rulesPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s\n", tr.T("warn.rules_file", rulesPath, err))
+		return nil
+	}
+	v := validator.New(*rulesCfg)
+	if !v.Enabled() {
+		return nil
+	}
+	return v
 }
 
 // loadRulesConfig reads a JSON rules configuration file and merges it with defaults.
@@ -266,7 +288,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 			Model:   cfg.Model,
 		}), nil
 	default:
-		return nil, logger.LogError(fmt.Errorf("%w: %s", ErrUnknownProvider, cfg.Provider), "unsupported provider")
+		return nil, logger.LogError(&unknownProviderError{Provider: cfg.Provider}, "unsupported provider")
 	}
 }
 
@@ -283,42 +305,34 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 	userCommits, _ := gitx.RecentCommitsByAuthor(ctx, repoRoot, recentN, userEmail)
 	repoCommits, _ := gitx.RecentCommits(ctx, repoRoot, recentN)
 
-	// Fetch more changes initially to account for filtering
-	fetchFiles := maxFiles * 2
-	if fetchFiles < 20 {
-		fetchFiles = 20
-	}
-	changes, err := gitx.StagedChanges(ctx, repoRoot, fetchFiles)
+	stagedFiles, err := gitx.StagedFileNames(ctx, repoRoot)
 	if err != nil {
 		return vscodeprompt.Data{}, logger.LogError(err, "failed to get staged changes")
 	}
-	if len(changes) == 0 {
+	if len(stagedFiles) == 0 {
 		return vscodeprompt.Data{}, logger.LogError(ErrNoStagedChanges, "no files staged for commit")
 	}
 
-	// Filter changes
+	// Filter changes — scan all staged files so ignored entries at the front
+	// do not hide valid files further down the list.
 	defaultIgnores := []string{
 		"go.sum", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
 		"*.map", "*.svg", "*.min.js", "*.min.css",
 	}
-	// Combine ignores
 	allIgnores := append(defaultIgnores, ignoredFiles...)
 
 	filteredChanges := make([]vscodeprompt.Change, 0, maxFiles)
-	for _, ch := range changes {
+	for _, path := range stagedFiles {
 		if len(filteredChanges) >= maxFiles {
 			break
 		}
-
-		// Check ignores
-		if shouldIgnore(ch.Path, allIgnores) {
-			// Maybe track skipped?
+		if shouldIgnore(path, allIgnores) {
 			continue
 		}
 
-		// Check size (simple heuristic: diff length)
-		// Better: check file size if new, or diff size.
-		// For simplicity, let's treat huge diffs as truncated.
+		diff, _ := gitx.Git(ctx, repoRoot, "diff", "--staged", "--", path)
+		ch := vscodeprompt.Change{Path: path, Diff: diff}
+
 		const maxDiffSize = 100 * 1024 // 100KB
 		if len(ch.Diff) > maxDiffSize {
 			ch.Diff = truncateUTF8(ch.Diff, 2000) + "\n...[Diff truncated due to size]..."
@@ -326,11 +340,8 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 
 		orig, _ := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
 		if strings.TrimSpace(orig) == "" {
-			// File might be new (not in HEAD yet), try reading from working tree
 			orig, _ = gitx.ReadWorkingTreeFile(repoRoot, ch.Path)
 		}
-
-		// If original content is massive, truncate it too
 		if len(orig) > maxDiffSize {
 			orig = truncateUTF8(orig, 2000) + "\n...[Content truncated due to size]..."
 		}
@@ -344,7 +355,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 	}
 
 	if len(filteredChanges) == 0 {
-		return vscodeprompt.Data{}, fmt.Errorf("%w (checked %d files)", ErrAllFilesIgnored, len(changes))
+		return vscodeprompt.Data{}, &AllFilesIgnoredError{Checked: len(stagedFiles)}
 	}
 
 	return vscodeprompt.Data{
@@ -446,6 +457,7 @@ func maskSecret(s string) string {
 }
 
 func runConfig(cfg Config) error {
+	tr := i18n.New(i18n.Locale(cfg.Locale))
 	switch strings.ToLower(strings.TrimSpace(cfg.ConfigAction)) {
 	case "path":
 		fmt.Println(resolveConfigPath(cfg.ConfigPath))
@@ -459,9 +471,11 @@ func runConfig(cfg Config) error {
 		return err
 	}
 	if !ok {
-		fmt.Println("Operation cancelled.")
+		fmt.Println(tr.T("config.cancelled"))
 		return nil
 	}
+
+	existing, _ := config.Load(cfg.ConfigPath)
 
 	fileCfg := config.FileConfig{
 		BaseURL:      newCfg.BaseURL,
@@ -480,25 +494,36 @@ func runConfig(cfg Config) error {
 		PromptTemplate: newCfg.PromptTemplate,
 		ReviewLanguage: newCfg.ReviewLanguage,
 		Locale:         newCfg.Locale,
+		RulesFile:      newCfg.RulesFile,
 
 		LogLevel:  newCfg.LogLevel,
 		LogOutput: newCfg.LogOutput,
 		LogFile:   newCfg.LogFile,
 	}
 
+	// Preserve fields not exposed in the interactive form.
+	fileCfg.PromptTemplateFile = firstNonEmpty(newCfg.PromptTemplateFile, existing.PromptTemplateFile)
+	if newCfg.TimeoutSeconds != nil {
+		fileCfg.Timeout = newCfg.TimeoutSeconds
+	} else if existing.Timeout != nil {
+		fileCfg.Timeout = existing.Timeout
+	}
+
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
 		return logger.LogError(err, "failed to save config", "path", cfg.ConfigPath)
 	}
-	savedPath := cfg.ConfigPath
-	if savedPath == "" {
-		if home, err := os.UserHomeDir(); err == nil {
-			savedPath = filepath.Join(home, ".commitgen.json")
-		} else {
-			savedPath = "~/.commitgen.json"
+	savedPath := resolveConfigPath(cfg.ConfigPath)
+	fmt.Printf("\n%s\n", tr.T("config.saved", savedPath))
+	return nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
 		}
 	}
-	fmt.Printf("\nConfiguration saved to %s\n", savedPath)
-	return nil
+	return ""
 }
 
 func dumpPrompt(msgs []vscodeprompt.VSCodeMessage, outPath string) error {

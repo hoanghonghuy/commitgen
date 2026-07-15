@@ -56,5 +56,7 @@
 Thêm test cho: config (Merge/LoadResolved/path-glob), httpx retry, các AI client (gồm streaming), gitx (CommitAmend), app (ping/models/non-interactive/config show-path/streaming/candidates/guided regenerate), vscodeprompt (AST + fallback). Coverage tổng từ ~3% (đầu dự án) → **77.6%**.
 
 ### Phần cần lưu ý
-- Streaming chỉ bật cho OpenAI và Ollama; Anthropic/Gemini tự động fallback sang `Generate` (đồng bộ) vì chưa hiện thực `StreamProvider`.
+- Streaming được hỗ trợ cho tất cả provider (OpenAI SSE, Ollama NDJSON, Anthropic/Gemini SSE).
+- Validation chỉ bật khi có `.commitgen-rules.json` hoặc `rules_file` trong config (không ép mặc định).
+- Git hook luôn chạy headless (`--print`), không mở TUI alternate screen.
 - `main()` và `runConfigInteractive()` vẫn không unit-test được (cần TTY); đã refactor tách logic thuần để test phần còn lại.

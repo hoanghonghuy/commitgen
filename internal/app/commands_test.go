@@ -55,7 +55,7 @@ func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
 	cfg := Config{DryRun: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
 	tr := i18n.New(i18n.LocaleEN)
 	out := captureStdout(t, func() {
-		_ = runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: dry"}, baseMsgs(), tr)
+		_ = runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: dry"}, baseMsgs(), nil, tr)
 	})
 	if !strings.Contains(out, "feat: dry") {
 		t.Errorf("expected message printed, got %q", out)
@@ -70,7 +70,7 @@ func TestRunSuggestNonInteractive_PrintWritesHook(t *testing.T) {
 	cfg := Config{Print: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
 	tr := i18n.New(i18n.LocaleEN)
 	_ = captureStdout(t, func() {
-		if err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: printed"}, baseMsgs(), tr); err != nil {
+		if err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{resp: "feat: printed"}, baseMsgs(), nil, tr); err != nil {
 			t.Errorf("error: %v", err)
 		}
 	})
@@ -86,7 +86,7 @@ func TestRunSuggestNonInteractive_PrintWritesHook(t *testing.T) {
 func TestRunSuggestNonInteractive_GenerateError(t *testing.T) {
 	cfg := Config{Print: true, Timeout: time.Second}
 	tr := i18n.New(i18n.LocaleEN)
-	err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{err: errors.New("down")}, baseMsgs(), tr)
+	err := runSuggestNonInteractive(context.Background(), cfg, "/repo", fakeProvider{err: errors.New("down")}, baseMsgs(), nil, tr)
 	if err == nil {
 		t.Error("expected generation error")
 	}

@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -123,7 +125,31 @@ func TestBuildPromptData_AllIgnored(t *testing.T) {
 	runGit(t, dir, "add", ".")
 
 	_, err := buildPromptData(ctx, dir, 5, 10, false, "", nil)
-	if err == nil || !strings.Contains(err.Error(), "ignored") {
-		t.Errorf("expected 'all ignored' error, got: %v", err)
+	if err == nil || !errors.Is(err, ErrAllFilesIgnored) {
+		t.Errorf("expected ErrAllFilesIgnored, got: %v", err)
+	}
+}
+
+func TestBuildPromptData_ValidFileAfterIgnoredPrefix(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	writeFile(t, dir, "README.md", "# initial\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "chore: init")
+
+	// Stage many ignored lockfiles first, then a real source file.
+	for i := 0; i < 25; i++ {
+		name := fmt.Sprintf("locks/pkg%d.lock", i)
+		writeFile(t, dir, name, "lock\n")
+	}
+	writeFile(t, dir, "main.go", "package main\n")
+	runGit(t, dir, "add", ".")
+
+	data, err := buildPromptData(ctx, dir, 5, 10, false, "", []string{"locks/"})
+	if err != nil {
+		t.Fatalf("expected main.go after skipped locks, got error: %v", err)
+	}
+	if len(data.Changes) != 1 || data.Changes[0].Path != "main.go" {
+		t.Fatalf("expected main.go, got %+v", data.Changes)
 	}
 }

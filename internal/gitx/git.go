@@ -79,6 +79,15 @@ func RecentCommitsByAuthor(ctx context.Context, repoRoot string, n int, author s
 	return splitNonEmptyLines(out), nil
 }
 
+// StagedFileNames returns all staged file paths (no diff content).
+func StagedFileNames(ctx context.Context, repoRoot string) ([]string, error) {
+	filesOut, err := Git(ctx, repoRoot, "diff", "--staged", "--name-only")
+	if err != nil {
+		return nil, err
+	}
+	return splitNonEmptyLines(filesOut), nil
+}
+
 // StagedChanges returns staged changes, limited to maxFiles entries.
 func StagedChanges(ctx context.Context, repoRoot string, maxFiles int) ([]StagedChange, error) {
 	if maxFiles <= 0 {

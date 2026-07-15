@@ -20,6 +20,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	if provider == "" {
 		provider = "openai"
 	}
+	provider = ollamaOptionForConfig(provider, cfg.BaseURL, cfg.APIKey)
 
 	recentNStr := fmt.Sprintf("%d", cfg.RecentN)
 	maxFilesStr := fmt.Sprintf("%d", cfg.MaxFiles)
@@ -58,7 +59,8 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 				Title("AI Provider").
 				Options(
 					huh.NewOption("OpenAI", "openai"),
-					huh.NewOption("Ollama (Local)", "ollama"),
+					huh.NewOption("Ollama (Local)", ollamaLocalOption),
+					huh.NewOption("Ollama (Cloud)", ollamaCloudOption),
 					huh.NewOption("Anthropic (Claude)", "anthropic"),
 					huh.NewOption("Google Gemini", "gemini"),
 				).
@@ -66,20 +68,20 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 
 			huh.NewInput().
 				Title("Base URL").
-				Description("API endpoint (OpenAI-compatible providers: OpenRouter, Mistral, Azure...)").
-				Placeholder("https://api.openai.com/v1 or http://localhost:11434").
+				Description("API endpoint — Ollama Local: localhost:11434; Ollama Cloud: ollama.com; or OpenAI-compatible URL").
+				Placeholder("https://api.openai.com/v1 | http://localhost:11434 | https://ollama.com").
 				Suggestions([]string{
 					"https://api.openai.com/v1",
 					"https://openrouter.ai/api/v1",
 					"https://api.mistral.ai/v1",
-					"https://api.ollama.cloud",
+					"https://ollama.com",
 					"http://localhost:11434",
 				}).
 				Value(&baseURL),
 
 			huh.NewInput().
-				Title("OpenAI API Key").
-				Description("Key for OpenAI/Compatible providers").
+				Title("API Key").
+				Description("Key for OpenAI / Ollama Cloud / Compatible providers").
 				Value(&apiKey).
 				EchoMode(huh.EchoModePassword),
 
@@ -98,7 +100,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 			huh.NewInput().
 				Title("Model").
 				Description("Model name").
-				Suggestions([]string{"gpt-4o", "claude-3-opus", "gemini-1.5-pro", "llama3"}).
+				Suggestions([]string{"gpt-4o", "claude-3-opus", "gemini-1.5-pro", "llama3", "deepseek-v4-pro"}).
 				Value(&model),
 
 			huh.NewInput().
@@ -222,13 +224,12 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 	}
 
 	// Update the config object
-	cfg.BaseURL = baseURL
 	cfg.APIKey = apiKey
 	cfg.AnthropicKey = anthropicKey
 	cfg.GeminiKey = geminiKey
 	cfg.Model = model
 	cfg.PromptTemplate = promptTemplate
-	cfg.Provider = provider
+	cfg.Provider, cfg.BaseURL = applyOllamaOptionSelection(provider, baseURL, apiKey)
 
 	if v, err := strconv.Atoi(recentNStr); err == nil {
 		cfg.RecentN = v

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -17,7 +18,7 @@ import (
 
 // Config holds Ollama specific settings
 type Config struct {
-	BaseURL string // e.g. "http://localhost:11434" or "https://api.ollama.cloud"
+	BaseURL string // e.g. "http://localhost:11434" or "https://ollama.com"
 	Model   string // e.g. "llama3" or "deepseek-v4-pro"
 	APIKey  string // optional: API key for Ollama Cloud
 }
@@ -31,10 +32,7 @@ type Client struct {
 }
 
 func New(cfg Config) *Client {
-	baseURL := strings.TrimRight(cfg.BaseURL, "/")
-	if baseURL == "" {
-		baseURL = "http://localhost:11434"
-	}
+	baseURL := ResolveBaseURL(cfg.BaseURL, cfg.APIKey)
 	return &Client{
 		baseURL: baseURL,
 		model:   cfg.Model,
@@ -129,7 +127,8 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("ollama: API error (status %d)", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("ollama: API error (status %d): %s", resp.StatusCode, truncateOllamaErrorBody(body))
 	}
 
 	var full strings.Builder
@@ -173,8 +172,19 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 
 	var chatResp chatResponse
 	if err := httpx.DoJSONRequest(ctx, c.client, "POST", url, headers, reqBody, &chatResp); err != nil {
-		return "", logger.LogError(err, "ollama: request failed", "url", url)
+		return "", logger.LogError(fmt.Errorf("ollama: %w", err), "ollama: request failed", "url", url)
 	}
 
 	return chatResp.Message.Content, nil
+}
+
+func truncateOllamaErrorBody(body []byte) string {
+	s := strings.TrimSpace(string(body))
+	if len(s) > 500 {
+		return s[:500] + "..."
+	}
+	if s == "" {
+		return "(empty body)"
+	}
+	return s
 }

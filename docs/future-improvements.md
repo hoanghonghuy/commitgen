@@ -6,6 +6,32 @@ This document outlines potential improvements and new features for CommitGen tha
 
 ## 🌐 i18n & Localization
 
+### Current State (implemented)
+
+The application ships with `internal/i18n` (en, vi, ja, zh). TUI and CLI errors use the translator with English fallback. Config form (`commitgen config`) labels remain English.
+
+Set locale via `--locale`, `COMMITGEN_LOCALE`, or `locale` in `~/.commitgen.json`.
+
+**Not yet implemented:** `--locale auto` from `$LANG`.
+
+---
+
+## 🚀 Feature Additions
+
+### 3. Commit Message Validation (implemented)
+
+Opt-in validation via `.commitgen-rules.json` (auto-discovered in repo root) or `rules_file` in config. TUI shows validation issues with auto-fix; `--print`/hook path rejects messages with error-level violations.
+
+See `internal/validator/` and example rules in `docs/future-improvements.md` below.
+
+---
+
+### Original proposals (not yet implemented)
+
+The sections below describe **future** ideas. Items marked in the priority matrix as done in the original doc were aspirational — verify against README before assuming they exist.
+
+## 🌐 i18n & Localization (original proposal — largely implemented)
+
 ### Current State
 
 The application currently has hard-coded English strings throughout the UI, with only partial support for localized review output via the `review_language` setting.
@@ -427,12 +453,16 @@ commitgen
 
 ---
 
-### 3. Commit Message Validation
+### 3. Commit Message Validation (original proposal — implemented)
 
 #### Problem
 Generated messages might not meet all project requirements (length limits, required keywords, prohibited patterns).
 
-#### Proposed Solution
+#### Implemented
+
+See `internal/validator/validator.go` and `.commitgen-rules.json` in the repo root. Validation is **opt-in** (not enabled by default without a rules file).
+
+#### Original proposed solution (reference)
 
 **Pre-commit validation with auto-fix suggestions:**
 
