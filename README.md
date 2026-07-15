@@ -84,16 +84,31 @@ Before using, you need to configure your AI provider settings. You can do this i
 commitgen config
 ```
 
-Configuration is saved to `~/.commitgen.json` and includes:
+Configuration is saved to `~/.commitgen.json` by default and includes:
 - **Provider**: `openai`, `anthropic`, `gemini`, or `ollama` (local `localhost:11434` or cloud `https://ollama.com` + API key).
 - **Base URL**: Your AI provider endpoint.
-- **API Key**: Your API secret key.
-- **Model**: The model to use (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`).
+- **API Key**: Your API secret key (OpenAI-compatible providers and Ollama Cloud).
+- **Model**: The model to use (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`, `deepseek-v4-pro`).
 - **Preferences**: Toggle Conventional Commits, Summarization, and manage Ignored Files.
 - **Advanced** (edit JSON directly): `timeout_seconds`, `prompt_template_file`, `rules_file`.
-- **Per-repo**: Place `.commitgen.json` in the repository root to override global settings.
+- **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
 - **Validation**: Place `.commitgen-rules.json` in the repo root (auto-discovered) or set `rules_file` in config.
 - **Logging**: Configure log level (debug, info, warn, error), output destination (stderr, file, both), and log file path.
+
+`commitgen config` loads merged settings (global + repo overlay) but **saves to `~/.commitgen.json`** unless you pass `--config`. Leave API key fields empty in the form to keep existing secrets.
+
+### Environment variables
+
+| Variable | Purpose |
+|----------|---------|
+| `COMMITGEN_API_KEY` | API key (OpenAI-compatible providers; fallback for Ollama) |
+| `OLLAMA_API_KEY` | Ollama Cloud API key ([create at ollama.com/settings/keys](https://ollama.com/settings/keys)) — preferred over `COMMITGEN_API_KEY` when `provider=ollama` |
+| `COMMITGEN_PROVIDER` | `openai`, `ollama`, `anthropic`, `gemini` |
+| `COMMITGEN_BASE_URL` | Provider base URL |
+| `COMMITGEN_MODEL` | Model name |
+| `COMMITGEN_LOCALE` | UI language (`en`, `vi`, `ja`, `zh`) |
+
+For Ollama Cloud, set `base_url` to `https://ollama.com` and provide an API key via config, `OLLAMA_API_KEY`, or `--api-key`. Verify with `commitgen ping`.
 
 ### Locale
 

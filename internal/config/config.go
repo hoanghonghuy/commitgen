@@ -179,6 +179,12 @@ func LoadResolved(explicitPath string) (FileConfig, error) {
 	return global, nil
 }
 
+// RepoLocalConfigPath walks up from the current directory looking for a
+// .commitgen.json that is not the global one in the home directory.
+func RepoLocalConfigPath() (string, bool) {
+	return findRepoLocalConfig()
+}
+
 // findRepoLocalConfig walks up from the current directory looking for a
 // .commitgen.json that is not the global one in the home directory. The search
 // is bounded at the home directory so it never descends into system paths.

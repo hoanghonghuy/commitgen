@@ -6,10 +6,11 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/huh"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
 // runConfigInteractive launches a TUI form to edit key config fields
-func runConfigInteractive(cfg Config) (Config, bool, error) {
+func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Config, bool, error) {
 	baseURL := cfg.BaseURL
 	apiKey := cfg.APIKey
 	anthropicKey := cfg.AnthropicKey
@@ -53,7 +54,7 @@ func runConfigInteractive(cfg Config) (Config, bool, error) {
 		huh.NewGroup(
 			huh.NewNote().
 				Title("CommitGen Configuration").
-				Description("Update your global settings in ~/.commitgen.json"),
+				Description(tr.T("config.form_intro") + "\n" + tr.T("config.save_target", savePath)),
 
 			huh.NewSelect[string]().
 				Title("AI Provider").

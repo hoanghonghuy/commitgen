@@ -257,6 +257,10 @@ func newProvider(cfg Config) (ai.Provider, error) {
 
 	switch strings.ToLower(cfg.Provider) {
 	case "ollama":
+		baseURL := ollama.ResolveBaseURL(cfg.BaseURL, cfg.APIKey)
+		if ollama.IsCloudBaseURL(baseURL) && strings.TrimSpace(cfg.APIKey) == "" {
+			return nil, logger.LogError(ErrMissingAPIKey, "ollama cloud api key not configured")
+		}
 		return ollama.New(ollama.Config{
 			BaseURL: cfg.BaseURL,
 			Model:   cfg.Model,
@@ -447,13 +451,25 @@ func showConfig(path string) error {
 	return nil
 }
 
+const secretMask = "********"
+
 // maskSecret replaces a secret with a fixed-length mask, keeping it non-empty
 // only when a value is present.
 func maskSecret(s string) string {
 	if strings.TrimSpace(s) == "" {
 		return ""
 	}
-	return "********"
+	return secretMask
+}
+
+// preserveSecret keeps the existing secret when the form submits an empty value
+// or the display mask (********).
+func preserveSecret(submitted, existing string) string {
+	s := strings.TrimSpace(submitted)
+	if s == "" || s == secretMask {
+		return existing
+	}
+	return s
 }
 
 func runConfig(cfg Config) error {
@@ -466,7 +482,14 @@ func runConfig(cfg Config) error {
 		return showConfig(cfg.ConfigPath)
 	}
 
-	newCfg, ok, err := runConfigInteractive(cfg)
+	savePath := resolveConfigPath(cfg.ConfigPath)
+	if cfg.ConfigPath == "" {
+		if local, ok := config.RepoLocalConfigPath(); ok {
+			fmt.Fprintf(os.Stderr, "%s\n", tr.T("config.repo_overlay_warn", local, savePath))
+		}
+	}
+
+	newCfg, ok, err := runConfigInteractive(cfg, savePath, tr)
 	if err != nil {
 		return err
 	}
@@ -479,7 +502,7 @@ func runConfig(cfg Config) error {
 
 	fileCfg := config.FileConfig{
 		BaseURL:      newCfg.BaseURL,
-		APIKey:       newCfg.APIKey,
+		APIKey:       preserveSecret(newCfg.APIKey, existing.APIKey),
 		Model:        newCfg.Model,
 		IgnoredFiles: newCfg.IgnoredFiles,
 
@@ -489,8 +512,8 @@ func runConfig(cfg Config) error {
 		Temperature:    &newCfg.Temperature,
 		Conventional:   &newCfg.Conventional,
 		Provider:       newCfg.Provider,
-		AnthropicKey:   newCfg.AnthropicKey,
-		GeminiKey:      newCfg.GeminiKey,
+		AnthropicKey:   preserveSecret(newCfg.AnthropicKey, existing.AnthropicKey),
+		GeminiKey:      preserveSecret(newCfg.GeminiKey, existing.GeminiKey),
 		PromptTemplate: newCfg.PromptTemplate,
 		ReviewLanguage: newCfg.ReviewLanguage,
 		Locale:         newCfg.Locale,
@@ -510,10 +533,9 @@ func runConfig(cfg Config) error {
 	}
 
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
-		return logger.LogError(err, "failed to save config", "path", cfg.ConfigPath)
+		return logger.LogError(err, "failed to save config", "path", savePath)
 	}
-	savedPath := resolveConfigPath(cfg.ConfigPath)
-	fmt.Printf("\n%s\n", tr.T("config.saved", savedPath))
+	fmt.Printf("\n%s\n", tr.T("config.saved", savePath))
 	return nil
 }
 

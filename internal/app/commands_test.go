@@ -212,7 +212,19 @@ func TestMaskSecret(t *testing.T) {
 	if maskSecret("") != "" {
 		t.Error("empty should stay empty")
 	}
-	if maskSecret("super-secret-key") != "********" {
+	if maskSecret("super-secret-key") != secretMask {
 		t.Error("non-empty should be masked")
+	}
+}
+
+func TestPreserveSecret(t *testing.T) {
+	if got := preserveSecret("", "existing"); got != "existing" {
+		t.Errorf("empty submitted = %q, want existing", got)
+	}
+	if got := preserveSecret(secretMask, "existing"); got != "existing" {
+		t.Errorf("mask submitted = %q, want existing", got)
+	}
+	if got := preserveSecret("new-key", "existing"); got != "new-key" {
+		t.Errorf("new key = %q", got)
 	}
 }

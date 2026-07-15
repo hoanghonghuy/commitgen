@@ -45,6 +45,8 @@ func TestNewProvider(t *testing.T) {
 	}{
 		{"missing model", Config{Provider: "openai"}, true},
 		{"ollama ok", Config{Provider: "ollama", Model: "llama3"}, false},
+		{"ollama cloud missing key", Config{Provider: "ollama", Model: "deepseek-v4-pro", BaseURL: "https://ollama.com"}, true},
+		{"ollama cloud ok", Config{Provider: "ollama", Model: "deepseek-v4-pro", BaseURL: "https://ollama.com", APIKey: "sk-test"}, false},
 		{"anthropic missing key", Config{Provider: "anthropic", Model: "claude"}, true},
 		{"anthropic ok", Config{Provider: "anthropic", Model: "claude", AnthropicKey: "k"}, false},
 		{"gemini missing key", Config{Provider: "gemini", Model: "gemini"}, true},
