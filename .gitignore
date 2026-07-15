@@ -44,3 +44,11 @@ build_error.txt
 .roo
 .claude
 AGENTS.md
+
+# synapse (local runtime — syn init)
+.env
+.env.*
+!.env.example
+!.env.*.example
+.synapse/
+memory-bank/

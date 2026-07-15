@@ -20,11 +20,11 @@
 
 ### Vệ sinh repo / lặt vặt (ưu tiên thấp)
 - [x] #9 — `tmp_test_api/go.mod` bị commit (folder tạm còn sót) ✅ đã xóa
-- [ ] #10 — Binary `commitgen`/`commitgen.exe` + `.git/.MERGE_MSG.swp` còn trong working tree (binary đã `.gitignore`; `.swp` nằm trong `.git`, không can thiệp)
+- [x] #10 — Binary `commitgen`/`commitgen.exe` + `.git/.MERGE_MSG.swp` còn trong working tree ✅ đã dọn sạch
 - [x] #11 — Gemini dùng `omitempty` trên struct value (không tác dụng) ✅ đã sửa (đổi sang con trỏ)
 - [x] #12 — Anthropic `max_tokens=1024` cố định có thể cắt cụt báo cáo review ✅ đã nâng lên 4096
-- [ ] #13 — `summarizeGo` đếm ngoặc đơn giản hóa, dễ sai với closure/string literal (giữ nguyên — giới hạn đã biết, rủi ro thấp)
-- [ ] #14 — Ghi chú bảo mật: tránh log URL Gemini (chứa API key) — hiện chưa log URL nên không rò rỉ; giữ làm lưu ý
+- [x] #13 — `summarizeGo` đếm ngoặc đơn giản hóa, dễ sai với closure/string literal ✅ đã nâng cấp lên AST parser (`go/parser` + `go/ast`) + fallback heuristic
+- [x] #14 — Ghi chú bảo mật: tránh log URL Gemini (chứa API key) ✅ đã chuyển API key sang HTTP header (`x-goog-api-key`), không còn trong URL
 
 ---
 
@@ -118,17 +118,18 @@ hiểu nhầm ý đồ.
 Đủ cho commit message, nhưng báo cáo `review` (nhất là full review 4 mục) có thể bị cắt cụt.
 **Hướng sửa:** tăng giá trị cho luồng review, hoặc cho cấu hình.
 
-#### #13 — `summarizeGo` best-effort, dễ sai
+#### #13 — `summarizeGo` đã nâng cấp lên AST parser
 **File:** `internal/vscodeprompt/summarize.go`
-Comment trong code đã thừa nhận cách đếm ngoặc đơn giản hóa. Với hàm có closure lồng nhau hoặc
-`}` nằm trong chuỗi/string literal, việc thu gọn có thể sai. Chấp nhận được nhưng cần biết giới hạn.
+Đã thay thế cách đếm ngoặc đơn giản hóa bằng `summarizeGoAST` dùng `go/parser` + `go/ast`
+để parse chính xác cấu trúc Go. Khi source lỗi cú pháp (vd: đang edit dở), tự động fallback
+về `summarizeGoHeuristic` (brace-counting). Giải quyết được vấn đề closure lồng nhau và
+`}` trong string literal.
 
-#### #14 — Ghi chú bảo mật: URL Gemini chứa API key
-**File:** `internal/gemini/client.go`, `internal/logger/logger.go`
-Gemini đặt API key trong query string (`?key=...`). Hiện client Gemini không log URL nên chưa
-rò rỉ, nhưng cơ chế redact trong logger chỉ lọc theo key (`api_key`, `token`...) chứ không lọc
-URL. Cần tránh log URL Gemini đầy đủ về sau. Cơ chế redact hiện gần như không được dùng vì
-không có chỗ nào log với các key đó.
+#### #14 — Ghi chú bảo mật: Gemini API key đã chuyển sang header
+**File:** `internal/gemini/client.go`
+Trước đây Gemini đặt API key trong query string (`?key=...`), tiềm ẩn rủi ro rò rỉ qua log URL.
+Đã chuyển sang truyền qua HTTP header `x-goog-api-key`, loại bỏ hoàn toàn API key khỏi URL.
+Cơ chế redact trong logger vẫn được giữ làm lớp bảo vệ bổ sung.
 
 ---
 
