@@ -114,8 +114,11 @@ For Ollama Cloud, set `base_url` to `https://ollama.com` and provide an API key 
 
 ```bash
 commitgen --locale vi
+commitgen --locale auto   # detect from LANG / LC_ALL
 export COMMITGEN_LOCALE=ja
 ```
+
+Set `locale` to `auto` in `~/.commitgen.json` to follow the system locale on each run.
 
 CommitGen includes comprehensive logging to help debug issues:
 

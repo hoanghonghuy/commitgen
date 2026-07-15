@@ -58,7 +58,7 @@ func main() {
 	amendFlag := flag.Bool("amend", false, "Amend the last commit instead of creating a new one")
 	countFlag := flag.Int("count", 1, "Number of commit message candidates to generate")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
-	localeFlag := flag.String("locale", "", "UI language (en, vi, ja, zh). Default: en")
+	localeFlag := flag.String("locale", "", "UI language (en, vi, ja, zh, auto). Default: en")
 
 	flag.Parse()
 
@@ -83,8 +83,8 @@ func main() {
 	}
 
 	// Resolve locale early so we can use it for warning/error messages.
-	locale := config.ResolveString(*localeFlag, os.Getenv("COMMITGEN_LOCALE"), fileCfg.Locale, "en")
-	tr := i18n.New(i18n.Locale(locale))
+	locale := i18n.ResolveLocale(*localeFlag, os.Getenv("COMMITGEN_LOCALE"), fileCfg.Locale, string(i18n.LocaleEN))
+	tr := i18n.New(locale)
 
 	// 3. Resolve final config (Flag > Env > File > Default)
 	timeoutSec := config.ResolveInt(*timeoutFlag, isFlagSet("timeout"), fileCfg.Timeout, 120)
@@ -144,7 +144,7 @@ func main() {
 		Timeout:          time.Duration(timeoutSec) * time.Second,
 		PromptTemplate:   promptTemplate,
 		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
-		Locale:           locale,
+		Locale:           string(locale),
 		RulesFile:        fileCfg.RulesFile,
 		PromptTemplateFile: fileCfg.PromptTemplateFile,
 		TimeoutSeconds:   fileCfg.Timeout,

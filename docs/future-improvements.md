@@ -10,9 +10,9 @@ This document outlines potential improvements and new features for CommitGen tha
 
 The application ships with `internal/i18n` (en, vi, ja, zh). TUI and CLI errors use the translator with English fallback. Config form (`commitgen config`) labels remain English.
 
-Set locale via `--locale`, `COMMITGEN_LOCALE`, or `locale` in `~/.commitgen.json`.
+Set locale via `--locale`, `COMMITGEN_LOCALE`, or `locale` in `~/.commitgen.json`. Use `auto` to detect from `LANG` / `LC_ALL` / `LC_MESSAGES`.
 
-**Not yet implemented:** `--locale auto` from `$LANG`.
+**Implemented:** `--locale auto` from `$LANG` (and related locale env vars).
 
 ---
 

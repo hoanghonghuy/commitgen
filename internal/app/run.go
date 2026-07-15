@@ -28,8 +28,11 @@ import (
 // runTUI runs a Bubble Tea program for the given model and returns the final
 // model. It is a package-level variable so tests can substitute a stub instead
 // of launching a real terminal program.
-var runTUI = func(model tea.Model) (tea.Model, error) {
-	p := tea.NewProgram(model, tea.WithAltScreen(), tea.WithMouseCellMotion())
+var runTUI = func(ctx context.Context, model tea.Model) (tea.Model, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	p := tea.NewProgram(model, tea.WithContext(ctx), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	return p.Run()
 }
 
@@ -150,7 +153,7 @@ func Run(ctx context.Context, cfg Config) error {
 		suggestTUI := newTuiModel(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
 		suggestTUI.amend = cfg.Amend
 		suggestTUI.count = cfg.Count
-		finalModel, err := runTUI(suggestTUI)
+		finalModel, err := runTUI(ctx, suggestTUI)
 		if err != nil {
 			return logger.LogError(err, "TUI execution failed")
 		}
@@ -176,7 +179,7 @@ func Run(ctx context.Context, cfg Config) error {
 			fullSystem := fullMsgs[0]
 			reviewTUI.fullReviewSystem = &fullSystem
 		}
-		finalModel, err := runTUI(reviewTUI)
+		finalModel, err := runTUI(ctx, reviewTUI)
 		if err != nil {
 			return logger.LogError(err, "review TUI execution failed")
 		}
@@ -191,7 +194,7 @@ func Run(ctx context.Context, cfg Config) error {
 				suggestTUI := newTuiModel(ctx, repoRoot, provider, vscodeMsgs, cfg.Temperature, cfg.Timeout, cfg.Conventional, cfg.HookFile, tr, v)
 				suggestTUI.amend = cfg.Amend
 				suggestTUI.count = cfg.Count
-				suggestModel, err := runTUI(suggestTUI)
+				suggestModel, err := runTUI(ctx, suggestTUI)
 				if err != nil {
 					return logger.LogError(err, "TUI execution failed")
 				}

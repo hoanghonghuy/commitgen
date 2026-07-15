@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/huh"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
@@ -50,6 +51,13 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 		logOutput = "both"
 	}
 	logFile := cfg.LogFile
+
+	timeoutStr := "120"
+	if cfg.TimeoutSeconds != nil && *cfg.TimeoutSeconds > 0 {
+		timeoutStr = fmt.Sprintf("%d", *cfg.TimeoutSeconds)
+	} else if cfg.Timeout > 0 {
+		timeoutStr = fmt.Sprintf("%d", int(cfg.Timeout.Seconds()))
+	}
 
 	form := huh.NewForm(
 		huh.NewGroup(
@@ -144,6 +152,18 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					}
 					return nil
 				}),
+
+			huh.NewInput().
+				Title(tr.T("config.field.timeout")).
+				Description(tr.T("config.field.timeout.desc")).
+				Value(&timeoutStr).
+				Validate(func(s string) error {
+					v, err := strconv.Atoi(s)
+					if err != nil || v <= 0 {
+						return fmt.Errorf("%s", tr.T("config.field.timeout.error"))
+					}
+					return nil
+				}),
 		),
 
 		huh.NewGroup(
@@ -175,6 +195,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				Title(tr.T("config.field.ui_language")).
 				Description(tr.T("config.field.ui_language.desc")).
 				Options(
+					huh.NewOption(tr.T("config.locale.auto"), "auto"),
 					huh.NewOption("English", "en"),
 					huh.NewOption("Tiếng Việt", "vi"),
 					huh.NewOption("日本語", "ja"),
@@ -190,6 +211,8 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				Options(
 					huh.NewOption("English", "en"),
 					huh.NewOption("Tiếng Việt", "vi"),
+					huh.NewOption("日本語", "ja"),
+					huh.NewOption("中文", "zh"),
 				).
 				Value(&reviewLanguage),
 		),
@@ -246,6 +269,10 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	}
 	if v, err := strconv.ParseFloat(tempStr, 64); err == nil {
 		cfg.Temperature = v
+	}
+	if v, err := strconv.Atoi(timeoutStr); err == nil && v > 0 {
+		cfg.TimeoutSeconds = &v
+		cfg.Timeout = time.Duration(v) * time.Second
 	}
 	cfg.Summarize = summarize
 	cfg.Conventional = conventional

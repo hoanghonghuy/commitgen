@@ -264,6 +264,12 @@ func buildReviewUserText(d Data) string {
 		b.WriteString("# RESPONSE LANGUAGE: Vietnamese (Tiếng Việt).\n")
 		b.WriteString("# Write the entire review in Vietnamese. Use Vietnamese terminology for code review concepts.\n")
 		b.WriteString("# Keep code identifiers, function names, and technical terms in their original form.\n")
+	case "ja":
+		b.WriteString("# RESPONSE LANGUAGE: Japanese (日本語).\n")
+		b.WriteString("# Write the entire review in Japanese. Keep code identifiers and technical terms in their original form.\n")
+	case "zh":
+		b.WriteString("# RESPONSE LANGUAGE: Chinese (中文).\n")
+		b.WriteString("# Write the entire review in Chinese. Keep code identifiers and technical terms in their original form.\n")
 	default:
 		b.WriteString("# RESPONSE LANGUAGE: English.\n")
 	}

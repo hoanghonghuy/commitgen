@@ -10,7 +10,7 @@ import (
 )
 
 // withStubTUI temporarily replaces runTUI and restores it after the test.
-func withStubTUI(t *testing.T, fn func(model tea.Model) (tea.Model, error)) {
+func withStubTUI(t *testing.T, fn func(context.Context, tea.Model) (tea.Model, error)) {
 	t.Helper()
 	orig := runTUI
 	runTUI = fn
@@ -19,7 +19,7 @@ func withStubTUI(t *testing.T, fn func(model tea.Model) (tea.Model, error)) {
 
 func TestRun_SuggestSuccess(t *testing.T) {
 	dir := stagedRepo(t)
-	withStubTUI(t, func(model tea.Model) (tea.Model, error) {
+	withStubTUI(t, func(_ context.Context, model tea.Model) (tea.Model, error) {
 		// Return the model as-is (no error) to simulate a clean TUI session.
 		return model, nil
 	})
@@ -41,7 +41,7 @@ func TestRun_SuggestSuccess(t *testing.T) {
 
 func TestRun_SuggestModelError(t *testing.T) {
 	dir := stagedRepo(t)
-	withStubTUI(t, func(model tea.Model) (tea.Model, error) {
+	withStubTUI(t, func(_ context.Context, model tea.Model) (tea.Model, error) {
 		m := model.(tuiModel)
 		m.err = errors.New("tui blew up")
 		return m, nil
@@ -55,7 +55,7 @@ func TestRun_SuggestModelError(t *testing.T) {
 
 func TestRun_SuggestProgramError(t *testing.T) {
 	dir := stagedRepo(t)
-	withStubTUI(t, func(model tea.Model) (tea.Model, error) {
+	withStubTUI(t, func(_ context.Context, model tea.Model) (tea.Model, error) {
 		return model, errors.New("program crashed")
 	})
 
@@ -76,7 +76,7 @@ func TestRun_SuggestMissingProvider(t *testing.T) {
 
 func TestRun_ReviewSuccess(t *testing.T) {
 	dir := stagedRepo(t)
-	withStubTUI(t, func(model tea.Model) (tea.Model, error) {
+	withStubTUI(t, func(_ context.Context, model tea.Model) (tea.Model, error) {
 		return model, nil
 	})
 
@@ -98,7 +98,7 @@ func TestRun_ReviewSuccess(t *testing.T) {
 func TestRun_ReviewSwitchToSuggest(t *testing.T) {
 	dir := stagedRepo(t)
 	calls := 0
-	withStubTUI(t, func(model tea.Model) (tea.Model, error) {
+	withStubTUI(t, func(_ context.Context, model tea.Model) (tea.Model, error) {
 		calls++
 		if rm, ok := model.(reviewModel); ok {
 			// First call is the review model → request switch to suggest.
@@ -120,7 +120,7 @@ func TestRun_ReviewSwitchToSuggest(t *testing.T) {
 
 func TestRun_ReviewModelError(t *testing.T) {
 	dir := stagedRepo(t)
-	withStubTUI(t, func(model tea.Model) (tea.Model, error) {
+	withStubTUI(t, func(_ context.Context, model tea.Model) (tea.Model, error) {
 		rm := model.(reviewModel)
 		rm.err = errors.New("review failed")
 		return rm, nil
