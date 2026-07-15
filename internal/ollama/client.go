@@ -17,14 +17,16 @@ import (
 
 // Config holds Ollama specific settings
 type Config struct {
-	BaseURL string // e.g. "http://localhost:11434"
-	Model   string // e.g. "llama3"
+	BaseURL string // e.g. "http://localhost:11434" or "https://api.ollama.cloud"
+	Model   string // e.g. "llama3" or "deepseek-v4-pro"
+	APIKey  string // optional: API key for Ollama Cloud
 }
 
 // Client implements ai.Provider for Ollama
 type Client struct {
 	baseURL string
 	model   string
+	apiKey  string
 	client  *http.Client
 }
 
@@ -36,6 +38,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		baseURL: baseURL,
 		model:   cfg.Model,
+		apiKey:  cfg.APIKey,
 		client:  &http.Client{Timeout: 120 * time.Second},
 	}
 }
@@ -115,6 +118,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -160,6 +166,9 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	url := c.endpoint()
 	headers := map[string]string{
 		"Content-Type": "application/json",
+	}
+	if c.apiKey != "" {
+		headers["Authorization"] = "Bearer " + c.apiKey
 	}
 
 	var chatResp chatResponse

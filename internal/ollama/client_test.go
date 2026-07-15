@@ -119,3 +119,35 @@ func TestGenerateStream_HTTPError(t *testing.T) {
 		t.Error("expected error for 500 stream response")
 	}
 }
+
+func TestGenerate_WithAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-cloud-key" {
+			t.Errorf("expected Authorization header, got %q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done":true}`))
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL, Model: "deepseek-v4-pro", APIKey: "test-cloud-key"})
+	_, err := c.Generate(context.Background(), sampleMsgs(), 0.5)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestGenerateStream_WithAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer test-cloud-key" {
+			t.Errorf("expected Authorization header, got %q", r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done":true}` + "\n"))
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL, Model: "deepseek-v4-pro", APIKey: "test-cloud-key"})
+	_, err := c.GenerateStream(context.Background(), sampleMsgs(), 0.5, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

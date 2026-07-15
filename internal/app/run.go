@@ -238,6 +238,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 		return ollama.New(ollama.Config{
 			BaseURL: cfg.BaseURL,
 			Model:   cfg.Model,
+			APIKey:  cfg.APIKey,
 		}), nil
 	case "anthropic":
 		if cfg.AnthropicKey == "" {
