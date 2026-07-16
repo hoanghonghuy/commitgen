@@ -645,6 +645,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case copyDoneMsg:
 		m.state = stateConfirm
 		return m, nil
+
+	case clipboardErrMsg:
+		m.err = msg.err
+		m.state = stateConfirm
+		return m, nil
 	}
 
 	return m, nil
@@ -678,7 +683,7 @@ func (m tuiModel) View() string {
 		if m.needsScroll && m.viewportReady {
 			// Content overflows → viewport (content already set in Update via refreshViewport).
 			pct := int(m.viewport.ScrollPercent() * 100)
-			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
+			hint := scrollHintText(m.i18n, pct, m.viewport.AtTop(), m.viewport.AtBottom())
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else {
 			// Content fits — use cached content built in Update (zero allocations here).

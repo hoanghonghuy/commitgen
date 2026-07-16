@@ -54,9 +54,16 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 		}
 	case ProviderOllama:
 		resolved := ollama.ResolveBaseURL(base, apiKey)
-		if ollama.IsCloudBaseURL(resolved) {
+		switch {
+		case ollama.IsCloudBaseURL(resolved):
 			out.Provider = ProviderOllamaCloud
-		} else {
+		case base != "" && !ollama.IsLocalBaseURL(base) && !ollama.IsCloudBaseURL(base):
+			// Custom LAN/remote Ollama daemon — preserve host for ResolveCredentials.
+			out.Provider = ProviderOllama
+			if out.CompatibleBaseURL == "" {
+				out.CompatibleBaseURL = base
+			}
+		default:
 			out.Provider = ProviderOllama
 		}
 		setKeyIfEmpty(out.APIKeys, "ollama", apiKey)

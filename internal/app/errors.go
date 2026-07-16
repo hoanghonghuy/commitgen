@@ -40,7 +40,14 @@ type ValidationFailedError struct {
 }
 
 func (e *ValidationFailedError) Error() string {
-	return ErrValidation.Error()
+	if e == nil || len(e.Issues) == 0 {
+		return ErrValidation.Error()
+	}
+	parts := make([]string, 0, len(e.Issues))
+	for _, iss := range e.Issues {
+		parts = append(parts, fmt.Sprintf("[%s] %s", iss.Level, iss.Message))
+	}
+	return ErrValidation.Error() + ": " + strings.Join(parts, "; ")
 }
 
 func (e *ValidationFailedError) Unwrap() error {
@@ -62,6 +69,10 @@ func TranslateError(tr *i18n.Translator, err error) string {
 	case errors.Is(err, ErrMissingAPIKey):
 		return tr.T("error.missing_api_key")
 	case errors.Is(err, ErrValidation):
+		var vf *ValidationFailedError
+		if errors.As(err, &vf) && len(vf.Issues) > 0 {
+			return tr.T("error.validation_failed") + "\n" + vf.Error()
+		}
 		return tr.T("error.validation_failed")
 	}
 	var ignored *AllFilesIgnoredError

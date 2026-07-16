@@ -27,12 +27,12 @@ var (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | version)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
 	modelFlag := flag.String("model", "", "AI model name")
-	providerFlag := flag.String("provider", "", "AI provider (openai | ollama | anthropic | gemini)")
+	providerFlag := flag.String("provider", "", "AI provider (openai | openrouter | compatible | ollama | ollama-cloud | anthropic | gemini)")
 	baseBranchFlag := flag.String("base", "", "Base branch for PR generation (default: main/master/develop or upstream)")
 
 	anthropicKeyFlag := flag.String("anthropic-key", "", "Anthropic API key")
@@ -71,10 +71,10 @@ func main() {
 		return
 	}
 
-	// `config show` / `config path` sub-actions
+	// `config show` / `config path` — works for positional and -cmd=config forms
 	configAction := ""
-	if cmd == "config" && len(flag.Args()) > 1 {
-		configAction = flag.Args()[1]
+	if cmd == "config" {
+		configAction = app.ResolveConfigAction(flag.Args())
 	}
 
 	// 2. Load config from file (global + optional repo-local overlay)
@@ -248,19 +248,22 @@ func resolveLogFilePath(logFile, logOutput string) string {
 // supported provider, so users who only set --provider still get a working
 // model instead of always falling back to an OpenAI model.
 func defaultModelForProvider(provider string) string {
+	if suggestions := config.ModelSuggestions(provider); len(suggestions) > 0 {
+		return suggestions[0]
+	}
 	switch strings.ToLower(strings.TrimSpace(provider)) {
 	case config.ProviderOllama:
 		return "llama3"
 	case config.ProviderOllamaCloud:
 		return "deepseek-v4-pro"
 	case config.ProviderAnthropic:
-		return "claude-3-opus"
+		return "claude-sonnet-4-20250514"
 	case config.ProviderGemini:
-		return "gemini-1.5-pro"
+		return "gemini-2.0-flash"
 	case config.ProviderOpenRouter:
 		return "anthropic/claude-sonnet-4"
-	default: // openai, compatible, or empty
-		return "gpt-4o"
+	default:
+		return "gpt-4.1-mini"
 	}
 }
 

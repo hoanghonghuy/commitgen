@@ -210,9 +210,12 @@ func LoadResolved(explicitPath string) (FileConfig, error) {
 		return global, err
 	}
 	if local, ok := findRepoLocalConfig(); ok {
-		if lc, lerr := Load(local); lerr == nil {
-			return Merge(global, lc), nil
+		lc, lerr := Load(local)
+		if lerr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to load repo config %s: %v\n", local, lerr)
+			return global, nil
 		}
+		return Merge(global, lc), nil
 	}
 	return global, nil
 }

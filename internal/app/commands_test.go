@@ -103,9 +103,11 @@ func TestProviderLabel(t *testing.T) {
 
 func TestRunModels_UnsupportedProvider(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	err := runModels(context.Background(), Config{Provider: "anthropic", Model: "claude"}, tr)
-	if err == nil || !strings.Contains(err.Error(), "not supported") {
-		t.Errorf("expected unsupported error, got %v", err)
+	for _, p := range []string{"anthropic", "gemini"} {
+		err := runModels(context.Background(), Config{Provider: p, Model: "x"}, tr)
+		if err == nil || !strings.Contains(err.Error(), "not supported") {
+			t.Errorf("%s: expected unsupported error, got %v", p, err)
+		}
 	}
 }
 
@@ -126,6 +128,26 @@ func TestRunModels_Ollama(t *testing.T) {
 	}
 }
 
+func TestRunModels_OllamaCloud(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tags" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"models":[{"name":"deepseek-v4-pro"}]}`))
+	}))
+	defer srv.Close()
+
+	tr := i18n.New(i18n.LocaleEN)
+	out := captureStdout(t, func() {
+		if err := runModels(context.Background(), Config{Provider: "ollama-cloud", BaseURL: srv.URL, APIKey: "k"}, tr); err != nil {
+			t.Errorf("error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "deepseek-v4-pro") {
+		t.Errorf("got %q", out)
+	}
+}
+
 func TestRunModels_OpenAI(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer k" {
@@ -143,6 +165,28 @@ func TestRunModels_OpenAI(t *testing.T) {
 	})
 	if !strings.Contains(out, "gpt-4o") {
 		t.Errorf("expected models, got %q", out)
+	}
+}
+
+func TestRunModels_OpenRouterAndCompatible(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"data":[{"id":"openai/gpt-4.1-mini"}]}`))
+	}))
+	defer srv.Close()
+
+	tr := i18n.New(i18n.LocaleEN)
+	for _, p := range []string{"openrouter", "compatible"} {
+		out := captureStdout(t, func() {
+			if err := runModels(context.Background(), Config{Provider: p, BaseURL: srv.URL, APIKey: "k"}, tr); err != nil {
+				t.Errorf("%s error: %v", p, err)
+			}
+		})
+		if !strings.Contains(out, "openai/gpt-4.1-mini") {
+			t.Errorf("%s: got %q", p, out)
+		}
 	}
 }
 

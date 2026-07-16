@@ -96,6 +96,17 @@ func TestMigrateFileConfig_Table(t *testing.T) {
 			wantDirty:    true,
 		},
 		{
+			name: "ollama custom lan url preserved",
+			in: FileConfig{
+				Provider: "ollama",
+				BaseURL:  "http://192.168.1.10:11434",
+				APIKey:   "",
+			},
+			wantProvider: ProviderOllama,
+			wantCompat:   "http://192.168.1.10:11434",
+			wantDirty:    true,
+		},
+		{
 			name: "already migrated",
 			in: FileConfig{
 				Provider: ProviderOpenRouter,

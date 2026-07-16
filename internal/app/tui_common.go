@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
 
@@ -44,12 +45,15 @@ func newDefaultViewport(width, height int) viewport.Model {
 	return viewport.New(width, height)
 }
 
+// clipboardErrMsg is emitted when clipboard write fails.
+type clipboardErrMsg struct{ err error }
+
 // clipboardCopyCmd writes content to clipboard and returns a tea.Cmd that
-// sets a 1500ms timer before signaling the done message.
+// either signals failure or sets a 1500ms timer before the done message.
 func clipboardCopyCmd(content string, onDone tea.Msg) tea.Cmd {
 	if err := clipboard.WriteAll(content); err != nil {
 		logger.Error("failed to copy to clipboard", "error", err)
-		return nil
+		return func() tea.Msg { return clipboardErrMsg{err: err} }
 	}
 	return tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
 		return onDone
@@ -57,13 +61,16 @@ func clipboardCopyCmd(content string, onDone tea.Msg) tea.Cmd {
 }
 
 // scrollHintText returns the formatted scroll hint string based on scroll position.
-func scrollHintText(pct int, atTop, atBottom bool) string {
+func scrollHintText(tr *i18n.Translator, pct int, atTop, atBottom bool) string {
+	if tr == nil {
+		tr = i18n.New(i18n.LocaleEN)
+	}
 	switch {
 	case atTop:
-		return fmt.Sprintf(" ↓ PgDn/Scroll  %d%%  |  y Copy ", pct)
+		return fmt.Sprintf(tr.T("tui.hint.scroll_top"), pct)
 	case atBottom:
-		return fmt.Sprintf(" ↑ PgUp/Scroll  %d%%  |  y Copy ", pct)
+		return fmt.Sprintf(tr.T("tui.hint.scroll_bottom"), pct)
 	default:
-		return fmt.Sprintf(" ↑↓ PgUp/PgDn  %d%%  |  y Copy ", pct)
+		return fmt.Sprintf(tr.T("tui.hint.scroll_mid"), pct)
 	}
 }

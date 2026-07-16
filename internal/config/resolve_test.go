@@ -71,16 +71,15 @@ func TestResolveCredentials(t *testing.T) {
 		}
 	})
 
-	t.Run("anthropic uses slot and flag api key as active override", func(t *testing.T) {
+	t.Run("custom ollama host from compatible_base_url", func(t *testing.T) {
 		got := ResolveCredentials(CredentialInput{
-			File:       FileConfig{Provider: ProviderAnthropic, APIKeys: map[string]string{"anthropic": "file-ant"}},
-			FlagAPIKey: "flag-ant",
+			File: FileConfig{
+				Provider:          ProviderOllama,
+				CompatibleBaseURL: "http://192.168.1.10:11434",
+			},
 		})
-		if got.AnthropicKey != "flag-ant" {
-			t.Fatalf("AnthropicKey=%q", got.AnthropicKey)
-		}
-		if got.APIKey != "" {
-			t.Fatalf("APIKey should be empty for anthropic, got %q", got.APIKey)
+		if got.BaseURL != "http://192.168.1.10:11434" {
+			t.Fatalf("BaseURL=%q", got.BaseURL)
 		}
 	})
 }

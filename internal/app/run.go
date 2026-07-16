@@ -62,7 +62,6 @@ type Config struct {
 
 	// Config management
 	ConfigPath string
-	SaveConfig bool
 
 	// Enhancements
 	Conventional   bool
@@ -167,7 +166,7 @@ func Run(ctx context.Context, cfg Config) error {
 
 		// Non-interactive mode: generate once and print to stdout. With --print
 		// it also writes the hook file when configured; it never creates a commit.
-		if cfg.Print || cfg.DryRun {
+		if shouldRunSuggestHeadless(cfg) {
 			return runSuggestNonInteractive(ctx, cfg, repoRoot, provider, vscodeMsgs, v, tr)
 		}
 
@@ -229,7 +228,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | version)", cfg.Command)
 	}
 }
 
@@ -468,7 +467,7 @@ func showConfig(path string) error {
 	}
 	tr := i18n.New(i18n.Locale(firstNonEmpty(fileCfg.Locale, "en")))
 	resolvedPath := resolveConfigPath(path)
-	fmt.Printf("Config file: %s\n", resolvedPath)
+	fmt.Printf("%s\n", tr.T("config.file_path", resolvedPath))
 	fmt.Printf("%s\n", tr.T("config.show.provider", providerConfigLabel(fileCfg.Provider, fileCfg.CompatibleBaseURL, config.APIKeyFor(fileCfg, fileCfg.Provider))))
 
 	if fileCfg.APIKeys != nil {

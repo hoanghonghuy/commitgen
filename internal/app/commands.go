@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
@@ -128,13 +129,12 @@ func runPing(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	return nil
 }
 
-// runModels lists available models for providers that support discovery
-// (Ollama and OpenAI-compatible endpoints).
+// runModels lists available models for providers that support discovery.
 func runModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
-	switch strings.ToLower(cfg.Provider) {
-	case "ollama":
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case config.ProviderOllama, config.ProviderOllamaCloud:
 		return listOllamaModels(ctx, cfg, tr)
-	case "openai", "":
+	case config.ProviderOpenAI, config.ProviderOpenRouter, config.ProviderCompatible, "":
 		return listOpenAIModels(ctx, cfg, tr)
 	default:
 		return fmt.Errorf("%s", tr.T("models.unsupported", providerLabel(cfg.Provider)))

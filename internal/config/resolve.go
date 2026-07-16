@@ -40,6 +40,12 @@ func ResolveCredentials(in CredentialInput) Credentials {
 	var baseURL string
 	if info, ok := Lookup(provider); ok && info.FixedBaseURL != "" {
 		baseURL = info.FixedBaseURL
+		// Custom Ollama host preserved in CompatibleBaseURL during migrate (VB-14).
+		if provider == ProviderOllama {
+			if u := strings.TrimSpace(in.File.CompatibleBaseURL); u != "" {
+				baseURL = u
+			}
+		}
 	} else {
 		baseURL = ResolveString(in.FlagBaseURL, in.EnvBaseURL, in.File.CompatibleBaseURL, "")
 	}

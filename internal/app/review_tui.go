@@ -480,7 +480,20 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case reviewCopyDoneMsg:
-		m.state = reviewStateDone
+		if m.isQuickMode {
+			m.state = reviewStateQuickDone
+		} else {
+			m.state = reviewStateDone
+		}
+		return m, nil
+
+	case clipboardErrMsg:
+		m.err = msg.err
+		if m.isQuickMode {
+			m.state = reviewStateQuickDone
+		} else {
+			m.state = reviewStateDone
+		}
 		return m, nil
 	}
 
@@ -503,7 +516,7 @@ func (m reviewModel) View() string {
 			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render(m.tr.T("tui.state.error", m.err)))
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
-			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
+			hint := scrollHintText(m.tr, pct, m.viewport.AtTop(), m.viewport.AtBottom())
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else if m.cachedContent != "" {
 			inner = m.cachedContent
@@ -516,7 +529,7 @@ func (m reviewModel) View() string {
 			inner = fmt.Sprintf("\n %s\n", styleReviewError.Render(m.tr.T("tui.state.error", m.err)))
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
-			hint := scrollHintText(pct, m.viewport.AtTop(), m.viewport.AtBottom())
+			hint := scrollHintText(m.tr, pct, m.viewport.AtTop(), m.viewport.AtBottom())
 			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
 		} else if m.cachedContent != "" {
 			inner = m.cachedContent

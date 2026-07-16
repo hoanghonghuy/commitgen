@@ -48,13 +48,14 @@ func TestCountLines(t *testing.T) {
 }
 
 func TestScrollHintText(t *testing.T) {
-	if !strings.Contains(scrollHintText(0, true, false), "PgDn") {
+	tr := i18n.New(i18n.LocaleEN)
+	if !strings.Contains(scrollHintText(tr, 0, true, false), "PgDn") {
 		t.Error("top hint should mention PgDn")
 	}
-	if !strings.Contains(scrollHintText(100, false, true), "PgUp") {
+	if !strings.Contains(scrollHintText(tr, 100, false, true), "PgUp") {
 		t.Error("bottom hint should mention PgUp")
 	}
-	mid := scrollHintText(50, false, false)
+	mid := scrollHintText(tr, 50, false, false)
 	if !strings.Contains(mid, "50%") {
 		t.Errorf("mid hint should contain percent: %q", mid)
 	}

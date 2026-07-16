@@ -19,6 +19,9 @@ func TestProviderConfigLabel(t *testing.T) {
 	if got := providerConfigLabel("ollama", "http://localhost:11434", ""); got != "ollama" {
 		t.Fatalf("legacy local label: %q", got)
 	}
+	if got := providerConfigLabel(config.ProviderOllama, "", "sk-local"); got != "ollama" {
+		t.Fatalf("local with key must stay ollama, got %q", got)
+	}
 	if got := providerConfigLabel(config.ProviderOpenAI, "", ""); got != "openai" {
 		t.Fatalf("got %q", got)
 	}
