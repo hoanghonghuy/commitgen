@@ -128,14 +128,14 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	recentN := 7
 	conventional := true
 	in := FileConfig{
-		BaseURL:      "https://example.com/v1",
-		APIKey:       "secret-key",
-		Model:        "gpt-4o",
-		Provider:     "openai",
-		IgnoredFiles: []string{"*.lock", "dist/"},
-		RecentN:      &recentN,
-		Conventional: &conventional,
-		ReviewLanguage: "vi",
+		CompatibleBaseURL: "https://example.com/v1",
+		APIKeys:           map[string]string{"compatible": "secret-key"},
+		Model:             "gpt-4o",
+		Provider:          ProviderCompatible,
+		IgnoredFiles:      []string{"*.lock", "dist/"},
+		RecentN:           &recentN,
+		Conventional:      &conventional,
+		ReviewLanguage:    "vi",
 	}
 
 	if err := Save(in, path); err != nil {
@@ -147,7 +147,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 		t.Fatalf("Load failed: %v", err)
 	}
 
-	if out.BaseURL != in.BaseURL || out.APIKey != in.APIKey || out.Model != in.Model || out.Provider != in.Provider {
+	if out.CompatibleBaseURL != in.CompatibleBaseURL || out.APIKeys["compatible"] != "secret-key" || out.Model != in.Model || out.Provider != in.Provider {
 		t.Errorf("string fields mismatch: got %+v", out)
 	}
 	if out.RecentN == nil || *out.RecentN != recentN {

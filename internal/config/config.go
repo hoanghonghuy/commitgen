@@ -2,18 +2,25 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // FileConfig holds the application configuration loaded from a JSON file.
 type FileConfig struct {
-	BaseURL  string `json:"base_url"`
-	APIKey   string `json:"api_key"` // OpenAI Key
+	Provider string `json:"provider,omitempty"` // openai, openrouter, compatible, ollama, ollama-cloud, anthropic, gemini
 	Model    string `json:"model"`
-	Provider string `json:"provider,omitempty"` // openai, ollama, anthropic, gemini
 
-	// Provider specifics
+	// New schema: per-provider API keys and optional custom URL for compatible.
+	APIKeys           map[string]string `json:"api_keys,omitempty"`
+	CompatibleBaseURL string            `json:"compatible_base_url,omitempty"`
+
+	// Legacy fields — read for migration only; cleared after MigrateFileConfig.
+	// omitempty so Save after migrate does not rewrite them.
+	BaseURL      string `json:"base_url,omitempty"`
+	APIKey       string `json:"api_key,omitempty"` // legacy single OpenAI-compatible key
 	AnthropicKey string `json:"anthropic_key,omitempty"`
 	GeminiKey    string `json:"gemini_key,omitempty"`
 
@@ -69,7 +76,13 @@ func Load(path string) (FileConfig, error) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return cfg, err
 	}
-	return cfg, nil
+	migrated, dirty := MigrateFileConfig(cfg)
+	if dirty {
+		if saveErr := Save(migrated, path); saveErr != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to rewrite migrated config %s: %v\n", path, saveErr)
+		}
+	}
+	return migrated, nil
 }
 
 // Save writes configuration to the given path, or to ~/.commitgen.json if path is empty.
@@ -94,6 +107,9 @@ func Save(cfg FileConfig, path string) error {
 // returns the result. Used to apply a repo-local config on top of the global one.
 func Merge(base, override FileConfig) FileConfig {
 	out := base
+	if override.CompatibleBaseURL != "" {
+		out.CompatibleBaseURL = override.CompatibleBaseURL
+	}
 	if override.BaseURL != "" {
 		out.BaseURL = override.BaseURL
 	}
@@ -112,6 +128,7 @@ func Merge(base, override FileConfig) FileConfig {
 	if override.GeminiKey != "" {
 		out.GeminiKey = override.GeminiKey
 	}
+	out.APIKeys = mergeAPIKeys(base.APIKeys, override.APIKeys)
 	if override.PromptTemplate != "" {
 		out.PromptTemplate = override.PromptTemplate
 	}
@@ -156,6 +173,27 @@ func Merge(base, override FileConfig) FileConfig {
 	}
 	if override.LogFile != "" {
 		out.LogFile = override.LogFile
+	}
+	return out
+}
+
+func mergeAPIKeys(base, override map[string]string) map[string]string {
+	if base == nil && override == nil {
+		return nil
+	}
+	out := make(map[string]string)
+	for k, v := range base {
+		if strings.TrimSpace(v) != "" {
+			out[k] = v
+		}
+	}
+	for k, v := range override {
+		if strings.TrimSpace(v) != "" {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

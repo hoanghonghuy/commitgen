@@ -10,12 +10,12 @@ func TestMerge_OverrideWins(t *testing.T) {
 	n5, n9 := 5, 9
 	tru := true
 	base := FileConfig{
-		BaseURL:      "https://base",
-		Model:        "base-model",
-		Provider:     "openai",
-		RecentN:      &n5,
-		Conventional: &tru,
-		IgnoredFiles: []string{"a"},
+		CompatibleBaseURL: "https://base",
+		Model:             "base-model",
+		Provider:          "openai",
+		RecentN:           &n5,
+		Conventional:      &tru,
+		IgnoredFiles:      []string{"a"},
 	}
 	override := FileConfig{
 		Model:        "override-model",
@@ -27,8 +27,8 @@ func TestMerge_OverrideWins(t *testing.T) {
 	if out.Model != "override-model" {
 		t.Errorf("Model = %q; want override", out.Model)
 	}
-	if out.BaseURL != "https://base" {
-		t.Errorf("BaseURL should stay base, got %q", out.BaseURL)
+	if out.CompatibleBaseURL != "https://base" {
+		t.Errorf("CompatibleBaseURL should stay base, got %q", out.CompatibleBaseURL)
 	}
 	if out.RecentN == nil || *out.RecentN != 9 {
 		t.Errorf("RecentN = %v; want 9", out.RecentN)
@@ -42,9 +42,9 @@ func TestMerge_OverrideWins(t *testing.T) {
 }
 
 func TestMerge_EmptyOverrideKeepsBase(t *testing.T) {
-	base := FileConfig{BaseURL: "https://base", Model: "m", Provider: "openai", ReviewLanguage: "vi"}
+	base := FileConfig{CompatibleBaseURL: "https://base", Model: "m", Provider: "openai", ReviewLanguage: "vi"}
 	out := Merge(base, FileConfig{})
-	if out.BaseURL != "https://base" || out.Model != "m" || out.ReviewLanguage != "vi" {
+	if out.CompatibleBaseURL != "https://base" || out.Model != "m" || out.ReviewLanguage != "vi" {
 		t.Errorf("empty override should keep base, got %+v", out)
 	}
 }
@@ -70,7 +70,7 @@ func TestLoadResolved_RepoLocalOverlaysGlobal(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	// Global config in home.
-	if err := Save(FileConfig{Model: "global-model", Provider: "openai", BaseURL: "https://global"}, ""); err != nil {
+	if err := Save(FileConfig{Model: "global-model", Provider: "openai", CompatibleBaseURL: "https://global"}, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -89,8 +89,8 @@ func TestLoadResolved_RepoLocalOverlaysGlobal(t *testing.T) {
 	if out.Model != "local-model" {
 		t.Errorf("repo-local should override Model, got %q", out.Model)
 	}
-	if out.BaseURL != "https://global" {
-		t.Errorf("global BaseURL should remain, got %q", out.BaseURL)
+	if out.CompatibleBaseURL != "https://global" {
+		t.Errorf("global CompatibleBaseURL should remain, got %q", out.CompatibleBaseURL)
 	}
 }
 

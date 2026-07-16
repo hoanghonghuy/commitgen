@@ -7,24 +7,63 @@ import (
 	"time"
 
 	"github.com/charmbracelet/huh"
+	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
-// runConfigInteractive launches a TUI form to edit key config fields
-func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Config, bool, error) {
-	baseURL := cfg.BaseURL
-	apiKey := cfg.APIKey
-	anthropicKey := cfg.AnthropicKey
-	geminiKey := cfg.GeminiKey
+// runConfigInteractive launches a two-step TUI: provider select, then fields.
+func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Config, string, bool, error) {
+	existing, _ := config.Load(cfg.ConfigPath)
+
+	provider := strings.TrimSpace(cfg.Provider)
+	if provider == "" {
+		provider = existing.Provider
+	}
+	if provider == "" {
+		provider = config.ProviderOpenAI
+	}
+	// Map legacy ollama+url to new ids when opening the form.
+	if provider == "ollama" {
+		if config.APIKeyFor(existing, config.ProviderOllamaCloud) != "" || strings.Contains(strings.ToLower(cfg.BaseURL), "ollama.com") {
+			provider = config.ProviderOllamaCloud
+		}
+	}
+
+	step1 := huh.NewForm(
+		huh.NewGroup(
+			huh.NewNote().
+				Title(tr.T("config.form.title")).
+				Description(tr.T("config.form_intro") + "\n" + tr.T("config.save_target", savePath)),
+			huh.NewSelect[string]().
+				Title(tr.T("config.field.provider")).
+				Options(
+					huh.NewOption(tr.T("config.provider.openai"), config.ProviderOpenAI),
+					huh.NewOption(tr.T("config.provider.openrouter"), config.ProviderOpenRouter),
+					huh.NewOption(tr.T("config.provider.compatible"), config.ProviderCompatible),
+					huh.NewOption(tr.T("config.provider.ollama_local"), config.ProviderOllama),
+					huh.NewOption(tr.T("config.provider.ollama_cloud"), config.ProviderOllamaCloud),
+					huh.NewOption(tr.T("config.provider.anthropic"), config.ProviderAnthropic),
+					huh.NewOption(tr.T("config.provider.gemini"), config.ProviderGemini),
+				).
+				Value(&provider),
+		),
+	)
+	if err := step1.Run(); err != nil {
+		return cfg, "", false, err
+	}
+
 	model := cfg.Model
+	if model == "" {
+		model = existing.Model
+	}
+	apiKey := maskSecret(config.APIKeyFor(existing, provider))
+	baseURL := existing.CompatibleBaseURL
+	if baseURL == "" && step2IncludesBaseURL(provider) {
+		baseURL = cfg.BaseURL
+	}
+
 	promptTemplate := cfg.PromptTemplate
 	rulesFile := cfg.RulesFile
-	provider := cfg.Provider
-	if provider == "" {
-		provider = "openai"
-	}
-	provider = ollamaOptionForConfig(provider, cfg.BaseURL, cfg.APIKey)
-
 	recentNStr := fmt.Sprintf("%d", cfg.RecentN)
 	maxFilesStr := fmt.Sprintf("%d", cfg.MaxFiles)
 	tempStr := fmt.Sprintf("%.2f", cfg.Temperature)
@@ -36,12 +75,10 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	if reviewLanguage == "" {
 		reviewLanguage = "en"
 	}
-
 	locale := cfg.Locale
 	if locale == "" {
 		locale = "en"
 	}
-
 	logLevel := cfg.LogLevel
 	if logLevel == "" {
 		logLevel = "info"
@@ -59,66 +96,36 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 		timeoutStr = fmt.Sprintf("%d", int(cfg.Timeout.Seconds()))
 	}
 
-	form := huh.NewForm(
-		huh.NewGroup(
-			huh.NewNote().
-				Title(tr.T("config.form.title")).
-				Description(tr.T("config.form_intro") + "\n" + tr.T("config.save_target", savePath)),
-
-			huh.NewSelect[string]().
-				Title(tr.T("config.field.provider")).
-				Options(
-					huh.NewOption(tr.T("config.provider.openai"), "openai"),
-					huh.NewOption(tr.T("config.provider.ollama_local"), ollamaLocalOption),
-					huh.NewOption(tr.T("config.provider.ollama_cloud"), ollamaCloudOption),
-					huh.NewOption(tr.T("config.provider.anthropic"), "anthropic"),
-					huh.NewOption(tr.T("config.provider.gemini"), "gemini"),
-				).
-				Value(&provider),
-
+	aiFields := []huh.Field{
+		huh.NewInput().
+			Title(tr.T("config.field.model")).
+			Description(tr.T("config.field.model.desc")).
+			Suggestions(config.ModelSuggestions(provider)).
+			Value(&model),
+		huh.NewInput().
+			Title(tr.T("config.field.api_key")).
+			Description(tr.T("config.field.api_key.desc")).
+			Value(&apiKey).
+			EchoMode(huh.EchoModePassword),
+	}
+	if step2IncludesBaseURL(provider) {
+		aiFields = append(aiFields,
 			huh.NewInput().
 				Title(tr.T("config.field.base_url")).
 				Description(tr.T("config.field.base_url.desc")).
 				Placeholder(tr.T("config.field.base_url.placeholder")).
-				Suggestions([]string{
-					"https://api.openai.com/v1",
-					"https://openrouter.ai/api/v1",
-					"https://api.mistral.ai/v1",
-					"https://ollama.com",
-					"http://localhost:11434",
-				}).
 				Value(&baseURL),
+		)
+	}
+	aiFields = append(aiFields,
+		huh.NewInput().
+			Title(tr.T("config.field.prompt_template")).
+			Description(tr.T("config.field.prompt_template.desc")).
+			Value(&promptTemplate),
+	)
 
-			huh.NewInput().
-				Title(tr.T("config.field.api_key")).
-				Description(tr.T("config.field.api_key.desc")).
-				Value(&apiKey).
-				EchoMode(huh.EchoModePassword),
-
-			huh.NewInput().
-				Title(tr.T("config.field.anthropic_key")).
-				Description(tr.T("config.field.anthropic_key.desc")).
-				Value(&anthropicKey).
-				EchoMode(huh.EchoModePassword),
-
-			huh.NewInput().
-				Title(tr.T("config.field.gemini_key")).
-				Description(tr.T("config.field.gemini_key.desc")).
-				Value(&geminiKey).
-				EchoMode(huh.EchoModePassword),
-
-			huh.NewInput().
-				Title(tr.T("config.field.model")).
-				Description(tr.T("config.field.model.desc")).
-				Suggestions([]string{"gpt-4o", "claude-3-opus", "gemini-1.5-pro", "llama3", "deepseek-v4-pro"}).
-				Value(&model),
-
-			huh.NewInput().
-				Title(tr.T("config.field.prompt_template")).
-				Description(tr.T("config.field.prompt_template.desc")).
-				Value(&promptTemplate),
-		),
-
+	step2 := huh.NewForm(
+		huh.NewGroup(aiFields...),
 		huh.NewGroup(
 			huh.NewInput().
 				Title(tr.T("config.field.recent_n")).
@@ -128,7 +135,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					_, err := strconv.Atoi(s)
 					return err
 				}),
-
 			huh.NewInput().
 				Title(tr.T("config.field.max_files")).
 				Description(tr.T("config.field.max_files.desc")).
@@ -137,7 +143,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					_, err := strconv.Atoi(s)
 					return err
 				}),
-
 			huh.NewInput().
 				Title(tr.T("config.field.temperature")).
 				Description(tr.T("config.field.temperature.desc")).
@@ -152,7 +157,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					}
 					return nil
 				}),
-
 			huh.NewInput().
 				Title(tr.T("config.field.timeout")).
 				Description(tr.T("config.field.timeout.desc")).
@@ -165,31 +169,26 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					return nil
 				}),
 		),
-
 		huh.NewGroup(
 			huh.NewConfirm().
 				Title(tr.T("config.field.summarize")).
 				Description(tr.T("config.field.summarize.desc")).
 				Value(&summarize),
-
 			huh.NewConfirm().
 				Title(tr.T("config.field.conventional")).
 				Description(tr.T("config.field.conventional.desc")).
 				Value(&conventional),
 		),
-
 		huh.NewGroup(
 			huh.NewInput().
 				Title(tr.T("config.field.ignored_files")).
 				Description(tr.T("config.field.ignored_files.desc")).
 				Value(&ignoredFilesStr),
-
 			huh.NewInput().
 				Title(tr.T("config.field.rules_file")).
 				Description(tr.T("config.field.rules_file.desc")).
 				Value(&rulesFile),
 		),
-
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title(tr.T("config.field.ui_language")).
@@ -203,7 +202,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				).
 				Value(&locale),
 		),
-
 		huh.NewGroup(
 			huh.NewSelect[string]().
 				Title(tr.T("config.field.review_language")).
@@ -216,12 +214,10 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 				).
 				Value(&reviewLanguage),
 		),
-
 		huh.NewGroup(
 			huh.NewNote().
 				Title(tr.T("config.logging.title")).
 				Description(tr.T("config.logging.desc")),
-
 			huh.NewSelect[string]().
 				Title(tr.T("config.field.log_level")).
 				Options(
@@ -231,7 +227,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					huh.NewOption(tr.T("config.log_level.error"), "error"),
 				).
 				Value(&logLevel),
-
 			huh.NewSelect[string]().
 				Title(tr.T("config.field.log_output")).
 				Options(
@@ -240,7 +235,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					huh.NewOption(tr.T("config.log_output.both"), "both"),
 				).
 				Value(&logOutput),
-
 			huh.NewInput().
 				Title(tr.T("config.field.log_file")).
 				Description(tr.T("config.field.log_file.desc")).
@@ -248,18 +242,15 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 		),
 	)
 
-	err := form.Run()
-	if err != nil {
-		return cfg, false, err
+	if err := step2.Run(); err != nil {
+		return cfg, "", false, err
 	}
 
-	cfg.APIKey = apiKey
-	cfg.AnthropicKey = anthropicKey
-	cfg.GeminiKey = geminiKey
+	cfg.Provider = provider
 	cfg.Model = model
+	cfg.BaseURL = baseURL
 	cfg.PromptTemplate = promptTemplate
 	cfg.RulesFile = rulesFile
-	cfg.Provider, cfg.BaseURL = applyOllamaOptionSelection(provider, baseURL, apiKey)
 
 	if v, err := strconv.Atoi(recentNStr); err == nil {
 		cfg.RecentN = v
@@ -286,13 +277,11 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 		}
 	}
 	cfg.IgnoredFiles = ignores
-
 	cfg.ReviewLanguage = reviewLanguage
 	cfg.Locale = locale
-
 	cfg.LogLevel = logLevel
 	cfg.LogOutput = logOutput
 	cfg.LogFile = logFile
 
-	return cfg, true, nil
+	return cfg, apiKey, true, nil
 }

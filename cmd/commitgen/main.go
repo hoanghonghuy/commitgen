@@ -103,21 +103,26 @@ func main() {
 		}
 	}
 
-	// Resolve the provider first so the default model can be provider-specific
-	// (e.g. an Ollama user should not fall back to an OpenAI model name).
-	provider := config.ResolveString(*providerFlag, getenvWithFallback("COMMITGEN_PROVIDER", "COMMITAI_PROVIDER", tr), fileCfg.Provider, "openai")
-
-	baseURL := config.ResolveString(*baseURLFlag, getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL", tr), fileCfg.BaseURL, "")
-	commitgenAPIKey := getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY", tr)
-	apiKey := config.ResolveString(*apiKeyFlag, commitgenAPIKey, fileCfg.APIKey, "")
-	if strings.EqualFold(provider, "ollama") {
-		apiKey = ollama.ResolveAPIKey(*apiKeyFlag, fileCfg.APIKey, commitgenAPIKey)
-		baseURL = ollama.ResolveBaseURL(baseURL, apiKey)
-	}
-	apiKey = strings.TrimSpace(apiKey)
+	creds := config.ResolveCredentials(config.CredentialInput{
+		File:             fileCfg,
+		FlagProvider:     *providerFlag,
+		EnvProvider:      getenvWithFallback("COMMITGEN_PROVIDER", "COMMITAI_PROVIDER", tr),
+		FlagAPIKey:       *apiKeyFlag,
+		EnvAPIKey:        getenvWithFallback("COMMITGEN_API_KEY", "COMMITAI_API_KEY", tr),
+		EnvOllamaAPIKey:  os.Getenv("OLLAMA_API_KEY"),
+		FlagAnthropicKey: *anthropicKeyFlag,
+		EnvAnthropicKey:  getenvWithFallback("COMMITGEN_ANTHROPIC_KEY", "COMMITAI_ANTHROPIC_KEY", tr),
+		FlagGeminiKey:    *geminiKeyFlag,
+		EnvGeminiKey:     getenvWithFallback("COMMITGEN_GEMINI_KEY", "COMMITAI_GEMINI_KEY", tr),
+		FlagBaseURL:      *baseURLFlag,
+		EnvBaseURL:       getenvWithFallback("COMMITGEN_BASE_URL", "COMMITAI_BASE_URL", tr),
+	})
+	provider := creds.Provider
+	baseURL := creds.BaseURL
+	apiKey := strings.TrimSpace(creds.APIKey)
 
 	defaultModel := defaultModelForProvider(provider)
-	if strings.EqualFold(provider, "ollama") {
+	if provider == config.ProviderOllama || provider == config.ProviderOllamaCloud {
 		defaultModel = ollama.DefaultModel(baseURL, apiKey)
 	}
 
@@ -129,9 +134,8 @@ func main() {
 		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModel),
 		Provider: provider,
 
-		AnthropicKey: config.ResolveString(*anthropicKeyFlag, getenvWithFallback("COMMITGEN_ANTHROPIC_KEY", "COMMITAI_ANTHROPIC_KEY", tr), fileCfg.AnthropicKey, ""),
-		GeminiKey:    config.ResolveString(*geminiKeyFlag, getenvWithFallback("COMMITGEN_GEMINI_KEY", "COMMITAI_GEMINI_KEY", tr), fileCfg.GeminiKey, ""),
-
+		AnthropicKey: creds.AnthropicKey,
+		GeminiKey:    creds.GeminiKey,
 		RecentN:      config.ResolveInt(*recentNFlag, isFlagSet("recent-n"), fileCfg.RecentN, 5),
 		MaxFiles:     config.ResolveInt(*maxFilesFlag, isFlagSet("max-files"), fileCfg.MaxFiles, 10),
 		Summarize:    config.ResolveBool(*summarizeFlag, isFlagSet("summarize"), fileCfg.Summarize, true),
@@ -245,13 +249,17 @@ func resolveLogFilePath(logFile, logOutput string) string {
 // model instead of always falling back to an OpenAI model.
 func defaultModelForProvider(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "ollama":
+	case config.ProviderOllama:
 		return "llama3"
-	case "anthropic":
+	case config.ProviderOllamaCloud:
+		return "deepseek-v4-pro"
+	case config.ProviderAnthropic:
 		return "claude-3-opus"
-	case "gemini":
+	case config.ProviderGemini:
 		return "gemini-1.5-pro"
-	default: // openai or empty
+	case config.ProviderOpenRouter:
+		return "anthropic/claude-sonnet-4"
+	default: // openai, compatible, or empty
 		return "gpt-4o"
 	}
 }

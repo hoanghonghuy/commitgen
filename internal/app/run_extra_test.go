@@ -54,6 +54,10 @@ func TestNewProvider(t *testing.T) {
 		{"openai missing creds", Config{Provider: "openai", Model: "gpt"}, true},
 		{"openai ok with key", Config{Provider: "openai", Model: "gpt", APIKey: "k"}, false},
 		{"openai ok with baseurl", Config{Provider: "", Model: "gpt", BaseURL: "http://x"}, false},
+		{"openrouter ok", Config{Provider: "openrouter", Model: "m", APIKey: "k", BaseURL: "https://openrouter.ai/api/v1"}, false},
+		{"compatible ok", Config{Provider: "compatible", Model: "m", APIKey: "k", BaseURL: "http://proxy"}, false},
+		{"ollama-cloud missing key", Config{Provider: "ollama-cloud", Model: "deepseek-v4-pro", BaseURL: "https://ollama.com"}, true},
+		{"ollama-cloud ok", Config{Provider: "ollama-cloud", Model: "deepseek-v4-pro", BaseURL: "https://ollama.com", APIKey: "sk-test"}, false},
 		{"unknown provider", Config{Provider: "weird", Model: "gpt"}, true},
 	}
 	for _, tt := range tests {

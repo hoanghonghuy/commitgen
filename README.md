@@ -91,37 +91,63 @@ go install ./cmd/commitgen
 
 ## Configuration
 
-Before using, you need to configure your AI provider settings. You can do this interactively:
+Before using, configure your AI provider interactively:
 
 ```bash
 commitgen config
 ```
 
-Configuration is saved to `~/.commitgen.json` by default and includes:
-- **Provider**: `openai`, `anthropic`, `gemini`, or `ollama` (local `localhost:11434` or cloud `https://ollama.com` + API key).
-- **Base URL**: Your AI provider endpoint.
-- **API Key**: Your API secret key (OpenAI-compatible providers and Ollama Cloud).
-- **Model**: The model to use (e.g., `gpt-4o`, `claude-3-5-sonnet`, `gemini-1.5-pro`, `deepseek-v4-pro`).
-- **Preferences**: Toggle Conventional Commits, Summarization, and manage Ignored Files.
-- **Advanced** (edit JSON directly): `timeout_seconds`, `prompt_template_file`, `rules_file`.
+The form is **two-step**: (1) choose provider, (2) model + API key for that provider. Base URL appears only for **OpenAI Compatible**.
+
+Configuration is saved to `~/.commitgen.json` by default:
+
+| Provider id | Base URL | API key slot (`api_keys`) |
+|-------------|----------|---------------------------|
+| `openai` | Fixed `https://api.openai.com/v1` | `openai` |
+| `openrouter` | Fixed `https://openrouter.ai/api/v1` | `openrouter` |
+| `compatible` | Editable (`compatible_base_url`) | `compatible` |
+| `ollama` | Fixed `http://localhost:11434` | `ollama` |
+| `ollama-cloud` | Fixed `https://ollama.com` | `ollama` (shared with local) |
+| `anthropic` | Anthropic default | `anthropic` |
+| `gemini` | Gemini default | `gemini` |
+
+Example schema:
+
+```json
+{
+  "provider": "openrouter",
+  "model": "anthropic/claude-sonnet-4",
+  "api_keys": {
+    "openai": "...",
+    "openrouter": "...",
+    "ollama": "..."
+  }
+}
+```
+
+Legacy `api_key` / `base_url` / `anthropic_key` / `gemini_key` are **migrated automatically on load** and rewritten to the new schema.
+
+Other settings:
+- **Preferences**: Conventional Commits, Summarization, Ignored Files.
+- **Advanced** (edit JSON): `timeout_seconds`, `prompt_template_file`, `rules_file`.
 - **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
 - **Validation**: Place `.commitgen-rules.json` in the repo root (auto-discovered) or set `rules_file` in config.
-- **Logging**: Configure log level (debug, info, warn, error), output destination (stderr, file, both), and log file path.
+- **Logging**: Log level, output destination, and log file path.
 
-`commitgen config` loads merged settings (global + repo overlay) but **saves to `~/.commitgen.json`** unless you pass `--config`. Leave API key fields empty in the form to keep existing secrets.
+`commitgen config` loads merged settings (global + repo overlay) but **saves to `~/.commitgen.json`** unless you pass `--config`. Leave the API key empty (or `********`) to keep the existing key for that provider.
 
 ### Environment variables
 
 | Variable | Purpose |
 |----------|---------|
-| `COMMITGEN_API_KEY` | API key (OpenAI-compatible providers; fallback for Ollama) |
-| `OLLAMA_API_KEY` | Ollama Cloud API key ([create at ollama.com/settings/keys](https://ollama.com/settings/keys)) — preferred over `COMMITGEN_API_KEY` when `provider=ollama` |
-| `COMMITGEN_PROVIDER` | `openai`, `ollama`, `anthropic`, `gemini` |
-| `COMMITGEN_BASE_URL` | Provider base URL |
+| `COMMITGEN_API_KEY` | Overrides the API key for the **active** provider |
+| `OLLAMA_API_KEY` | Ollama key ([create at ollama.com/settings/keys](https://ollama.com/settings/keys)) — preferred over `COMMITGEN_API_KEY` for `ollama` / `ollama-cloud` |
+| `COMMITGEN_PROVIDER` | Provider id (`openai`, `openrouter`, `compatible`, `ollama`, `ollama-cloud`, `anthropic`, `gemini`) |
+| `COMMITGEN_BASE_URL` | Custom base URL — only applied when `provider=compatible` |
 | `COMMITGEN_MODEL` | Model name |
 | `COMMITGEN_LOCALE` | UI language (`en`, `vi`, `ja`, `zh`) |
 
-For Ollama Cloud, set `base_url` to `https://ollama.com` and provide an API key via config, `OLLAMA_API_KEY`, or `--api-key`. Verify with `commitgen ping`.
+Verify with `commitgen ping`.
 
 ### Locale
 

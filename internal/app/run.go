@@ -279,14 +279,17 @@ func newProvider(cfg Config) (ai.Provider, error) {
 		return nil, logger.LogError(ErrMissingModel, "model not configured")
 	}
 
-	switch strings.ToLower(cfg.Provider) {
-	case "ollama":
-		baseURL := ollama.ResolveBaseURL(cfg.BaseURL, cfg.APIKey)
-		if ollama.IsCloudBaseURL(baseURL) && strings.TrimSpace(cfg.APIKey) == "" {
+	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
+	case "ollama", "ollama-cloud":
+		baseURL := cfg.BaseURL
+		if baseURL == "" {
+			baseURL = ollama.ResolveBaseURL(cfg.BaseURL, cfg.APIKey)
+		}
+		if (strings.EqualFold(cfg.Provider, "ollama-cloud") || ollama.IsCloudBaseURL(baseURL)) && strings.TrimSpace(cfg.APIKey) == "" {
 			return nil, logger.LogError(ErrMissingAPIKey, "ollama cloud api key not configured")
 		}
 		return ollama.New(ollama.Config{
-			BaseURL: cfg.BaseURL,
+			BaseURL: baseURL,
 			Model:   cfg.Model,
 			APIKey:  cfg.APIKey,
 		}), nil
@@ -306,7 +309,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 			APIKey: cfg.GeminiKey,
 			Model:  cfg.Model,
 		}), nil
-	case "openai", "":
+	case "openai", "openrouter", "compatible", "":
 		if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
 			return nil, logger.LogError(ErrMissingAPIKey, "openai api key not configured")
 		}
@@ -466,8 +469,15 @@ func showConfig(path string) error {
 	tr := i18n.New(i18n.Locale(firstNonEmpty(fileCfg.Locale, "en")))
 	resolvedPath := resolveConfigPath(path)
 	fmt.Printf("Config file: %s\n", resolvedPath)
-	fmt.Printf("%s\n", tr.T("config.show.provider", providerConfigLabel(fileCfg.Provider, fileCfg.BaseURL, fileCfg.APIKey)))
+	fmt.Printf("%s\n", tr.T("config.show.provider", providerConfigLabel(fileCfg.Provider, fileCfg.CompatibleBaseURL, config.APIKeyFor(fileCfg, fileCfg.Provider))))
 
+	if fileCfg.APIKeys != nil {
+		masked := make(map[string]string, len(fileCfg.APIKeys))
+		for k, v := range fileCfg.APIKeys {
+			masked[k] = maskSecret(v)
+		}
+		fileCfg.APIKeys = masked
+	}
 	fileCfg.APIKey = maskSecret(fileCfg.APIKey)
 	fileCfg.AnthropicKey = maskSecret(fileCfg.AnthropicKey)
 	fileCfg.GeminiKey = maskSecret(fileCfg.GeminiKey)
@@ -518,7 +528,7 @@ func runConfig(cfg Config) error {
 		}
 	}
 
-	newCfg, ok, err := runConfigInteractive(cfg, savePath, tr)
+	newCfg, submittedKey, ok, err := runConfigInteractive(cfg, savePath, tr)
 	if err != nil {
 		return err
 	}
@@ -528,38 +538,17 @@ func runConfig(cfg Config) error {
 	}
 
 	existing, _ := config.Load(cfg.ConfigPath)
-
-	fileCfg := config.FileConfig{
-		BaseURL:      newCfg.BaseURL,
-		APIKey:       preserveSecret(newCfg.APIKey, existing.APIKey),
-		Model:        newCfg.Model,
-		IgnoredFiles: newCfg.IgnoredFiles,
-
-		RecentN:        &newCfg.RecentN,
-		MaxFiles:       &newCfg.MaxFiles,
-		Summarize:      &newCfg.Summarize,
-		Temperature:    &newCfg.Temperature,
-		Conventional:   &newCfg.Conventional,
-		Provider:       newCfg.Provider,
-		AnthropicKey:   preserveSecret(newCfg.AnthropicKey, existing.AnthropicKey),
-		GeminiKey:      preserveSecret(newCfg.GeminiKey, existing.GeminiKey),
-		PromptTemplate: newCfg.PromptTemplate,
-		ReviewLanguage: newCfg.ReviewLanguage,
-		Locale:         newCfg.Locale,
-		RulesFile:      newCfg.RulesFile,
-
-		LogLevel:  newCfg.LogLevel,
-		LogOutput: newCfg.LogOutput,
-		LogFile:   newCfg.LogFile,
-	}
-
-	// Preserve fields not exposed in the interactive form.
-	fileCfg.PromptTemplateFile = firstNonEmpty(newCfg.PromptTemplateFile, existing.PromptTemplateFile)
-	if newCfg.TimeoutSeconds != nil {
-		fileCfg.Timeout = newCfg.TimeoutSeconds
-	} else if existing.Timeout != nil {
-		fileCfg.Timeout = existing.Timeout
-	}
+	fileCfg := fileConfigFromInteractive(
+		newCfg,
+		existing,
+		submittedKey,
+		newCfg.RecentN,
+		newCfg.MaxFiles,
+		newCfg.Temperature,
+		newCfg.Summarize,
+		newCfg.Conventional,
+		newCfg.TimeoutSeconds,
+	)
 
 	if err := config.Save(fileCfg, cfg.ConfigPath); err != nil {
 		return logger.LogError(err, "failed to save config", "path", savePath)
