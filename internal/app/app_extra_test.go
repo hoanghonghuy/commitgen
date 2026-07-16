@@ -155,8 +155,13 @@ func TestReview_FullRegenerate(t *testing.T) {
 	rm.cursor = 1 // Regenerate
 	u, cmd := rm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	rm = u.(reviewModel)
+	if rm.state != reviewStateRegenHint || cmd == nil {
+		t.Errorf("Regenerate should open guidance hint; state=%v", rm.state)
+	}
+	u, cmd = rm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	rm = u.(reviewModel)
 	if rm.state != reviewStateAnalyzing || cmd == nil {
-		t.Errorf("Regenerate should re-analyze with cmd; state=%v", rm.state)
+		t.Errorf("confirming hint should re-analyze; state=%v", rm.state)
 	}
 }
 
@@ -168,8 +173,13 @@ func TestReview_QuickRegenerateStaysQuick(t *testing.T) {
 	rm.cursor = 2 // Regenerate (quick)
 	u, _ = rm.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	rm = u.(reviewModel)
+	if !rm.isQuickMode || rm.state != reviewStateRegenHint {
+		t.Errorf("quick regenerate should stay quick + hint; quick=%v state=%v", rm.isQuickMode, rm.state)
+	}
+	u, _ = rm.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	rm = u.(reviewModel)
 	if !rm.isQuickMode || rm.state != reviewStateAnalyzing {
-		t.Errorf("quick regenerate should stay quick + analyzing; quick=%v state=%v", rm.isQuickMode, rm.state)
+		t.Errorf("quick regenerate confirm should stay quick + analyzing; quick=%v state=%v", rm.isQuickMode, rm.state)
 	}
 }
 

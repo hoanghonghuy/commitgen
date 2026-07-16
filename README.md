@@ -45,6 +45,20 @@
 
 Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--locale`, `--repo`, `--config`, `--base` (for `pr`).
 
+### TUI keys (suggest / review)
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` (or `k` / `j`) | Move selection |
+| `Enter` | Confirm selected action |
+| `y` | Copy message / report to clipboard |
+| `Esc` | Cancel in-flight generate/analyze; leave choose without selecting; abort regen guidance |
+| `1`–`4` | Jump to review menu item (optional hotkeys) |
+| `Ctrl+C` | Quit |
+| `PgUp` / `PgDn` | Scroll long content |
+
+Config form: abort step 2 (Esc / cancel) returns to provider selection. Set `ACCESSIBLE=1` or `TERM=dumb` for huh accessible mode.
+
 ### Pull request draft
 
 ```bash

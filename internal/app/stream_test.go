@@ -91,7 +91,7 @@ func TestTui_StreamGenerateCmdEndToEnd(t *testing.T) {
 	// startStreamCmd should push deltas then a final done event onto the channel.
 	sp := fakeStreamProvider{deltas: []string{"feat: ", "stream"}}
 	ch := make(chan streamEvent, 16)
-	cmd := startStreamCmd(context.Background(), sp, ch, baseMsgs(), 0.7, time.Second)
+	cmd := startStreamCmd(context.Background(), sp, ch, baseMsgs(), 0.7, time.Second, 1)
 	cmd() // launches the goroutine
 
 	var got string
@@ -141,7 +141,7 @@ func TestStartStreamCmd_RespectsCancel(t *testing.T) {
 	cancel()
 
 	ch := make(chan streamEvent, 2)
-	_ = startStreamCmd(ctx, waitCtxStreamProvider{}, ch, baseMsgs(), 0.7, time.Second)()
+	_ = startStreamCmd(ctx, waitCtxStreamProvider{}, ch, baseMsgs(), 0.7, time.Second, 1)()
 
 	select {
 	case ev := <-ch:
