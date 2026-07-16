@@ -174,6 +174,7 @@ type reviewModel struct {
 	err             error
 	statusBanner    string
 	quitting        bool
+	reachedDone     bool // true when a terminal outcome was shown (durable line after alt-screen)
 	switchToSuggest bool // true when user selects "Suggest commit message" from review
 	isQuickMode     bool // true when current report is from quick review
 
@@ -546,6 +547,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			logger.Error("review generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = reviewStateDone
+			m.reachedDone = true
 			return m, outcomeHoldCmd()
 		}
 		m.report = msg.content

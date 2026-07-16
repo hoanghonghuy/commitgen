@@ -179,6 +179,9 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 
 		if m, ok := finalModel.(tuiModel); ok {
+			if m.reachedDone {
+				printDurableOutcome(os.Stderr, tr, m.err)
+			}
 			if m.err != nil {
 				return logger.LogError(m.err, "TUI operation failed")
 			}
@@ -205,6 +208,9 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 
 		if m, ok := finalModel.(reviewModel); ok {
+			if m.reachedDone {
+				printDurableOutcome(os.Stderr, tr, m.err)
+			}
 			if m.err != nil {
 				return logger.LogError(m.err, "review operation failed")
 			}
@@ -219,6 +225,9 @@ func Run(ctx context.Context, cfg Config) error {
 					return logger.LogError(err, "TUI execution failed")
 				}
 				if sm, ok := suggestModel.(tuiModel); ok {
+					if sm.reachedDone {
+						printDurableOutcome(os.Stderr, tr, sm.err)
+					}
 					if sm.err != nil {
 						return logger.LogError(sm.err, "TUI operation failed")
 					}

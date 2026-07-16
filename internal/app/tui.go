@@ -104,6 +104,7 @@ type tuiModel struct {
 	err           error
 	statusBanner  string // transient status (clipboard fail, validation no-ops)
 	quitting      bool
+	reachedDone   bool // true when stateDone was shown (durable outcome after alt-screen)
 
 	// Generation cancel / stale-result guard
 	genCtx    context.Context
@@ -685,6 +686,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			logger.Error("commit generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = stateDone
+			m.reachedDone = true
 			return m, outcomeHoldCmd()
 		}
 		m.commitMsg = msg.content
@@ -705,6 +707,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				logger.Error("stream generation failed", "error", msg.err)
 				m.err = msg.err
 				m.state = stateDone
+				m.reachedDone = true
 				return m, outcomeHoldCmd()
 			}
 			content := msg.full
@@ -729,6 +732,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			logger.Error("candidate generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = stateDone
+			m.reachedDone = true
 			return m, outcomeHoldCmd()
 		}
 		m.candCurrent = msg.current
@@ -743,6 +747,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			logger.Error("candidate generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = stateDone
+			m.reachedDone = true
 			return m, outcomeHoldCmd()
 		}
 		m.candidates = msg.contents
@@ -765,6 +770,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		}
 		m.state = stateDone
+		m.reachedDone = true
 		return m, outcomeHoldCmd()
 
 	case outcomeHoldDoneMsg:

@@ -293,3 +293,61 @@ func TestParseIntFieldError_I18n(t *testing.T) {
 		t.Fatalf("should not expose strconv: %v", err)
 	}
 }
+
+func TestPrintDurableOutcome_SuccessAndError(t *testing.T) {
+	tr := i18n.New(i18n.LocaleEN)
+	var buf strings.Builder
+	printDurableOutcome(&buf, tr, nil)
+	if !strings.Contains(buf.String(), "Committed") && !strings.Contains(buf.String(), tr.T("tui.state.success")) {
+		t.Fatalf("success line: %q", buf.String())
+	}
+	buf.Reset()
+	printDurableOutcome(&buf, tr, errors.New("boom"))
+	if !strings.Contains(buf.String(), "boom") {
+		t.Fatalf("error line: %q", buf.String())
+	}
+}
+
+func TestCommitDone_SetsReachedDone(t *testing.T) {
+	prev := outcomeHoldDuration
+	outcomeHoldDuration = 0
+	defer func() { outcomeHoldDuration = prev }()
+	m := newTestModel()
+	u, _ := m.Update(commitDoneMsg{})
+	tm := u.(tuiModel)
+	if !tm.reachedDone {
+		t.Fatal("expected reachedDone after commitDoneMsg")
+	}
+}
+
+type captureProvider struct {
+	lastMsgs []vscodeprompt.VSCodeMessage
+	resp     string
+}
+
+func (c *captureProvider) Generate(_ context.Context, msgs []vscodeprompt.VSCodeMessage, _ float64) (string, error) {
+	c.lastMsgs = append([]vscodeprompt.VSCodeMessage{}, msgs...)
+	if c.resp == "" {
+		c.resp = "## ok"
+	}
+	return c.resp, nil
+}
+
+func TestReview_GenerateIncludesGuidance(t *testing.T) {
+	tr := i18n.New(i18n.LocaleEN)
+	cap := &captureProvider{resp: "```markdown\n## Conclusion\nok\n```"}
+	m := newReviewModel(context.Background(), cap, baseMsgs(), 0.7, time.Second, false, tr)
+	m.regenHint = "focus on security"
+	msg := m.generateReviewCmd()()
+	res, ok := msg.(reviewResultMsg)
+	if !ok || res.err != nil {
+		t.Fatalf("unexpected result: %#v", msg)
+	}
+	if len(cap.lastMsgs) < 2 {
+		t.Fatalf("expected guidance appended, got %d msgs", len(cap.lastMsgs))
+	}
+	last := cap.lastMsgs[len(cap.lastMsgs)-1].Content[0].Text
+	if !strings.Contains(last, "focus on security") {
+		t.Fatalf("guidance missing in provider msgs: %q", last)
+	}
+}

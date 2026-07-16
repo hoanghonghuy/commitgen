@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -26,6 +27,22 @@ func outcomeHoldCmd() tea.Cmd {
 		return func() tea.Msg { return outcomeHoldDoneMsg{} }
 	}
 	return tea.Tick(d, func(time.Time) tea.Msg { return outcomeHoldDoneMsg{} })
+}
+
+// printDurableOutcome writes a post-alt-screen outcome line (design fallback for REQ-TUI-03).
+// Call only when the TUI reached a terminal done/error outcome (not plain cancel/quit).
+func printDurableOutcome(w io.Writer, tr *i18n.Translator, err error) {
+	if w == nil {
+		w = os.Stderr
+	}
+	if tr == nil {
+		tr = i18n.New(i18n.LocaleEN)
+	}
+	if err != nil {
+		fmt.Fprintln(w, tr.T("tui.state.error", err))
+		return
+	}
+	fmt.Fprintln(w, tr.T("tui.state.success"))
 }
 
 // actionFooter returns the standard nav footer for menu states.
