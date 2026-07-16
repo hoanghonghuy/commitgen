@@ -24,6 +24,7 @@
 - **Commit Validation**: Opt-in via `.commitgen-rules.json` or `rules_file` in config.
 - **i18n**: UI in English, Vietnamese, Japanese, Chinese (`--locale` / `COMMITGEN_LOCALE`).
 - **Connectivity**: `commitgen ping` and `commitgen models` to verify provider setup.
+- **PR draft**: `commitgen pr` generates title + description from merge-base vs HEAD (lazycommit-style).
 - **Comprehensive Logging**: Structured logging with configurable levels and outputs for debugging and monitoring.
 
 ## Commands
@@ -32,6 +33,7 @@
 |---------|-------------|
 | `commitgen` / `suggest` | Generate a commit message (default TUI) |
 | `commitgen review` | AI code review of staged changes |
+| `commitgen pr` | Generate PR title + description from merge-base |
 | `commitgen config` | Interactive settings editor |
 | `commitgen config show` | Print saved config (secrets masked) |
 | `commitgen config path` | Print config file path |
@@ -41,7 +43,18 @@
 | `commitgen models` | List models (OpenAI-compatible / Ollama) |
 | `commitgen dump-prompt` | Export the AI prompt as JSON (debug) |
 
-Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--locale`, `--repo`, `--config`.
+Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--locale`, `--repo`, `--config`, `--base` (for `pr`).
+
+### Pull request draft
+
+```bash
+# On a feature branch with commits ahead of main:
+commitgen pr
+commitgen pr --base develop
+commitgen pr --base main --locale vi
+```
+
+Output is markdown (`# title` + Summary / Test plan) suitable for copying into GitHub/GitLab or scripting with `gh pr create`.
 
 ## Project Structure
 

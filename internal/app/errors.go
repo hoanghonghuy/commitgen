@@ -13,6 +13,7 @@ import (
 // fragile string comparisons.
 var (
 	ErrNoStagedChanges = errors.New("no staged changes")
+	ErrNoPRChanges     = errors.New("no commits or file changes since merge-base")
 	ErrAllFilesIgnored = errors.New("all staged files were ignored")
 	ErrMissingModel    = errors.New("missing model")
 	ErrMissingAPIKey   = errors.New("missing api key")
@@ -54,6 +55,8 @@ func TranslateError(tr *i18n.Translator, err error) string {
 	switch {
 	case errors.Is(err, ErrNoStagedChanges):
 		return tr.T("error.no_staged_changes")
+	case errors.Is(err, ErrNoPRChanges):
+		return tr.T("error.no_pr_changes")
 	case errors.Is(err, ErrMissingModel):
 		return tr.T("error.missing_model")
 	case errors.Is(err, ErrMissingAPIKey):

@@ -29,6 +29,7 @@
   "tui.review.quick_scan": "Kết Quả Quét Nhanh",
   "tui.review.report": "Báo Cáo Review",
   "error.no_staged_changes": "Không có thay đổi nào được staged. Chạy: git add -A",
+  "error.no_pr_changes": "Không có commit hoặc thay đổi file kể từ merge-base với base branch. Hãy push/commit trên nhánh này trước.",
   "error.all_files_ignored": "Tất cả file đã bị bỏ qua (đã kiểm tra %d files)",
   "error.missing_model": "Thiếu model. Đặt flag hoặc biến môi trường COMMITGEN_MODEL",
   "error.missing_api_key": "Thiếu API key. Đặt --api-key, COMMITGEN_API_KEY, hoặc OLLAMA_API_KEY (Ollama Cloud)",

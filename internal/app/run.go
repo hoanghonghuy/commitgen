@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,6 +74,9 @@ type Config struct {
 	Locale         string // UI language (en, vi, ja, zh)
 	RulesFile      string // path to validation rules file (.commitgen-rules.json)
 
+	// PR generation
+	BaseBranch string // target branch for merge-base (e.g. main); empty = auto-detect
+
 	// Behavior modes
 	Print        bool   // print message to stdout instead of launching TUI
 	DryRun       bool   // generate/preview without committing
@@ -121,6 +125,23 @@ func Run(ctx context.Context, cfg Config) error {
 			return fmt.Errorf("read instructions file: %w", err)
 		}
 		customInstructions = string(b)
+	}
+
+	if cfg.Command == "pr" {
+		provider, err := newProvider(cfg)
+		if err != nil {
+			return err
+		}
+		data, err := buildPRPromptData(ctx, repoRoot, cfg.BaseBranch, cfg.RecentN, cfg.MaxFiles, cfg.Summarize, customInstructions, cfg.IgnoredFiles)
+		if err != nil {
+			if errors.Is(err, ErrNoPRChanges) {
+				return fmt.Errorf("%s", tr.T("error.no_pr_changes"))
+			}
+			return logger.LogError(err, "failed to build PR prompt data")
+		}
+		data.SystemPromptTemplate = cfg.PromptTemplate
+		data.ReviewLanguage = cfg.ReviewLanguage
+		return runPR(ctx, cfg, repoRoot, provider, data, tr)
 	}
 
 	// 1. Build Data
@@ -208,7 +229,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook)", cfg.Command)
 	}
 }
 

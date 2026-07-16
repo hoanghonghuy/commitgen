@@ -38,13 +38,14 @@ type Change struct {
 type Data struct {
 	RepositoryName       string
 	BranchName           string
+	BaseBranch           string // PR mode: target base branch (e.g. main)
 	RecentUserCommits    []string
 	RecentRepoCommits    []string
 	Changes              []Change
 	CustomInstructions   string
 	SummarizeAttachments bool
 	SystemPromptTemplate string
-	ReviewLanguage       string // en, vi — dùng cho review mode
+	ReviewLanguage       string // en, vi, ja, zh — review / PR output language
 }
 
 func BuildReviewMessages(d Data, quickMode bool) []VSCodeMessage {

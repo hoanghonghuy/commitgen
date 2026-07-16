@@ -27,12 +27,13 @@ var (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | dump-prompt | config | install-hook | uninstall-hook)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
 	modelFlag := flag.String("model", "", "AI model name")
 	providerFlag := flag.String("provider", "", "AI provider (openai | ollama | anthropic | gemini)")
+	baseBranchFlag := flag.String("base", "", "Base branch for PR generation (default: main/master/develop or upstream)")
 
 	anthropicKeyFlag := flag.String("anthropic-key", "", "Anthropic API key")
 	geminiKeyFlag := flag.String("gemini-key", "", "Gemini API key")
@@ -149,6 +150,7 @@ func main() {
 		PromptTemplateFile: fileCfg.PromptTemplateFile,
 		TimeoutSeconds:   fileCfg.Timeout,
 		IgnoredFiles:     fileCfg.IgnoredFiles,
+		BaseBranch:       *baseBranchFlag,
 		Print:            *printFlag,
 		DryRun:           *dryRunFlag,
 		Amend:            *amendFlag,
@@ -206,7 +208,7 @@ func resolveCommand(cmdFlag string, args []string) string {
 	cmd := cmdFlag
 	if len(args) > 0 {
 		switch args[0] {
-		case "suggest", "review", "dump-prompt", "config", "install-hook", "uninstall-hook",
+		case "suggest", "review", "pr", "dump-prompt", "config", "install-hook", "uninstall-hook",
 			"version", "ping", "models":
 			cmd = args[0]
 		}

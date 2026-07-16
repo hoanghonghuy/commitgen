@@ -29,6 +29,7 @@
   "tui.review.quick_scan": "快速扫描结果",
   "tui.review.report": "审查报告",
   "error.no_staged_changes": "没有已暂存的更改。请运行: git add -A",
+  "error.no_pr_changes": "自与基础分支的 merge-base 以来没有提交或文件更改。请先在此分支上提交。",
   "error.all_files_ignored": "所有文件均被忽略（已检查 %d 个文件）",
   "error.missing_model": "缺少模型。请设置标志或环境变量 COMMITGEN_MODEL",
   "error.missing_api_key": "缺少 API 密钥。请设置 --api-key、COMMITGEN_API_KEY 或 OLLAMA_API_KEY（Ollama Cloud）",

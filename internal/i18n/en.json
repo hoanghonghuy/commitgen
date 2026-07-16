@@ -29,6 +29,7 @@
   "tui.review.quick_scan": "Quick Scan Result",
   "tui.review.report": "Review Report",
   "error.no_staged_changes": "No staged changes. Run: git add -A",
+  "error.no_pr_changes": "No commits or file changes since merge-base with the base branch. Push commits on this branch first.",
   "error.all_files_ignored": "All staged files were ignored (checked %d files)",
   "error.missing_model": "Missing model. Set flags or env COMMITGEN_MODEL",
   "error.missing_api_key": "Missing API key. Set --api-key, COMMITGEN_API_KEY, or OLLAMA_API_KEY (Ollama Cloud)",
