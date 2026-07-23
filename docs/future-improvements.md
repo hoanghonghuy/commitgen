@@ -39,264 +39,19 @@ Findings from post-`provider-config-registry` full flow audit.
 
 ---
 
-## 🌐 i18n & Localization
+## Completed Features
 
-### Current State (implemented)
+### 🌐 i18n & Localization
 
-The application ships with `internal/i18n` (en, vi, ja, zh). TUI and CLI errors use the translator with English fallback. Config form (`commitgen config`) labels remain English.
+Fully implemented in `internal/i18n/`. 130 translation keys across 4 locales (en, vi, ja, zh). TUI, CLI errors, hook messages, and config form all use `Translator.T()`. Set via `--locale`, `COMMITGEN_LOCALE`, or `locale` in config. `--locale auto` detects from `$LANG`/`$LC_ALL`/`$LC_MESSAGES`.
 
-Set locale via `--locale`, `COMMITGEN_LOCALE`, or `locale` in `~/.commitgen.json`. Use `auto` to detect from `LANG` / `LC_ALL` / `LC_MESSAGES`.
+### Commit Message Validation
 
-**Implemented:** `--locale auto` from `$LANG` (and related locale env vars).
-
----
-
-## 🚀 Feature Additions
-
-### 3. Commit Message Validation (implemented)
-
-Opt-in validation via `.commitgen-rules.json` (auto-discovered in repo root) or `rules_file` in config. TUI shows validation issues with auto-fix; `--print`/hook path rejects messages with error-level violations.
-
-See `internal/validator/` and example rules in `docs/future-improvements.md` below.
+Fully implemented in `internal/validator/`. 5 rules: `SubjectLengthRule`, `BodyLineLengthRule`, `RequiredFootersRule`, `ProhibitedWordsRule`, `RequiredPatternsRule`. Auto-fix for subject-length and prohibited-words. TUI shows `stateValidationFailed` with 4 actions (Auto-fix, Edit, Ignore warnings, Cancel). `--print`/hook path rejects error-level violations via `ValidationFailedError`. Opt-in via `.commitgen-rules.json` (auto-discovered) or `rules_file` config.
 
 ---
 
-### Original proposals (not yet implemented)
-
-The sections below describe **future** ideas. Items marked in the priority matrix as done in the original doc were aspirational — verify against README before assuming they exist.
-
-## 🌐 i18n & Localization (original proposal — largely implemented)
-
-### Current State
-
-The application currently has hard-coded English strings throughout the UI, with only partial support for localized review output via the `review_language` setting.
-
-**Example of hard-coded strings:**
-```go
-// internal/app/tui.go
-styleEditTitle.Render("Edit Commit Message")
-styleMsgTitle.Render("Generated Commit Message")
-styleActionTitle.Render("Action")
-
-// internal/app/review.go
-options := []string{"Copy to clipboard", "Suggest commit message", "Done"}
-```
-
-### Problems
-
-1. **Non-English users must read English UI** - Vietnamese, Japanese, Chinese users have to work with English interface
-2. **Inconsistent localization** - Review output can be localized but UI cannot
-3. **Hard to maintain** - Strings scattered across codebase
-4. **No fallback mechanism** - Cannot gracefully handle missing translations
-
-### Proposed Solution
-
-#### 1. Extract All UI Strings
-
-Create a centralized i18n package:
-
-```go
-// internal/i18n/i18n.go
-package i18n
-
-type Locale string
-
-const (
-    LocaleEN Locale = "en"
-    LocaleVI Locale = "vi"
-    LocaleJA Locale = "ja"
-    LocaleZH Locale = "zh"
-)
-
-type Translator struct {
-    locale   Locale
-    messages map[Locale]map[string]string
-}
-
-func New(locale Locale) *Translator {
-    return &Translator{
-        locale:   locale,
-        messages: loadMessages(),
-    }
-}
-
-func (t *Translator) T(key string, args ...interface{}) string {
-    msg, ok := t.messages[t.locale][key]
-    if !ok {
-        // Fallback to English
-        msg = t.messages[LocaleEN][key]
-    }
-    if msg == "" {
-        return key // Return key if translation missing
-    }
-    return fmt.Sprintf(msg, args...)
-}
-```
-
-
-#### 2. Message Files Structure
-
-```
-internal/i18n/
-├── i18n.go
-├── en.json
-├── vi.json
-├── ja.json
-└── zh.json
-```
-
-**Example: `en.json`**
-```json
-{
-  "tui.title.generated_message": "Generated Commit Message",
-  "tui.title.action": "Action",
-  "tui.title.edit": "Edit Commit Message",
-  "tui.action.commit": "Commit (Apply)",
-  "tui.action.regenerate": "Regenerate",
-  "tui.action.edit": "Edit",
-  "tui.action.cancel": "Cancel",
-  "tui.hint.generating": "Generating commit message...",
-  "tui.hint.committing": "Committing...",
-  "tui.hint.edit_instructions": "Press Esc to finish editing",
-  "tui.hint.regen_instructions": "Enter to regenerate, Esc to cancel",
-  "tui.state.copied": "Copied to clipboard!",
-  "tui.state.success": "Committed successfully!",
-  "error.no_staged_changes": "No staged changes. Run: git add -A",
-  "error.all_files_ignored": "All staged files were ignored (checked %d files)",
-  "error.missing_model": "Missing model. Set flags or env COMMITGEN_MODEL",
-  "error.missing_api_key": "Missing API key. Set --api-key flag or env COMMITGEN_API_KEY"
-}
-```
-
-**Example: `vi.json`**
-```json
-{
-  "tui.title.generated_message": "Commit Message Được Tạo",
-  "tui.title.action": "Hành Động",
-  "tui.title.edit": "Chỉnh Sửa Commit Message",
-  "tui.action.commit": "Commit (Áp dụng)",
-  "tui.action.regenerate": "Tạo Lại",
-  "tui.action.edit": "Chỉnh Sửa",
-  "tui.action.cancel": "Hủy",
-  "tui.hint.generating": "Đang tạo commit message...",
-  "tui.hint.committing": "Đang commit...",
-  "tui.hint.edit_instructions": "Nhấn Esc để hoàn tất chỉnh sửa",
-  "tui.hint.regen_instructions": "Enter để tạo lại, Esc để hủy",
-  "tui.state.copied": "Đã sao chép vào clipboard!",
-  "tui.state.success": "Commit thành công!",
-  "error.no_staged_changes": "Không có thay đổi nào được staged. Chạy: git add -A",
-  "error.all_files_ignored": "Tất cả file đã bị bỏ qua (đã kiểm tra %d files)",
-  "error.missing_model": "Thiếu model. Đặt flag hoặc env COMMITGEN_MODEL",
-  "error.missing_api_key": "Thiếu API key. Đặt flag --api-key hoặc env COMMITGEN_API_KEY"
-}
-```
-
-
-#### 3. Integration with Existing Code
-
-**Before:**
-```go
-// internal/app/tui.go
-styleEditTitle.Render("Edit Commit Message")
-```
-
-**After:**
-```go
-// internal/app/tui.go
-type tuiModel struct {
-    // ... existing fields
-    i18n *i18n.Translator
-}
-
-func newTuiModel(..., locale string) tuiModel {
-    return tuiModel{
-        // ... existing initialization
-        i18n: i18n.New(i18n.Locale(locale)),
-    }
-}
-
-// Usage in View()
-styleEditTitle.Render(m.i18n.T("tui.title.edit"))
-```
-
-#### 4. Configuration
-
-Add locale to config:
-
-```json
-{
-  "provider": "openai",
-  "model": "gpt-4o",
-  "locale": "vi",
-  "review_language": "Vietnamese"
-}
-```
-
-```go
-// Config resolution
-cfg.Locale = config.ResolveString(*localeFlag, os.Getenv("COMMITGEN_LOCALE"), fileCfg.Locale, "en")
-```
-
-#### 5. Command Line Flag
-
-```bash
-# Set locale via flag
-commitgen --locale vi
-
-# Set via environment
-export COMMITGEN_LOCALE=vi
-commitgen
-
-# Auto-detect from system
-commitgen --locale auto  # Uses $LANG
-```
-
-
-### Implementation Plan
-
-**Phase 1: Foundation (Week 1)**
-- [ ] Create `internal/i18n` package
-- [ ] Extract all English strings to `en.json`
-- [ ] Implement `Translator` with fallback logic
-- [ ] Add locale config field
-
-**Phase 2: Translations (Week 2)**
-- [ ] Add Vietnamese translations (`vi.json`)
-- [ ] Add Japanese translations (`ja.json`)
-- [ ] Add Chinese translations (`zh.json`)
-- [ ] Add translation validation tests
-
-**Phase 3: Integration (Week 3)**
-- [ ] Update `tui.go` to use translator
-- [ ] Update `review.go` to use translator
-- [ ] Update error messages to use translator
-- [ ] Add locale auto-detection
-
-**Phase 4: Testing & Documentation (Week 4)**
-- [ ] Test all locales
-- [ ] Add locale switching tests
-- [ ] Update README with locale instructions
-- [ ] Create translation contribution guide
-
-### Benefits
-
-- ✅ **Better UX for non-English users** - Native language interface
-- ✅ **Maintainability** - Centralized string management
-- ✅ **Extensibility** - Easy to add new languages
-- ✅ **Consistency** - Uniform translation approach
-- ✅ **Community contributions** - Users can contribute translations
-
-### Challenges
-
-- ⚠️ **Initial work** - Extracting all strings takes time
-- ⚠️ **Translation quality** - Need native speakers for accuracy
-- ⚠️ **Bundle size** - Multiple locale files increase binary size (minimal impact)
-- ⚠️ **Maintenance** - Need to update translations when adding features
-
----
-
-
-## 🚀 Feature Additions
+## Future Proposals (not yet implemented)
 
 ### 1. Git Commit Templates Integration
 
@@ -380,9 +135,9 @@ commitgen
 ```
 
 **Benefits:**
-- ✅ Seamless integration with existing team workflows
-- ✅ Respects organizational standards
-- ✅ No manual template copying
+- Seamless integration with existing team workflows
+- Respects organizational standards
+- No manual template copying
 
 ---
 
@@ -482,134 +237,13 @@ commitgen
 ```
 
 **Benefits:**
-- ✅ Zero-configuration style matching
-- ✅ Adapts to team culture
-- ✅ Reduces manual editing
+- Zero-configuration style matching
+- Adapts to team culture
+- Reduces manual editing
 
 ---
 
-### 3. Commit Message Validation (original proposal — implemented)
-
-#### Problem
-Generated messages might not meet all project requirements (length limits, required keywords, prohibited patterns).
-
-#### Implemented
-
-See `internal/validator/validator.go` and `.commitgen-rules.json` in the repo root. Validation is **opt-in** (not enabled by default without a rules file).
-
-#### Original proposed solution (reference)
-
-**Pre-commit validation with auto-fix suggestions:**
-
-```go
-// internal/validator/validator.go
-package validator
-
-type Rule interface {
-    Validate(msg string) []Issue
-    AutoFix(msg string) (string, bool) // returns (fixed, canAutoFix)
-}
-
-type Issue struct {
-    Level   string // "error", "warning"
-    Message string
-    Line    int
-    Column  int
-    Rule    string
-}
-
-type Validator struct {
-    rules []Rule
-}
-
-// Built-in rules
-type SubjectLengthRule struct {
-    MaxLength int
-}
-
-func (r *SubjectLengthRule) Validate(msg string) []Issue {
-    lines := strings.Split(msg, "\n")
-    if len(lines[0]) > r.MaxLength {
-        return []Issue{{
-            Level: "error",
-            Message: fmt.Sprintf("Subject line too long: %d > %d", len(lines[0]), r.MaxLength),
-            Rule: "subject-length",
-        }}
-    }
-    return nil
-}
-```
-
-
-**Configuration via `.commitgen-rules.json`:**
-
-```json
-{
-  "rules": {
-    "subject-length": {
-      "enabled": true,
-      "max": 50
-    },
-    "body-line-length": {
-      "enabled": true,
-      "max": 72
-    },
-    "required-footers": {
-      "enabled": true,
-      "footers": ["Signed-off-by"]
-    },
-    "prohibited-words": {
-      "enabled": true,
-      "words": ["WIP", "temp", "debug"]
-    },
-    "required-patterns": {
-      "enabled": true,
-      "patterns": ["^(feat|fix|docs|style|refactor|test|chore)(\\(.+\\))?: .+"]
-    }
-  }
-}
-```
-
-**Integration with TUI:**
-
-```go
-// Before committing, validate
-issues := validator.Validate(m.commitMsg)
-if len(issues) > 0 {
-    m.state = stateValidationFailed
-    m.validationIssues = issues
-    return m, nil
-}
-```
-
-**TUI Validation State:**
-
-```
-❌ Validation Failed
-
-Issues:
-  • [ERROR] Subject line too long: 65 > 50
-    Line 1: "feat(auth): implement very complex OAuth2 authorization flow with multiple providers"
-    
-  • [WARNING] Missing footer: Signed-off-by
-    Add: Signed-off-by: John Doe <john@example.com>
-
-Actions:
-  > Auto-fix (recommended)
-  > Edit manually
-  > Ignore warnings
-  > Cancel
-```
-
-**Benefits:**
-- ✅ Catch issues before commit
-- ✅ Auto-fix common problems
-- ✅ Enforce team standards
-
----
-
-
-### 4. Interactive Fix Suggestions (AI-Powered Code Review)
+### 3. Interactive Fix Suggestions (AI-Powered Code Review)
 
 #### Problem
 Review mode identifies issues but doesn't help fix them. Users must manually address each issue.
@@ -651,14 +285,14 @@ func SuggestFixes(ctx context.Context, provider ai.Provider, review string, chan
 **Example interaction:**
 
 ```
-📝 Code Review Summary
+Code Review Summary
 
 Issues Found:
   1. Missing error handling in AuthHandler (line 45)
   2. Hardcoded API endpoint should use config
   3. Function 'processData' is too complex (cyclomatic complexity: 15)
 
-💡 Fix Suggestions
+Fix Suggestions
 
 [1] Add error handling
   Confidence: 95%
@@ -692,14 +326,14 @@ Issues Found:
 **Smart commit splitting:**
 
 ```
-📊 Commit Analysis
+Commit Analysis
 
 Your staged changes include:
   • 3 new features
   • 2 bug fixes
   • 1 refactoring
 
-💡 Recommendation: Split into 6 smaller commits
+Recommendation: Split into 6 smaller commits
 
 Suggested commits:
 
@@ -725,14 +359,14 @@ Actions:
 ```
 
 **Benefits:**
-- ✅ Proactive issue resolution
-- ✅ Learn better coding practices
-- ✅ Maintain clean commit history
-- ✅ Save time on manual fixes
+- Proactive issue resolution
+- Learn better coding practices
+- Maintain clean commit history
+- Save time on manual fixes
 
 ---
 
-### 5. Git Hook Enhancements
+### 4. Git Hook Enhancements
 
 #### Problem
 Current hook is simple prepare-commit-msg. More advanced hooks could provide better workflow integration.
@@ -796,7 +430,7 @@ commitgen hooks uninstall
 
 ---
 
-### 6. Workspace/Monorepo Support
+### 5. Workspace/Monorepo Support
 
 #### Problem
 In monorepos, changes might span multiple packages/services. CommitGen should understand this context.
@@ -889,7 +523,7 @@ Affects: @myapp/auth, @myapp/api, @myapp/shared
 
 ---
 
-### 7. CI/CD Integration Features
+### 6. CI/CD Integration Features
 
 #### Problem
 CommitGen is great for local development but doesn't integrate with CI/CD pipelines.
@@ -967,7 +601,7 @@ commitgen pr-description \
 
 ---
 
-### 8. Advanced AI Features
+### 7. Advanced AI Features
 
 #### A. Multi-Turn Refinement
 
@@ -1053,8 +687,7 @@ Related: PR #456
 
 ---
 
-
-### 9. Plugin System
+### 8. Plugin System
 
 #### Problem
 Users have custom needs that core tool can't address (company-specific formats, integrations, workflows).
@@ -1172,45 +805,45 @@ commitgen plugins configure jira-integration
 
 ---
 
-## 📊 Implementation Priority Matrix
+## Implementation Priority Matrix
 
-| Feature | Impact | Effort | Priority | Timeline |
-|---------|--------|--------|----------|----------|
-| **i18n & Localization** | High | Medium | **P1** | 2-3 weeks |
-| **Git Commit Templates** | Medium | Low | **P1** | 1 week |
-| **Team Style Learning** | High | Medium | **P2** | 2 weeks |
-| **Commit Validation** | High | Medium | **P2** | 2 weeks |
-| **Interactive Fix Suggestions** | Very High | High | **P3** | 3-4 weeks |
-| **Workspace/Monorepo Support** | Medium | Medium | **P3** | 2 weeks |
-| **CI/CD Integration** | Medium | Low | **P2** | 1 week |
-| **Advanced AI Features** | High | High | **P4** | 4+ weeks |
-| **Plugin System** | Medium | Very High | **P5** | 6+ weeks |
+| Feature | Impact | Effort | Priority | Timeline | Status |
+|---------|--------|--------|----------|----------|--------|
+| **i18n & Localization** | High | Medium | ~~P1~~ | ~~2-3 weeks~~ | COMPLETED |
+| **Commit Validation** | High | Medium | ~~P2~~ | ~~2 weeks~~ | COMPLETED |
+| **Git Commit Templates** | Medium | Low | **P1** | 1 week | Not started |
+| **Team Style Learning** | High | Medium | **P2** | 2 weeks | Not started |
+| **Interactive Fix Suggestions** | Very High | High | **P3** | 3-4 weeks | Partial (review only) |
+| **Workspace/Monorepo Support** | Medium | Medium | **P3** | 2 weeks | Not started |
+| **CI/CD Integration** | Medium | Low | **P2** | 1 week | Not started |
+| **Advanced AI Features** | High | High | **P4** | 4+ weeks | Not started |
+| **Plugin System** | Medium | Very High | **P5** | 6+ weeks | Not started |
 
 ### Recommended Implementation Order
 
 **Phase 1: Quick Wins (Weeks 1-2)**
-1. ✅ Git Commit Templates Integration
-2. ✅ CI/CD Validation Commands
+1. Git Commit Templates Integration
+2. CI/CD Validation Commands
 
 **Phase 2: Core UX (Weeks 3-5)**
-3. ✅ i18n & Localization
-4. ✅ Commit Message Validation
+3. i18n & Localization (completed)
+4. Commit Message Validation (completed)
 
 **Phase 3: Intelligence (Weeks 6-8)**
-5. ✅ Team Style Learning
-6. ✅ Workspace/Monorepo Support
+5. Team Style Learning
+6. Workspace/Monorepo Support
 
 **Phase 4: Advanced Features (Weeks 9-12)**
-7. ✅ Interactive Fix Suggestions
-8. ✅ Context-Aware Enhancements
+7. Interactive Fix Suggestions (partial: review exists, fixer missing)
+8. Context-Aware Enhancements
 
 **Phase 5: Extensibility (Future)**
-9. ✅ Plugin System
-10. ✅ Marketplace & Community Plugins
+9. Plugin System
+10. Marketplace & Community Plugins
 
 ---
 
-## 🎯 Success Metrics
+## Success Metrics
 
 ### User Adoption
 - [ ] 50% reduction in manual commit message edits
@@ -1229,9 +862,8 @@ commitgen plugins configure jira-integration
 
 ---
 
-## 📝 Contributing
+## Contributing
 
 Want to help implement these features? Check out our [CONTRIBUTING.md](../CONTRIBUTING.md) guide and pick a feature from the priority matrix above!
 
 For questions or discussions about these improvements, open an issue with the `enhancement` label.
-
