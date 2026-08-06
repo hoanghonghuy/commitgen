@@ -146,3 +146,45 @@ func TestMigrateFileConfig_Table(t *testing.T) {
 		})
 	}
 }
+
+func TestAPIKeyHelpers(t *testing.T) {
+	cfg := FileConfig{
+		APIKey:       "legacy-openai",
+		AnthropicKey: "legacy-anthropic",
+		GeminiKey:    "legacy-gemini",
+		APIKeys: map[string]string{
+			"openrouter": "router-key",
+		},
+	}
+
+	if got := APIKeyFor(cfg, ProviderOpenRouter); got != "router-key" {
+		t.Errorf("APIKeyFor(openrouter)=%q", got)
+	}
+	if got := APIKeyFor(cfg, ProviderAnthropic); got != "legacy-anthropic" {
+		t.Errorf("APIKeyFor(anthropic)=%q", got)
+	}
+	if got := APIKeyFor(cfg, ProviderGemini); got != "legacy-gemini" {
+		t.Errorf("APIKeyFor(gemini)=%q", got)
+	}
+	if got := APIKeyFor(cfg, ProviderOpenAI); got != "legacy-openai" {
+		t.Errorf("APIKeyFor(openai)=%q", got)
+	}
+
+	SetAPIKeyFor(&cfg, ProviderCompatible, "compat-key")
+	if got := cfg.APIKeys["compatible"]; got != "compat-key" {
+		t.Errorf("SetAPIKeyFor compatible=%q", got)
+	}
+
+	PreserveAPIKeyIfEmpty(&cfg, ProviderOpenAI, "", "existing-openai")
+	if got := cfg.APIKeys["openai"]; got != "existing-openai" {
+		t.Errorf("empty submit should preserve existing, got %q", got)
+	}
+	PreserveAPIKeyIfEmpty(&cfg, ProviderOpenAI, "********", "masked-openai")
+	if got := cfg.APIKeys["openai"]; got != "masked-openai" {
+		t.Errorf("masked submit should preserve existing, got %q", got)
+	}
+	PreserveAPIKeyIfEmpty(&cfg, ProviderOpenAI, "new-openai", "ignored")
+	if got := cfg.APIKeys["openai"]; got != "new-openai" {
+		t.Errorf("new submit should overwrite existing, got %q", got)
+	}
+}

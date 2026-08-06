@@ -86,6 +86,14 @@ func TestStagedChanges_AndCommitFlow(t *testing.T) {
 	writeFile(t, dir, "new.txt", "brand new\n")
 	runGit(t, dir, "add", "README.md", "new.txt")
 
+	files, err := StagedFileNames(ctx, dir)
+	if err != nil {
+		t.Fatalf("StagedFileNames error: %v", err)
+	}
+	if len(files) != 2 || files[0] != "README.md" || files[1] != "new.txt" {
+		t.Fatalf("StagedFileNames = %v", files)
+	}
+
 	changes, err := StagedChanges(ctx, dir, 10)
 	if err != nil {
 		t.Fatalf("StagedChanges error: %v", err)

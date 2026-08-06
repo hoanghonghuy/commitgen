@@ -75,6 +75,20 @@ func TestChangedFilesSinceMergeBase(t *testing.T) {
 	if !strings.Contains(diff, "package a") {
 		t.Errorf("diff missing content: %q", diff)
 	}
+
+	content, err := FileAtRef(ctx, dir, "HEAD", "src/a.go")
+	if err != nil {
+		t.Fatalf("FileAtRef: %v", err)
+	}
+	if content != "package a\n" {
+		t.Errorf("FileAtRef content=%q", content)
+	}
+	if _, err := FileAtRef(ctx, dir, "", "src/a.go"); err == nil {
+		t.Error("expected FileAtRef error for empty ref")
+	}
+	if _, err := FileAtRef(ctx, dir, "HEAD", ""); err == nil {
+		t.Error("expected FileAtRef error for empty path")
+	}
 }
 
 func TestResolveBaseRef(t *testing.T) {

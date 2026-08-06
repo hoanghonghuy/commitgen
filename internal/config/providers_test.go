@@ -67,3 +67,16 @@ func TestModelSuggestions_LockedTable(t *testing.T) {
 		}
 	}
 }
+
+func TestKnownProviders(t *testing.T) {
+	got := KnownProviders()
+	want := []string{ProviderOpenAI, ProviderOpenRouter, ProviderCompatible, ProviderOllama, ProviderOllamaCloud, ProviderAnthropic, ProviderGemini}
+	if len(got) != len(want) {
+		t.Fatalf("KnownProviders len=%d want %d: %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("KnownProviders[%d]=%q want %q", i, got[i], want[i])
+		}
+	}
+}
