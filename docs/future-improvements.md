@@ -41,6 +41,10 @@ Findings from post-`provider-config-registry` full flow audit.
 
 ## Completed Features
 
+### Git Commit Templates Integration
+
+Implemented in `internal/gitx/template.go` and prompt generation. CommitGen detects configured `commit.template`, repo-local `.gitmessage`, or `.git/commit_template`, then adds the template structure to the commit-message prompt.
+
 ### 🌐 i18n & Localization
 
 Fully implemented in `internal/i18n/`. 130 translation keys across 4 locales (en, vi, ja, zh). TUI, CLI errors, hook messages, and config form all use `Translator.T()`. Set via `--locale`, `COMMITGEN_LOCALE`, or `locale` in config. `--locale auto` detects from `$LANG`/`$LC_ALL`/`$LC_MESSAGES`.
@@ -51,97 +55,9 @@ Fully implemented in `internal/validator/`. 5 rules: `SubjectLengthRule`, `BodyL
 
 ---
 
-## Future Proposals (not yet implemented)
+## Future Proposals (remaining)
 
-### 1. Git Commit Templates Integration
-
-#### Problem
-Users often have `.git/commit_template` or `.gitmessage` files that define their team's commit message structure, but CommitGen ignores these templates.
-
-#### Proposed Solution
-
-**Auto-detect and respect git commit templates:**
-
-```go
-// internal/gitx/template.go
-package gitx
-
-func GetCommitTemplate(ctx context.Context, repoRoot string) (string, error) {
-    // Try repo-specific template first
-    templatePath, err := GitConfig(ctx, repoRoot, "commit.template")
-    if err == nil && templatePath != "" {
-        content, err := os.ReadFile(filepath.Join(repoRoot, templatePath))
-        if err == nil {
-            return string(content), nil
-        }
-    }
-    
-    // Fallback to global template
-    globalTemplate, err := GitConfig(ctx, repoRoot, "commit.template")
-    if err == nil && globalTemplate != "" {
-        content, err := os.ReadFile(globalTemplate)
-        if err == nil {
-            return string(content), nil
-        }
-    }
-    
-    return "", nil
-}
-
-func ParseTemplate(template string) TemplateStructure {
-    // Parse template to identify:
-    // - Subject line format
-    // - Body structure
-    // - Footer requirements (e.g., Signed-off-by, Co-authored-by)
-    return TemplateStructure{
-        SubjectFormat: "{{type}}({{scope}}): {{description}}",
-        RequiredFooters: []string{"Signed-off-by"},
-    }
-}
-```
-
-**Integration with AI prompt:**
-
-```go
-// internal/vscodeprompt/prompt.go
-func BuildVSCodeMessages(d Data) []VSCodeMessage {
-    systemText := renderTemplate(tmpl, d)
-    
-    // Add template guidance if present
-    if d.CommitTemplate != "" {
-        systemText += "\n\nThe repository uses this commit template:\n" + d.CommitTemplate
-        systemText += "\nPlease generate a commit message that follows this template structure."
-    }
-    
-    // ... rest of function
-}
-```
-
-
-**Usage:**
-
-```bash
-# CommitGen automatically detects template
-commitgen
-
-# Output respects template format:
-# feat(auth): implement JWT token refresh
-# 
-# - Add refresh token endpoint
-# - Implement token rotation logic
-# - Add tests for token expiration
-#
-# Signed-off-by: User Name <user@example.com>
-```
-
-**Benefits:**
-- Seamless integration with existing team workflows
-- Respects organizational standards
-- No manual template copying
-
----
-
-### 2. Team Style Learning
+### 1. Team Style Learning
 
 #### Problem
 Each team has unique commit message conventions that go beyond conventional commits (emoji usage, ticket references, specific wording patterns).
@@ -155,14 +71,14 @@ Each team has unique commit message conventions that go beyond conventional comm
 package analyzer
 
 type CommitStyle struct {
-    UsesEmoji         bool
-    EmojiPlacement    string // "prefix" or "suffix"
-    CommonEmojis      map[string]string // feat -> 🎉, fix -> 🐛
-    TicketPattern     string // e.g., "JIRA-\d+"
-    TicketPlacement   string // "prefix", "suffix", "footer"
-    AverageLength     int
-    UsesImperativeMood bool
-    CommonPhrases     []string
+  UsesEmoji          bool
+  EmojiPlacement     string // "prefix" or "suffix"
+  CommonEmojis       map[string]string // feat -> 🎉
+  TicketPattern      string // e.g., "JIRA-\d+"
+  TicketPlacement    string // "prefix", "suffix", "footer"
+  AverageLength      int
+  UsesImperativeMood bool
+  CommonPhrases      []string
 }
 
 func AnalyzeRepoStyle(commits []string) CommitStyle {

@@ -85,11 +85,12 @@ func TestBuildPromptData(t *testing.T) {
 	writeFile(t, dir, "README.md", "# initial\n")
 	runGit(t, dir, "add", ".")
 	runGit(t, dir, "commit", "-m", "chore: init")
+	writeFile(t, dir, ".gitmessage", "type(scope): subject\n\nbody\n")
 
 	// stage a real source file and an ignored lock file
 	writeFile(t, dir, "main.go", "package main\n\nfunc main() {}\n")
 	writeFile(t, dir, "go.sum", "h1:abc\n")
-	runGit(t, dir, "add", ".")
+	runGit(t, dir, "add", "main.go", "go.sum")
 
 	data, err := buildPromptData(ctx, dir, 5, 10, false, "custom note", nil)
 	if err != nil {
@@ -97,6 +98,9 @@ func TestBuildPromptData(t *testing.T) {
 	}
 	if data.CustomInstructions != "custom note" {
 		t.Errorf("custom instructions not set: %q", data.CustomInstructions)
+	}
+	if data.CommitTemplate != "type(scope): subject\n\nbody" {
+		t.Errorf("commit template not loaded: %q", data.CommitTemplate)
 	}
 	// go.sum is in defaultIgnores → only main.go remains
 	if len(data.Changes) != 1 || data.Changes[0].Path != "main.go" {

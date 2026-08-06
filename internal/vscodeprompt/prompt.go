@@ -41,6 +41,7 @@ type Data struct {
 	BaseBranch           string // PR mode: target base branch (e.g. main)
 	RecentUserCommits    []string
 	RecentRepoCommits    []string
+	CommitTemplate       string
 	Changes              []Change
 	CustomInstructions   string
 	SummarizeAttachments bool
@@ -90,6 +91,11 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 	// We'll treat it as text/template.
 
 	systemText := renderTemplate(tmpl, d)
+	if strings.TrimSpace(d.CommitTemplate) != "" {
+		systemText += "\n\n# Repository commit template\n" +
+			"The repository defines this git commit template. Follow its structure, section order, and required footers when generating the commit message.\n" +
+			"```text\n" + strings.TrimRight(d.CommitTemplate, "\r\n") + "\n```\n"
+	}
 	userText := buildUserText(d)
 
 	return []VSCodeMessage{

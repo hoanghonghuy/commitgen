@@ -343,6 +343,10 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 
 	userCommits, _ := gitx.RecentCommitsByAuthor(ctx, repoRoot, recentN, userEmail)
 	repoCommits, _ := gitx.RecentCommits(ctx, repoRoot, recentN)
+	commitTemplate, err := gitx.GetCommitTemplate(ctx, repoRoot)
+	if err != nil {
+		logger.Warn("failed to read git commit template", "error", err)
+	}
 
 	stagedFiles, err := gitx.StagedFileNames(ctx, repoRoot)
 	if err != nil {
@@ -402,6 +406,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		BranchName:           branch,
 		RecentUserCommits:    userCommits,
 		RecentRepoCommits:    repoCommits,
+		CommitTemplate:       commitTemplate,
 		Changes:              filteredChanges,
 		CustomInstructions:   customInstructions, // inserted into <custom-instructions>
 		SummarizeAttachments: summarize,

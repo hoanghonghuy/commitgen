@@ -70,3 +70,23 @@ func TestBuildVSCodeMessages_CustomTemplate(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, sysContent)
 	}
 }
+
+func TestBuildVSCodeMessages_IncludesCommitTemplate(t *testing.T) {
+	data := Data{
+		RepositoryName: "test-repo",
+		BranchName:     "main",
+		CommitTemplate: "Subject\n\nBody\n\nSigned-off-by: Name <email>",
+		Changes:        []Change{{Path: "main.go", Diff: "package main"}},
+	}
+
+	msgs := BuildVSCodeMessages(data)
+	if len(msgs) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(msgs))
+	}
+	systemText := msgs[0].Content[0].Text
+	for _, want := range []string{"Repository commit template", "Signed-off-by", "Follow its structure"} {
+		if !strings.Contains(systemText, want) {
+			t.Errorf("system prompt missing %q", want)
+		}
+	}
+}

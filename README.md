@@ -15,6 +15,7 @@
   - **Summarization**: Truncates oversized files while preserving context (e.g., collapsing Go function bodies).
   - Customizable ignore patterns via configuration.
 - **Context Aware**: Analyzes recent commit history to maintain consistency with your project's style.
+- **Git Commit Templates**: Detects configured `commit.template` files and guides AI output to match them.
 - **Code Review TUI**: Quick scan and full review of staged changes (`commitgen review`).
 - **Git Hook**: Install a `prepare-commit-msg` hook (`commitgen install-hook`) — always headless, writes the message via `--print`.
 - **Non-interactive Mode**: `--print` / `--dry-run` for scripts and CI.

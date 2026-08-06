@@ -29,6 +29,8 @@ func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
 		// Don't log as ERROR for expected cases like new files not in HEAD
 		if len(args) > 0 && args[0] == "show" && strings.Contains(stderr.String(), "exists on disk, but not in") {
 			// Silent for new files
+		} else if len(args) >= 2 && args[0] == "config" && args[1] == "--get" && strings.TrimSpace(stderr.String()) == "" {
+			// Silent for missing optional git config keys.
 		} else {
 			logger.Error("git command failed", "error", err, "args", args, "stderr", stderr.String())
 		}
