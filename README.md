@@ -19,7 +19,7 @@
 - **Git Hook**: Install a `prepare-commit-msg` hook (`commitgen install-hook`) — always headless, writes the message via `--print`.
 - **Non-interactive Mode**: `--print` / `--dry-run` for scripts and CI.
 - **Multi-candidate**: Generate several message options (`--count N`) and pick in the TUI.
-- **Streaming**: Token-by-token display in the TUI (all providers).
+- **Streaming**: Token-by-token display in the TUI for single-message generation (`--count 1`, all streaming-capable providers).
 - **Per-repo Config**: `.commitgen.json` in the repo overlays `~/.commitgen.json`.
 - **Commit Validation**: Opt-in via `.commitgen-rules.json` or `rules_file` in config.
 - **i18n**: UI in English, Vietnamese, Japanese, Chinese (`--locale` / `COMMITGEN_LOCALE`).

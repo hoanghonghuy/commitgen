@@ -41,7 +41,7 @@ func (f fakeStreamProvider) GenerateStream(_ context.Context, _ []vscodeprompt.V
 
 func TestTui_StreamDeltaAccumulates(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel(context.Background(),"/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(), "/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 
 	u, cmd := m.Update(streamEvent{delta: "feat: "})
 	tm := u.(tuiModel)
@@ -61,7 +61,7 @@ func TestTui_StreamDeltaAccumulates(t *testing.T) {
 
 func TestTui_StreamDoneFinalizes(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel(context.Background(),"/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(), "/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	m.streamView = "partial"
 
 	u, _ := m.Update(streamEvent{done: true, full: "```text\nfeat: streamed\n```"})
@@ -79,7 +79,7 @@ func TestTui_StreamDoneFinalizes(t *testing.T) {
 
 func TestTui_StreamDoneError(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel(context.Background(),"/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
+	m := newTuiModel(context.Background(), "/repo", fakeStreamProvider{}, baseMsgs(), 0.7, time.Second, false, "", tr, nil)
 	u, cmd := m.Update(streamEvent{done: true, err: errors.New("stream broke")})
 	tm := u.(tuiModel)
 	if tm.state != stateDone || tm.err == nil || cmd == nil {

@@ -95,9 +95,9 @@ type tuiModel struct {
 	commitMsg     string
 	cachedContent string // built once in Update, read in View — avoids per-frame rebuild
 	cursor        int
-	regenHint     string           // optional user guidance for regeneration
-	candidates    []string         // multiple generated candidates (when count > 1)
-	candCurrent   int              // 1-based progress while generating candidates
+	regenHint     string   // optional user guidance for regeneration
+	candidates    []string // multiple generated candidates (when count > 1)
+	candCurrent   int      // 1-based progress while generating candidates
 	candTotal     int
 	streamView    string           // accumulated text while streaming
 	streamCh      chan streamEvent // delta channel for streaming providers
@@ -262,9 +262,15 @@ func startStreamCmd(ctx context.Context, sp ai.StreamProvider, ch chan streamEve
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			full, err := sp.GenerateStream(ctx, msgs, clampTemperature(temp), func(d string) {
-				ch <- streamEvent{delta: d, genID: genID}
+				select {
+				case ch <- streamEvent{delta: d, genID: genID}:
+				default:
+				}
 			})
-			ch <- streamEvent{done: true, full: full, err: err, genID: genID}
+			select {
+			case ch <- streamEvent{done: true, full: full, err: err, genID: genID}:
+			default:
+			}
 		}()
 		return nil
 	}

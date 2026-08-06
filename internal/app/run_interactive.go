@@ -81,7 +81,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 			huh.NewGroup(
 				huh.NewNote().
 					Title(tr.T("config.form.title")).
-					Description(tr.T("config.form_intro") + "\n" + tr.T("config.save_target", savePath)),
+					Description(tr.T("config.form_intro")+"\n"+tr.T("config.save_target", savePath)),
 				huh.NewSelect[string]().
 					Title(tr.T("config.field.provider")).
 					Options(
@@ -157,7 +157,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					Validate(func(s string) error {
 						v, err := strconv.ParseFloat(s, 64)
 						if err != nil {
-							return fmt.Errorf("%s", tr.T("config.field.integer.error"))
+							return fmt.Errorf("%s", tr.T("config.field.temperature.error"))
 						}
 						if v < 0 || v > 2.0 {
 							return fmt.Errorf("%s", tr.T("config.field.temperature.error"))
