@@ -97,10 +97,19 @@ type tuiModel struct {
 	cursor        int
 	regenHint     string           // optional user guidance for regeneration
 	candidates    []string         // multiple generated candidates (when count > 1)
+	candCurrent   int              // 1-based progress while generating candidates
+	candTotal     int
 	streamView    string           // accumulated text while streaming
 	streamCh      chan streamEvent // delta channel for streaming providers
 	err           error
+	statusBanner  string // transient status (clipboard fail, validation no-ops)
 	quitting      bool
+	reachedDone   bool // true when stateDone was shown (durable outcome after alt-screen)
+
+	// Generation cancel / stale-result guard
+	genCtx    context.Context
+	genCancel context.CancelFunc
+	genID     uint64
 }
 
 // streamEvent carries an incremental streaming update or the final result.
@@ -109,17 +118,30 @@ type streamEvent struct {
 	full  string
 	err   error
 	done  bool
+	genID uint64
 }
 
 type commitResultMsg struct {
 	content string
 	err     error
+	genID   uint64
 }
 
 // candidatesMsg carries multiple generated candidate messages (count > 1).
 type candidatesMsg struct {
 	contents []string
 	err      error
+	genID    uint64
+}
+
+// candProgressMsg drives sequential multi-candidate generation with i/N progress.
+type candProgressMsg struct {
+	current int // 1-based display index
+	total   int
+	soFar   []string
+	nextIdx int // next 0-based index to generate
+	err     error
+	genID   uint64
 }
 
 // copyDoneMsg is sent after clipboard copy feedback expires.
@@ -147,9 +169,14 @@ func newTuiModel(ctx context.Context, repoRoot string, provider ai.Provider, msg
 	hi := textinput.New()
 	hi.Placeholder = tr.T("tui.placeholder.regen_hint")
 
+	genCtx, genCancel := context.WithCancel(ctx)
+
 	return tuiModel{
 		state:         stateGenerating,
 		runCtx:        ctx,
+		genCtx:        genCtx,
+		genCancel:     genCancel,
+		genID:         1,
 		provider:      provider,
 		initialMsgs:   msgs,
 		temp:          temp,
@@ -185,14 +212,48 @@ func (m tuiModel) generateCmd() tea.Cmd {
 		if m.conventional {
 			msgs = append(msgs, conventionalReminder())
 		}
-		return tea.Batch(startStreamCmd(m.runCtx, sp, m.streamCh, msgs, m.temp, m.timeout), waitStreamCmd(m.streamCh))
+		return tea.Batch(startStreamCmd(m.genCtxOrRun(), sp, m.streamCh, msgs, m.temp, m.timeout, m.genID), waitStreamCmd(m.streamCh))
 	}
 	return m.generateCommitCmd()
 }
 
+func (m tuiModel) genCtxOrRun() context.Context {
+	if m.genCtx != nil {
+		return m.genCtx
+	}
+	return m.runCtx
+}
+
+func (m tuiModel) beginGeneration() tuiModel {
+	if m.genCancel != nil {
+		m.genCancel()
+	}
+	m.genID++
+	m.genCtx, m.genCancel = context.WithCancel(m.runCtx)
+	m.streamView = ""
+	m.candCurrent = 0
+	m.candTotal = 0
+	m.statusBanner = ""
+	m.err = nil
+	return m
+}
+
+func (m tuiModel) stopGeneration() tuiModel {
+	if m.genCancel != nil {
+		m.genCancel()
+		m.genCancel = nil
+	}
+	m.genID++
+	m.genCtx = nil
+	m.streamView = ""
+	m.candCurrent = 0
+	m.candTotal = 0
+	return m
+}
+
 // startStreamCmd launches the streaming generation in a goroutine, pushing
 // deltas and a final event onto ch.
-func startStreamCmd(ctx context.Context, sp ai.StreamProvider, ch chan streamEvent, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration) tea.Cmd {
+func startStreamCmd(ctx context.Context, sp ai.StreamProvider, ch chan streamEvent, msgs []vscodeprompt.VSCodeMessage, temp float64, timeout time.Duration, genID uint64) tea.Cmd {
 	return func() tea.Msg {
 		go func() {
 			if ctx == nil {
@@ -201,9 +262,9 @@ func startStreamCmd(ctx context.Context, sp ai.StreamProvider, ch chan streamEve
 			ctx, cancel := context.WithTimeout(ctx, timeout)
 			defer cancel()
 			full, err := sp.GenerateStream(ctx, msgs, clampTemperature(temp), func(d string) {
-				ch <- streamEvent{delta: d}
+				ch <- streamEvent{delta: d, genID: genID}
 			})
-			ch <- streamEvent{done: true, full: full, err: err}
+			ch <- streamEvent{done: true, full: full, err: err, genID: genID}
 		}()
 		return nil
 	}
@@ -218,48 +279,55 @@ func waitStreamCmd(ch chan streamEvent) tea.Cmd {
 
 // buildGenMessages returns the prompt messages including optional regen guidance.
 func (m tuiModel) buildGenMessages() []vscodeprompt.VSCodeMessage {
-	if strings.TrimSpace(m.regenHint) == "" {
-		return m.initialMsgs
-	}
-	return append(append([]vscodeprompt.VSCodeMessage{}, m.initialMsgs...), vscodeprompt.VSCodeMessage{
-		Role:    vscodeprompt.RoleUser,
-		Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "Additional guidance for the commit message: " + m.regenHint}},
-	})
+	return appendGuidanceMessage(m.initialMsgs, m.i18n, m.regenHint)
 }
 
-// generateCandidatesCmd generates m.count candidate messages sequentially.
+// generateCandidatesCmd starts sequential multi-candidate generation with progress.
 func (m tuiModel) generateCandidatesCmd() tea.Cmd {
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(m.runCtx, m.timeout)
-		defer cancel()
+		return candProgressMsg{current: 1, total: m.count, soFar: nil, nextIdx: 0, genID: m.genID}
+	}
+}
 
-		msgs := m.buildGenMessages()
-		out := make([]string, 0, m.count)
-		for i := 0; i < m.count; i++ {
-			msg, err := generateCommitMessage(ctx, m.provider, msgs, m.temp, m.conventional)
-			if err != nil {
-				logger.Error("failed to generate candidate", "error", err)
-				return candidatesMsg{err: err}
-			}
-			out = append(out, msg)
+func (m tuiModel) genOneCandidateCmd(soFar []string, idx, total int) tea.Cmd {
+	id := m.genID
+	ctx := m.genCtxOrRun()
+	msgs := m.buildGenMessages()
+	temp := m.temp
+	conventional := m.conventional
+	timeout := m.timeout
+	provider := m.provider
+	return func() tea.Msg {
+		tctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		msg, err := generateCommitMessage(tctx, provider, msgs, temp, conventional)
+		if err != nil {
+			logger.Error("failed to generate candidate", "error", err)
+			return candProgressMsg{err: err, genID: id}
 		}
-		return candidatesMsg{contents: out}
+		next := append(append([]string{}, soFar...), msg)
+		if idx+1 >= total {
+			return candidatesMsg{contents: next, genID: id}
+		}
+		return candProgressMsg{current: idx + 2, total: total, soFar: next, nextIdx: idx + 1, genID: id}
 	}
 }
 
 func (m tuiModel) generateCommitCmd() tea.Cmd {
+	id := m.genID
+	ctxBase := m.genCtxOrRun()
 	return func() tea.Msg {
 		msgs := m.buildGenMessages()
 
-		ctx, cancel := context.WithTimeout(m.runCtx, m.timeout)
+		ctx, cancel := context.WithTimeout(ctxBase, m.timeout)
 		defer cancel()
 
 		msg, err := generateCommitMessage(ctx, m.provider, msgs, m.temp, m.conventional)
 		if err != nil {
 			logger.Error("failed to generate commit message", "error", err)
-			return commitResultMsg{err: err}
+			return commitResultMsg{err: err, genID: id}
 		}
-		return commitResultMsg{content: msg}
+		return commitResultMsg{content: msg, genID: id}
 	}
 }
 
@@ -384,11 +452,24 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.state {
+		case stateGenerating:
+			if msg.String() == "esc" {
+				m = m.stopGeneration()
+				if m.commitMsg != "" {
+					m.state = stateConfirm
+					m = m.refreshViewport()
+					return m, nil
+				}
+				m.quitting = true
+				return m, tea.Quit
+			}
+
 		case stateConfirm:
 			switch msg.String() {
 			case "y", "Y":
 				if m.commitMsg != "" {
 					if cmd := clipboardCopyCmd(m.commitMsg, copyDoneMsg{}); cmd != nil {
+						m.statusBanner = ""
 						m.state = stateCopied
 						return m, cmd
 					}
@@ -412,6 +493,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.viewport.HalfViewDown()
 				}
 			case "enter":
+				m.statusBanner = ""
 				switch m.cursor {
 				case 0: // Commit
 					if m.validator != nil && m.validator.Enabled() {
@@ -460,8 +542,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "enter":
 				m.regenHint = strings.TrimSpace(m.hintInput.Value())
+				m = m.beginGeneration()
 				m.state = stateGenerating
-				m.streamView = ""
 				return m, m.generateCmd()
 			}
 			var cmd tea.Cmd
@@ -500,23 +582,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if fixed, changed := m.validator.AutoFix(m.commitMsg); changed {
 						m.commitMsg = fixed
 						m.validationIssues = nil
+						m.statusBanner = ""
 						m.state = stateConfirm
 						m.cursor = 0
 						m = m.refreshViewport()
 						return m, nil
 					}
 				}
+				m.statusBanner = m.i18n.T("tui.status.autofix_noop")
+				return m, nil
 			case 1:
+				m.statusBanner = ""
 				m.textarea.SetValue(m.commitMsg)
 				m.state = stateEditing
 				return m, nil
 			case 2:
 				if validator.HasErrors(m.validationIssues) {
+					m.statusBanner = m.i18n.T("tui.status.ignore_blocked")
 					return m, nil
 				}
+				m.statusBanner = ""
 				m.state = stateCommitting
 				return m, tea.Batch(m.commitCmd(), m.spinner.Tick)
 			case 3:
+				m.statusBanner = ""
 				m.state = stateConfirm
 				m.cursor = 0
 				m = m.refreshViewport()
@@ -541,7 +630,16 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m = m.refreshViewport()
 				}
 				return m, nil
+			case "esc":
+				if m.commitMsg != "" {
+					m.state = stateConfirm
+					m = m.refreshViewport()
+					return m, nil
+				}
+				m.quitting = true
+				return m, tea.Quit
 			case "r", "R":
+				m = m.beginGeneration()
 				m.state = stateGenerating
 				return m, m.generateCmd()
 			}
@@ -581,11 +679,15 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case commitResultMsg:
+		if msg.genID != 0 && msg.genID != m.genID {
+			return m, nil
+		}
 		if msg.err != nil {
 			logger.Error("commit generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = stateDone
-			return m, tea.Quit
+			m.reachedDone = true
+			return m, outcomeHoldCmd()
 		}
 		m.commitMsg = msg.content
 		m.state = stateConfirm
@@ -594,12 +696,19 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case streamEvent:
+		if msg.genID != 0 && msg.genID != m.genID {
+			if !msg.done {
+				return m, waitStreamCmd(m.streamCh)
+			}
+			return m, nil
+		}
 		if msg.done {
 			if msg.err != nil {
 				logger.Error("stream generation failed", "error", msg.err)
 				m.err = msg.err
 				m.state = stateDone
-				return m, tea.Quit
+				m.reachedDone = true
+				return m, outcomeHoldCmd()
 			}
 			content := msg.full
 			if extracted, ok := vscodeprompt.ExtractOneTextCodeBlock(content); ok {
@@ -615,14 +724,35 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streamView += msg.delta
 		return m, waitStreamCmd(m.streamCh)
 
-	case candidatesMsg:
+	case candProgressMsg:
+		if msg.genID != 0 && msg.genID != m.genID {
+			return m, nil
+		}
 		if msg.err != nil {
 			logger.Error("candidate generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = stateDone
-			return m, tea.Quit
+			m.reachedDone = true
+			return m, outcomeHoldCmd()
+		}
+		m.candCurrent = msg.current
+		m.candTotal = msg.total
+		return m, m.genOneCandidateCmd(msg.soFar, msg.nextIdx, msg.total)
+
+	case candidatesMsg:
+		if msg.genID != 0 && msg.genID != m.genID {
+			return m, nil
+		}
+		if msg.err != nil {
+			logger.Error("candidate generation failed", "error", msg.err)
+			m.err = msg.err
+			m.state = stateDone
+			m.reachedDone = true
+			return m, outcomeHoldCmd()
 		}
 		m.candidates = msg.contents
+		m.candCurrent = 0
+		m.candTotal = 0
 		m.cursor = 0
 		// A single candidate skips the chooser.
 		if len(m.candidates) == 1 {
@@ -640,6 +770,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = msg.err
 		}
 		m.state = stateDone
+		m.reachedDone = true
+		return m, outcomeHoldCmd()
+
+	case outcomeHoldDoneMsg:
+		m.quitting = true
 		return m, tea.Quit
 
 	case copyDoneMsg:
@@ -647,7 +782,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case clipboardErrMsg:
-		m.err = msg.err
+		m.statusBanner = m.i18n.T("tui.status.clipboard_failed", msg.err)
 		m.state = stateConfirm
 		return m, nil
 	}
@@ -671,20 +806,32 @@ func (m tuiModel) View() string {
 			b.WriteString("\n")
 			b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.streamView))
 			b.WriteString("\n")
+			b.WriteString(styleHint.Render(m.i18n.T("tui.hint.esc_cancel")))
+			b.WriteString("\n")
 			inner = b.String()
 		} else {
-			inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.i18n.T("tui.hint.generating"))
+			total := m.candTotal
+			if total <= 0 && m.count > 1 {
+				total = m.count
+			}
+			current := m.candCurrent
+			if current <= 0 && total > 1 {
+				current = 1
+			}
+			inner = formatGenProgress(m.i18n, m.spinner.View(), current, total)
+			inner += styleHint.Render(m.i18n.T("tui.hint.esc_cancel")) + "\n"
 		}
 
 	case stateCommitting:
 		inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.i18n.T("tui.hint.committing"))
 
 	case stateConfirm:
+		status := statusLine(m.i18n, m.statusBanner)
 		if m.needsScroll && m.viewportReady {
 			// Content overflows → viewport (content already set in Update via refreshViewport).
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(m.i18n, pct, m.viewport.AtTop(), m.viewport.AtBottom())
-			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
+			inner = status + m.viewport.View() + "\n" + styleHint.Render(hint) + "\n" + styleHint.Render(actionFooter(m.i18n))
 		} else {
 			// Content fits — use cached content built in Update (zero allocations here).
 			if m.cachedContent == "" {
@@ -693,7 +840,7 @@ func (m tuiModel) View() string {
 			} else {
 				inner = m.cachedContent
 			}
-			inner += "\n" + styleHint.Render(m.i18n.T("tui.hint.copy"))
+			inner = status + inner + "\n" + styleHint.Render(actionFooter(m.i18n))
 		}
 
 	case stateEditing:
@@ -714,20 +861,23 @@ func (m tuiModel) View() string {
 
 	case stateChoose:
 		var b strings.Builder
+		b.WriteString(statusLine(m.i18n, m.statusBanner))
 		b.WriteString("\n")
 		b.WriteString(styleMsgTitle.Render(m.i18n.T("tui.title.choose")))
 		b.WriteString("\n")
 		barStr := styleBar.Render("┃")
 		for i, c := range m.candidates {
-			line := strings.SplitN(c, "\n", 2)[0] // show first line of each candidate
+			preview := candidatePreview(c, 2)
 			if m.cursor == i {
-				b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(line)))
+				b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(preview)))
 			} else {
-				b.WriteString(fmt.Sprintf("%s   %s\n", barStr, line))
+				b.WriteString(fmt.Sprintf("%s   %s\n", barStr, preview))
 			}
 		}
 		b.WriteString("\n")
 		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.choose_nav")))
+		b.WriteString("\n")
+		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.esc_cancel")))
 		b.WriteString("\n")
 		inner = b.String()
 
@@ -743,6 +893,7 @@ func (m tuiModel) View() string {
 
 	case stateValidationFailed:
 		var b strings.Builder
+		b.WriteString(statusLine(m.i18n, m.statusBanner))
 		b.WriteString("\n")
 		b.WriteString(styleReviewError.Render(m.i18n.T("tui.title.validation_failed")))
 		b.WriteString("\n\n")
@@ -774,6 +925,8 @@ func (m tuiModel) View() string {
 		}
 		b.WriteString("\n")
 		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.validation_keys")))
+		b.WriteString("\n")
+		b.WriteString(styleHint.Render(actionFooter(m.i18n)))
 		inner = b.String()
 	}
 

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -142,6 +143,7 @@ const (
 	reviewStateQuickDone
 	reviewStateDone
 	reviewStateCopied
+	reviewStateRegenHint
 )
 
 const (
@@ -163,12 +165,16 @@ type reviewModel struct {
 	viewport      viewport.Model
 	viewportReady bool
 	needsScroll   bool
+	hintInput     textinput.Model
 
 	report          string
 	cachedContent   string
 	cursor          int
+	regenHint       string
 	err             error
+	statusBanner    string
 	quitting        bool
+	reachedDone     bool // true when a terminal outcome was shown (durable line after alt-screen)
 	switchToSuggest bool // true when user selects "Suggest commit message" from review
 	isQuickMode     bool // true when current report is from quick review
 
@@ -177,12 +183,17 @@ type reviewModel struct {
 	// prompt template is honored; when nil the built-in default is used.
 	fullReviewSystem *vscodeprompt.VSCodeMessage
 
+	genCtx    context.Context
+	genCancel context.CancelFunc
+	genID     uint64
+
 	tr *i18n.Translator
 }
 
 type reviewResultMsg struct {
 	content string
 	err     error
+	genID   uint64
 }
 
 // reviewCopyDoneMsg is sent after clipboard copy feedback expires.
@@ -196,9 +207,17 @@ func newReviewModel(ctx context.Context, provider ai.Provider, msgs []vscodeprom
 
 	vp := newDefaultViewport(80, 20)
 
+	hi := textinput.New()
+	hi.Placeholder = tr.T("tui.placeholder.regen_hint")
+
+	genCtx, genCancel := context.WithCancel(ctx)
+
 	return reviewModel{
 		state:         reviewStateAnalyzing,
 		runCtx:        ctx,
+		genCtx:        genCtx,
+		genCancel:     genCancel,
+		genID:         1,
 		provider:      provider,
 		initialMsgs:   msgs,
 		temp:          temp,
@@ -206,6 +225,7 @@ func newReviewModel(ctx context.Context, provider ai.Provider, msgs []vscodeprom
 		spinner:       s,
 		viewport:      vp,
 		viewportReady: true,
+		hintInput:     hi,
 		width:         80,
 		height:        24,
 		isQuickMode:   quickMode,
@@ -217,25 +237,56 @@ func (m reviewModel) Init() tea.Cmd {
 	return tea.Batch(m.spinner.Tick, m.generateReviewCmd())
 }
 
-func (m reviewModel) generateReviewCmd() tea.Cmd {
-	return func() tea.Msg {
-		currentMsgs := make([]vscodeprompt.VSCodeMessage, len(m.initialMsgs))
-		copy(currentMsgs, m.initialMsgs)
+func (m reviewModel) genCtxOrRun() context.Context {
+	if m.genCtx != nil {
+		return m.genCtx
+	}
+	return m.runCtx
+}
 
-		ctx, cancel := context.WithTimeout(m.runCtx, m.timeout)
+func (m reviewModel) beginGeneration() reviewModel {
+	if m.genCancel != nil {
+		m.genCancel()
+	}
+	m.genID++
+	m.genCtx, m.genCancel = context.WithCancel(m.runCtx)
+	m.statusBanner = ""
+	m.err = nil
+	return m
+}
+
+func (m reviewModel) stopGeneration() reviewModel {
+	if m.genCancel != nil {
+		m.genCancel()
+		m.genCancel = nil
+	}
+	m.genID++
+	m.genCtx = nil
+	return m
+}
+
+func (m reviewModel) generateReviewCmd() tea.Cmd {
+	id := m.genID
+	ctxBase := m.genCtxOrRun()
+	msgs := appendGuidanceMessage(m.initialMsgs, m.tr, m.regenHint)
+	temp := m.temp
+	timeout := m.timeout
+	provider := m.provider
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(ctxBase, timeout)
 		defer cancel()
 
-		raw, err := m.provider.Generate(ctx, currentMsgs, clampTemperature(m.temp))
+		raw, err := provider.Generate(ctx, msgs, clampTemperature(temp))
 		if err != nil {
 			logger.Error("failed to generate review", "error", err)
-			return reviewResultMsg{err: err}
+			return reviewResultMsg{err: err, genID: id}
 		}
 
 		report, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
 		if !ok {
 			report = raw
 		}
-		return reviewResultMsg{content: report}
+		return reviewResultMsg{content: report, genID: id}
 	}
 }
 
@@ -245,6 +296,13 @@ func (m reviewModel) innerWidth() int {
 
 func (m reviewModel) innerHeight() int {
 	return calcInnerHeight(m.height)
+}
+
+func (m reviewModel) reviewActionCount() int {
+	if m.isQuickMode {
+		return 4
+	}
+	return 3
 }
 
 func (m reviewModel) buildDoneContent() string {
@@ -271,8 +329,10 @@ func (m reviewModel) buildDoneContent() string {
 
 	var options []string
 	if m.isQuickMode {
+		// Stable order: View Details / Suggest / Regenerate / Exit
 		options = []string{m.tr.T("tui.action.view_details"), m.tr.T("tui.action.suggest_commit"), m.tr.T("tui.action.regenerate"), m.tr.T("tui.action.exit")}
 	} else {
+		// Stable order: Suggest / Regenerate / Exit
 		options = []string{m.tr.T("tui.action.suggest_commit"), m.tr.T("tui.action.regenerate"), m.tr.T("tui.action.exit")}
 	}
 	barStr := styleBar.Render("┃")
@@ -303,6 +363,62 @@ func (m reviewModel) refreshViewport() reviewModel {
 	return m
 }
 
+func (m reviewModel) enterRegenHint() (reviewModel, tea.Cmd) {
+	m.state = reviewStateRegenHint
+	m.hintInput.SetValue("")
+	m.hintInput.Focus()
+	return m, textinput.Blink
+}
+
+func (m reviewModel) activateReviewAction(act int) (reviewModel, tea.Cmd) {
+	if m.isQuickMode {
+		switch act {
+		case 0: // View Details → full review
+			m.isQuickMode = false
+			m = m.beginGeneration()
+			m.state = reviewStateAnalyzing
+			m.report = ""
+			m.cachedContent = ""
+			fullSystem := vscodeprompt.VSCodeMessage{
+				Role: vscodeprompt.RoleSystem,
+				Content: []vscodeprompt.VSCodeContentPart{
+					{Type: 1, Text: vscodeprompt.DefaultFullReviewPromptTemplate()},
+				},
+			}
+			if m.fullReviewSystem != nil {
+				fullSystem = *m.fullReviewSystem
+			}
+			if len(m.initialMsgs) >= 2 {
+				m.initialMsgs[0] = fullSystem
+			}
+			m.regenHint = ""
+			return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
+		case 1: // Suggest commit message
+			m.switchToSuggest = true
+			m.quitting = true
+			return m, tea.Quit
+		case 2: // Regenerate
+			return m.enterRegenHint()
+		case 3: // Exit
+			m.quitting = true
+			return m, tea.Quit
+		}
+	} else {
+		switch act {
+		case 0: // Suggest commit message
+			m.switchToSuggest = true
+			m.quitting = true
+			return m, tea.Quit
+		case 1: // Regenerate
+			return m.enterRegenHint()
+		case 2: // Exit
+			m.quitting = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
 func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -313,80 +429,50 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		switch m.state {
-		case reviewStateQuickDone:
-			switch msg.String() {
-			case "y", "Y":
+		case reviewStateAnalyzing:
+			if msg.String() == "esc" {
+				m = m.stopGeneration()
 				if m.report != "" {
-					// Copy plain report text to clipboard
-					if cmd := clipboardCopyCmd(m.report, reviewCopyDoneMsg{}); cmd != nil {
-						m.state = reviewStateCopied
-						return m, cmd
+					if m.isQuickMode {
+						m.state = reviewStateQuickDone
+					} else {
+						m.state = reviewStateDone
 					}
-				}
-			case "up", "k":
-				if m.cursor > 0 {
-					m.cursor--
 					m = m.refreshViewport()
+					return m, nil
 				}
-			case "down", "j":
-				// Quick done has 4 options
-				if m.cursor < 3 {
-					m.cursor++
-					m = m.refreshViewport()
-				}
-			case "pgup":
-				if m.needsScroll {
-					m.viewport.HalfViewUp()
-				}
-			case "pgdown":
-				if m.needsScroll {
-					m.viewport.HalfViewDown()
-				}
-			case "enter":
-				switch m.cursor {
-				case 0: // View Details → full review
-					m.isQuickMode = false
-					m.state = reviewStateAnalyzing
-					m.report = ""
-					m.cachedContent = ""
-					// Rebuild messages: keep user message (contains diff data), replace
-					// system with the full-review prompt. Prefer the pre-built system
-					// message (which honors a custom prompt template) and fall back to
-					// the built-in default when none was provided.
-					fullSystem := vscodeprompt.VSCodeMessage{
-						Role: vscodeprompt.RoleSystem,
-						Content: []vscodeprompt.VSCodeContentPart{
-							{Type: 1, Text: vscodeprompt.DefaultFullReviewPromptTemplate()},
-						},
-					}
-					if m.fullReviewSystem != nil {
-						fullSystem = *m.fullReviewSystem
-					}
-					if len(m.initialMsgs) >= 2 {
-						m.initialMsgs[0] = fullSystem
-					}
-					return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
-				case 1: // Suggest commit message
-					m.switchToSuggest = true
-					m.quitting = true
-					return m, tea.Quit
-				case 2: // Regenerate (quick review again)
-					m.state = reviewStateAnalyzing
-					m.report = ""
-					m.cachedContent = ""
-					m.isQuickMode = true
-					return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
-				case 3: // Exit
-					m.quitting = true
-					return m, tea.Quit
-				}
+				m.quitting = true
+				return m, tea.Quit
 			}
-		case reviewStateDone:
+
+		case reviewStateRegenHint:
+			switch msg.String() {
+			case "esc":
+				if m.isQuickMode {
+					m.state = reviewStateQuickDone
+				} else {
+					m.state = reviewStateDone
+				}
+				m = m.refreshViewport()
+				return m, nil
+			case "enter":
+				m.regenHint = strings.TrimSpace(m.hintInput.Value())
+				m = m.beginGeneration()
+				m.state = reviewStateAnalyzing
+				m.report = ""
+				m.cachedContent = ""
+				return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
+			}
+			var cmd tea.Cmd
+			m.hintInput, cmd = m.hintInput.Update(msg)
+			return m, cmd
+
+		case reviewStateQuickDone, reviewStateDone:
 			switch msg.String() {
 			case "y", "Y":
 				if m.report != "" {
-					// Copy plain report text to clipboard
 					if cmd := clipboardCopyCmd(m.report, reviewCopyDoneMsg{}); cmd != nil {
+						m.statusBanner = ""
 						m.state = reviewStateCopied
 						return m, cmd
 					}
@@ -397,8 +483,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m = m.refreshViewport()
 				}
 			case "down", "j":
-				// Full done has 3 options
-				if m.cursor < 2 {
+				if m.cursor < m.reviewActionCount()-1 {
 					m.cursor++
 					m = m.refreshViewport()
 				}
@@ -410,21 +495,14 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.needsScroll {
 					m.viewport.HalfViewDown()
 				}
-			case "enter":
-				switch m.cursor {
-				case 0: // Suggest commit message
-					m.switchToSuggest = true
-					m.quitting = true
-					return m, tea.Quit
-				case 1: // Regenerate
-					m.state = reviewStateAnalyzing
-					m.report = ""
-					m.cachedContent = ""
-					return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
-				case 2: // Exit
-					m.quitting = true
-					return m, tea.Quit
+			case "1", "2", "3", "4":
+				idx := int(msg.String()[0] - '1')
+				if idx >= 0 && idx < m.reviewActionCount() {
+					m.cursor = idx
+					return m.activateReviewAction(idx)
 				}
+			case "enter":
+				return m.activateReviewAction(m.cursor)
 			}
 		}
 
@@ -462,11 +540,15 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case reviewResultMsg:
+		if msg.genID != 0 && msg.genID != m.genID {
+			return m, nil
+		}
 		if msg.err != nil {
 			logger.Error("review generation failed", "error", msg.err)
 			m.err = msg.err
 			m.state = reviewStateDone
-			return m, tea.Quit
+			m.reachedDone = true
+			return m, outcomeHoldCmd()
 		}
 		m.report = msg.content
 		if m.isQuickMode {
@@ -479,6 +561,10 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m = m.refreshViewport()
 		return m, nil
 
+	case outcomeHoldDoneMsg:
+		m.quitting = true
+		return m, tea.Quit
+
 	case reviewCopyDoneMsg:
 		if m.isQuickMode {
 			m.state = reviewStateQuickDone
@@ -488,7 +574,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case clipboardErrMsg:
-		m.err = msg.err
+		m.statusBanner = m.tr.T("tui.status.clipboard_failed", msg.err)
 		if m.isQuickMode {
 			m.state = reviewStateQuickDone
 		} else {
@@ -510,6 +596,15 @@ func (m reviewModel) View() string {
 	switch m.state {
 	case reviewStateAnalyzing:
 		inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.tr.T("tui.hint.analyzing"))
+		inner += styleHint.Render(m.tr.T("tui.hint.esc_cancel")) + "\n"
+
+	case reviewStateRegenHint:
+		var b strings.Builder
+		b.WriteString(styleEditTitle.Render(m.tr.T("tui.title.regen_hint")))
+		b.WriteString("\n")
+		b.WriteString(m.hintInput.View())
+		b.WriteString("\n\n " + m.tr.T("tui.hint.regen_instructions") + "\n")
+		inner = b.String()
 
 	case reviewStateDone:
 		if m.err != nil {
@@ -517,11 +612,11 @@ func (m reviewModel) View() string {
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(m.tr, pct, m.viewport.AtTop(), m.viewport.AtBottom())
-			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
+			inner = statusLine(m.tr, m.statusBanner) + m.viewport.View() + "\n" + styleHint.Render(hint) + "\n" + styleHint.Render(actionFooter(m.tr))
 		} else if m.cachedContent != "" {
-			inner = m.cachedContent
+			inner = statusLine(m.tr, m.statusBanner) + m.cachedContent + "\n" + styleHint.Render(actionFooter(m.tr))
 		} else {
-			inner = m.buildDoneContent()
+			inner = statusLine(m.tr, m.statusBanner) + m.buildDoneContent() + "\n" + styleHint.Render(actionFooter(m.tr))
 		}
 
 	case reviewStateQuickDone:
@@ -530,11 +625,11 @@ func (m reviewModel) View() string {
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(m.tr, pct, m.viewport.AtTop(), m.viewport.AtBottom())
-			inner = m.viewport.View() + "\n" + styleHint.Render(hint)
+			inner = statusLine(m.tr, m.statusBanner) + m.viewport.View() + "\n" + styleHint.Render(hint) + "\n" + styleHint.Render(actionFooter(m.tr))
 		} else if m.cachedContent != "" {
-			inner = m.cachedContent
+			inner = statusLine(m.tr, m.statusBanner) + m.cachedContent + "\n" + styleHint.Render(actionFooter(m.tr))
 		} else {
-			inner = m.buildDoneContent()
+			inner = statusLine(m.tr, m.statusBanner) + m.buildDoneContent() + "\n" + styleHint.Render(actionFooter(m.tr))
 		}
 
 	case reviewStateCopied:
