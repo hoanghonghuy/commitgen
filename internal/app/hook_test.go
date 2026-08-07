@@ -76,3 +76,38 @@ func TestInstallAndUninstallHook(t *testing.T) {
 		t.Errorf("UninstallHook on absent hook should not error: %v", err)
 	}
 }
+
+func TestInstallAndUninstallMsgHook(t *testing.T) {
+	ctx := context.Background()
+	dir := initRepo(t)
+	tr := i18n.New(i18n.LocaleEN)
+
+	if err := InstallMsgHook(ctx, dir, "", tr); err != nil {
+		t.Fatalf("InstallMsgHook error: %v", err)
+	}
+	hookPath := filepath.Join(dir, ".git", "hooks", "commit-msg")
+	b, err := os.ReadFile(hookPath)
+	if err != nil {
+		t.Fatalf("commit-msg hook file not created: %v", err)
+	}
+	script := string(b)
+	for _, want := range []string{"validate-msg", "--repo", "--file", "COMMIT_MSG_FILE"} {
+		if !strings.Contains(script, want) {
+			t.Errorf("commit-msg hook missing %q:\n%s", want, script)
+		}
+	}
+
+	if err := InstallMsgHook(ctx, dir, "", tr); err != nil {
+		t.Errorf("InstallMsgHook over existing hook should back up, not error: %v", err)
+	}
+	if _, err := os.Stat(hookPath + ".bak"); err != nil {
+		t.Errorf("expected backup commit-msg hook at %s.bak: %v", hookPath, err)
+	}
+
+	if err := UninstallMsgHook(ctx, dir, tr); err != nil {
+		t.Fatalf("UninstallMsgHook error: %v", err)
+	}
+	if _, err := os.Stat(hookPath + ".bak"); err == nil {
+		t.Error("backup should be consumed after commit-msg restore")
+	}
+}

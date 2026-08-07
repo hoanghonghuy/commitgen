@@ -83,6 +83,52 @@ func InstallHook(ctx context.Context, repoArg string, _ bool, configPath string,
 	return nil
 }
 
+// InstallMsgHook installs a commit-msg hook that validates the final commit message.
+func InstallMsgHook(ctx context.Context, repoArg string, configPath string, tr *i18n.Translator) error {
+	repoRoot, err := gitx.ResolveRepoRoot(ctx, repoArg)
+	if err != nil {
+		return err
+	}
+	hooksDir, err := resolveHooksDir(ctx, repoArg)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(hooksDir, 0755); err != nil {
+		return fmt.Errorf("create hooks dir: %w", err)
+	}
+
+	hookPath := filepath.Join(hooksDir, "commit-msg")
+	if _, err := os.Stat(hookPath); err == nil {
+		backupPath := hookPath + ".bak"
+		if err := os.Rename(hookPath, backupPath); err != nil {
+			return fmt.Errorf("back up existing hook %s: %w", hookPath, err)
+		}
+		fmt.Println(tr.T("hook.backed_up", backupPath))
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		exe = "commitgen"
+	} else {
+		exe, _ = filepath.Abs(exe)
+	}
+
+	configArg := ""
+	if strings.TrimSpace(configPath) != "" {
+		if abs, absErr := filepath.Abs(configPath); absErr == nil {
+			configPath = abs
+		}
+		configArg = fmt.Sprintf(" --config \"%s\"", configPath)
+	}
+
+	script := buildMsgHookScript(exe, configArg, repoRoot, tr.T("hook.failed"))
+	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
+		return fmt.Errorf("write hook file: %w", err)
+	}
+	fmt.Println(tr.T("hook.installed", hookPath))
+	return nil
+}
+
 // buildHookScript returns the prepare-commit-msg shell script. It always uses
 // --print so the hook never launches the TUI inside git.
 func buildHookScript(exe, configArg, analyzingMsg, failedMsg string) string {
@@ -108,15 +154,43 @@ fi
 `, analyzingMsg, exe, configArg, failedMsg)
 }
 
+func buildMsgHookScript(exe, configArg, repoRoot, failedMsg string) string {
+	return fmt.Sprintf(`#!/bin/sh
+# commitgen commit-msg hook
+# This hook validates the final commit message.
+
+COMMIT_MSG_FILE=$1
+
+if [ -z "$COMMIT_MSG_FILE" ]; then
+	echo "commitgen: missing commit message file" >&2
+	exit 1
+fi
+
+if ! "%s"%s validate-msg --repo "%s" --file "$COMMIT_MSG_FILE"; then
+	echo "%s" >&2
+	exit 1
+fi
+`, exe, configArg, repoRoot, failedMsg)
+}
+
 // UninstallHook removes the prepare-commit-msg hook. When a .bak file exists
 // (from a prior install), it is restored as the active hook.
 func UninstallHook(ctx context.Context, repoArg string, tr *i18n.Translator) error {
+	return uninstallHookFile(ctx, repoArg, "prepare-commit-msg", tr)
+}
+
+// UninstallMsgHook removes the commit-msg validation hook.
+func UninstallMsgHook(ctx context.Context, repoArg string, tr *i18n.Translator) error {
+	return uninstallHookFile(ctx, repoArg, "commit-msg", tr)
+}
+
+func uninstallHookFile(ctx context.Context, repoArg, name string, tr *i18n.Translator) error {
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
 	if err != nil {
 		return err
 	}
 
-	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
+	hookPath := filepath.Join(hooksDir, name)
 	backupPath := hookPath + ".bak"
 
 	if _, err := os.Stat(hookPath); os.IsNotExist(err) {

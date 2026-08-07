@@ -27,7 +27,7 @@ var (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | validate-msg | version)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | install-msg-hook | uninstall-msg-hook | ping | models | style | validate-msg | version)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
@@ -216,7 +216,7 @@ func resolveCommand(cmdFlag string, args []string) string {
 	cmd := cmdFlag
 	if len(args) > 0 {
 		switch args[0] {
-		case "suggest", "review", "pr", "dump-prompt", "config", "install-hook", "uninstall-hook",
+		case "suggest", "review", "pr", "dump-prompt", "config", "install-hook", "uninstall-hook", "install-msg-hook", "uninstall-msg-hook",
 			"version", "ping", "models", "style", "validate-msg":
 			cmd = args[0]
 		}

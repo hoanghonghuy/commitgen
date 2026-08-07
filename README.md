@@ -18,7 +18,7 @@
 - **Team Style Learning**: Infers common commit types, scopes, emoji style, ticket references, and subject length from recent commits.
 - **Git Commit Templates**: Detects configured `commit.template` files and guides AI output to match them.
 - **Code Review TUI**: Quick scan and full review of staged changes (`commitgen review`).
-- **Git Hook**: Install a `prepare-commit-msg` hook (`commitgen install-hook`) — always headless, writes the message via `--print`.
+- **Git Hooks**: Install a `prepare-commit-msg` generator hook (`commitgen install-hook`) or `commit-msg` validation hook (`commitgen install-msg-hook`).
 - **Non-interactive Mode**: `--print` / `--dry-run` for scripts and CI.
 - **Multi-candidate**: Generate several message options (`--count N`) and pick in the TUI.
 - **Streaming**: Token-by-token display in the TUI for single-message generation (`--count 1`, all streaming-capable providers).
@@ -40,7 +40,9 @@
 | `commitgen config show` | Print saved config (secrets masked) |
 | `commitgen config path` | Print config file path |
 | `commitgen install-hook` | Install `prepare-commit-msg` hook |
-| `commitgen uninstall-hook` | Remove hook (restores `.bak` if present) |
+| `commitgen uninstall-hook` | Remove `prepare-commit-msg` hook (restores `.bak` if present) |
+| `commitgen install-msg-hook` | Install `commit-msg` validation hook |
+| `commitgen uninstall-msg-hook` | Remove `commit-msg` validation hook (restores `.bak` if present) |
 | `commitgen ping` | Test provider connectivity |
 | `commitgen models` | List models (OpenAI-compatible / Ollama) |
 | `commitgen style` | Print learned commit style from recent history (`--json` for scripts) |

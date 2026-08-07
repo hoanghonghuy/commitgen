@@ -45,6 +45,8 @@ func TestResolveCommand(t *testing.T) {
 		{"positional validate-msg", "suggest", []string{"validate-msg"}, "validate-msg"},
 		{"unrecognized positional ignored", "suggest", []string{"frobnicate"}, "suggest"},
 		{"install-hook positional", "suggest", []string{"install-hook"}, "install-hook"},
+		{"install-msg-hook positional", "suggest", []string{"install-msg-hook"}, "install-msg-hook"},
+		{"uninstall-msg-hook positional", "suggest", []string{"uninstall-msg-hook"}, "uninstall-msg-hook"},
 		{"flag default kept", "dump-prompt", []string{}, "dump-prompt"},
 	}
 	for _, tt := range tests {

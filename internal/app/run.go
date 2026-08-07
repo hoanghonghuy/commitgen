@@ -108,6 +108,12 @@ func Run(ctx context.Context, cfg Config) error {
 	if cfg.Command == "uninstall-hook" {
 		return UninstallHook(ctx, cfg.RepoArg, tr)
 	}
+	if cfg.Command == "install-msg-hook" {
+		return InstallMsgHook(ctx, cfg.RepoArg, cfg.ConfigPath, tr)
+	}
+	if cfg.Command == "uninstall-msg-hook" {
+		return UninstallMsgHook(ctx, cfg.RepoArg, tr)
+	}
 	if cfg.Command == "ping" {
 		return runPing(ctx, cfg, tr)
 	}
@@ -246,7 +252,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | validate-msg | version)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | install-msg-hook | uninstall-msg-hook | ping | models | style | validate-msg | version)", cfg.Command)
 	}
 }
 

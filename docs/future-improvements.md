@@ -57,6 +57,10 @@ Fully implemented in `internal/i18n/`. 130 translation keys across 4 locales (en
 
 Fully implemented in `internal/validator/`. 5 rules: `SubjectLengthRule`, `BodyLineLengthRule`, `RequiredFootersRule`, `ProhibitedWordsRule`, `RequiredPatternsRule`. Auto-fix for subject-length and prohibited-words. TUI shows `stateValidationFailed` with 4 actions (Auto-fix, Edit, Ignore warnings, Cancel). `--print`/hook path rejects error-level violations via `ValidationFailedError`. Opt-in via `.commitgen-rules.json` (auto-discovered) or `rules_file` config.
 
+### Commit-msg Validation Hook
+
+Implemented via `commitgen validate-msg --file`, `commitgen install-msg-hook`, and `commitgen uninstall-msg-hook`. The hook validates the final commit message with configured rules and restores `.bak` backups on uninstall.
+
 ---
 
 ## Future Proposals (remaining)
@@ -181,7 +185,7 @@ Actions:
 ### 4. Git Hook Enhancements
 
 #### Problem
-Current hook is simple prepare-commit-msg. More advanced hooks could provide better workflow integration.
+Current hook support covers prepare-commit-msg generation and commit-msg validation. Remaining advanced hooks could provide broader workflow integration.
 
 #### Proposed Solutions
 
@@ -198,23 +202,7 @@ commitgen lint --fix
 commitgen validate-scope
 ```
 
-**B. Commit-msg hook with validation:**
-
-```bash
-#!/bin/sh
-# .git/hooks/commit-msg
-
-# Validate message format
-commitgen validate-msg --file "$1"
-
-# Suggest improvements
-if [ $? -ne 0 ]; then
-    commitgen suggest-improvements --file "$1"
-fi
-```
-
-
-**C. Post-commit analysis:**
+**B. Post-commit analysis:**
 
 ```bash
 #!/bin/sh
@@ -233,11 +221,11 @@ commitgen learn-style --update
 # Install all recommended hooks
 commitgen hooks install --all
 
-# Install specific hooks
-commitgen hooks install --pre-commit --commit-msg
+# Install commit-msg validation hook
+commitgen install-msg-hook
 
-# Uninstall hooks
-commitgen hooks uninstall
+# Uninstall commit-msg validation hook
+commitgen uninstall-msg-hook
 ```
 
 ---
