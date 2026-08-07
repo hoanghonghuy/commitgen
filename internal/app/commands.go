@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -246,6 +247,38 @@ func runStyle(ctx context.Context, repoRoot string, recentN int, jsonOutput bool
 		return nil
 	}
 	fmt.Println(guidance)
+	return nil
+}
+
+// runValidateMsg validates an existing commit message file for commit-msg hooks and CI.
+func runValidateMsg(cfg Config, repoRoot string, tr *i18n.Translator) error {
+	msgFile := strings.TrimSpace(cfg.MessageFile)
+	if msgFile == "" {
+		return fmt.Errorf("--file is required for validate-msg")
+	}
+	if !filepath.IsAbs(msgFile) {
+		msgFile = filepath.Join(repoRoot, msgFile)
+	}
+	b, err := os.ReadFile(msgFile)
+	if err != nil {
+		return fmt.Errorf("read commit message file: %w", err)
+	}
+	v := resolveValidator(cfg, repoRoot, tr)
+	if v == nil || !v.Enabled() {
+		fmt.Println("No validation rules configured.")
+		return nil
+	}
+	issues := v.Validate(string(b))
+	if len(issues) == 0 {
+		fmt.Println("Commit message OK.")
+		return nil
+	}
+	for _, issue := range issues {
+		fmt.Printf("[%s] %s line=%d column=%d rule=%s\n", issue.Level, issue.Message, issue.Line, issue.Column, issue.Rule)
+	}
+	if validator.HasErrors(issues) {
+		return &ValidationFailedError{Issues: issues}
+	}
 	return nil
 }
 

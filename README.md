@@ -44,6 +44,7 @@
 | `commitgen ping` | Test provider connectivity |
 | `commitgen models` | List models (OpenAI-compatible / Ollama) |
 | `commitgen style` | Print learned commit style from recent history (`--json` for scripts) |
+| `commitgen validate-msg --file MSG` | Validate an existing commit message file for hooks/CI |
 | `commitgen dump-prompt` | Export the AI prompt as JSON (debug) |
 
 Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--locale`, `--repo`, `--config`, `--base` (for `pr`).

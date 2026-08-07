@@ -89,6 +89,45 @@ func TestRunStyle_PrintsJSON(t *testing.T) {
 	}
 }
 
+func TestRunValidateMsg_OKAndError(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, ".commitgen-rules.json", `{"rules":{"subject-length":{"enabled":true,"max":10}}}`)
+	writeFile(t, dir, "MSG_OK", "feat: x\n")
+
+	okOut := captureStdout(t, func() {
+		if err := runValidateMsg(Config{MessageFile: "MSG_OK"}, dir, i18n.New(i18n.LocaleEN)); err != nil {
+			t.Errorf("runValidateMsg OK error: %v", err)
+		}
+	})
+	if !strings.Contains(okOut, "Commit message OK") {
+		t.Errorf("expected OK output, got %q", okOut)
+	}
+
+	writeFile(t, dir, "MSG_BAD", "feat: this subject is too long\n")
+	badOut := captureStdout(t, func() {
+		err := runValidateMsg(Config{MessageFile: "MSG_BAD"}, dir, i18n.New(i18n.LocaleEN))
+		if err == nil {
+			t.Error("expected validation error")
+		}
+	})
+	if !strings.Contains(badOut, "[error]") || !strings.Contains(badOut, "subject-length") {
+		t.Errorf("expected issue output, got %q", badOut)
+	}
+}
+
+func TestRunValidateMsg_NoRules(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "MSG", "whatever\n")
+	out := captureStdout(t, func() {
+		if err := runValidateMsg(Config{MessageFile: "MSG"}, dir, i18n.New(i18n.LocaleEN)); err != nil {
+			t.Errorf("runValidateMsg error: %v", err)
+		}
+	})
+	if !strings.Contains(out, "No validation rules configured") {
+		t.Errorf("expected no-rules output, got %q", out)
+	}
+}
+
 func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
 	hookFile := filepath.Join(t.TempDir(), "MSG")
 	cfg := Config{DryRun: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}

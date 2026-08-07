@@ -27,7 +27,7 @@ var (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | version)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | validate-msg | version)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
@@ -61,6 +61,7 @@ func main() {
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	localeFlag := flag.String("locale", "", "UI language (en, vi, ja, zh, auto). Default: en")
 	jsonFlag := flag.Bool("json", false, "Print JSON output for supported commands")
+	fileFlag := flag.String("file", "", "Input file for commands that read a file (for example validate-msg)")
 
 	flag.Parse()
 
@@ -129,7 +130,7 @@ func main() {
 
 	cfg := app.Config{
 		Command:  cmd,
-		RepoArg:  *repoFlag,
+		RepoArg:  config.ResolveString(*repoFlag, argValue(flag.Args(), "--repo"), "", ""),
 		BaseURL:  baseURL,
 		APIKey:   apiKey,
 		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModel),
@@ -153,6 +154,7 @@ func main() {
 		Locale:             string(locale),
 		RulesFile:          fileCfg.RulesFile,
 		StyleJSON:          *jsonFlag || hasArg(flag.Args(), "--json"),
+		MessageFile:        config.ResolveString(*fileFlag, argValue(flag.Args(), "--file"), "", ""),
 		PromptTemplateFile: fileCfg.PromptTemplateFile,
 		TimeoutSeconds:     fileCfg.Timeout,
 		IgnoredFiles:       fileCfg.IgnoredFiles,
@@ -215,11 +217,23 @@ func resolveCommand(cmdFlag string, args []string) string {
 	if len(args) > 0 {
 		switch args[0] {
 		case "suggest", "review", "pr", "dump-prompt", "config", "install-hook", "uninstall-hook",
-			"version", "ping", "models", "style":
+			"version", "ping", "models", "style", "validate-msg":
 			cmd = args[0]
 		}
 	}
 	return cmd
+}
+
+func argValue(args []string, name string) string {
+	for i, arg := range args {
+		if arg == name && i+1 < len(args) {
+			return args[i+1]
+		}
+		if strings.HasPrefix(arg, name+"=") {
+			return strings.TrimPrefix(arg, name+"=")
+		}
+	}
+	return ""
 }
 
 func hasArg(args []string, target string) bool {

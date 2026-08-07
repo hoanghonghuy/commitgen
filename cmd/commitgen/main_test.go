@@ -42,6 +42,7 @@ func TestResolveCommand(t *testing.T) {
 		{"positional config", "suggest", []string{"config"}, "config"},
 		{"positional pr", "suggest", []string{"pr"}, "pr"},
 		{"positional style", "suggest", []string{"style"}, "style"},
+		{"positional validate-msg", "suggest", []string{"validate-msg"}, "validate-msg"},
 		{"unrecognized positional ignored", "suggest", []string{"frobnicate"}, "suggest"},
 		{"install-hook positional", "suggest", []string{"install-hook"}, "install-hook"},
 		{"flag default kept", "dump-prompt", []string{}, "dump-prompt"},
@@ -61,6 +62,21 @@ func TestHasArg(t *testing.T) {
 	}
 	if hasArg([]string{"style"}, "--json") {
 		t.Error("did not expect --json to be detected")
+	}
+}
+
+func TestArgValue(t *testing.T) {
+	if got := argValue([]string{"validate-msg", "--file", "MSG"}, "--file"); got != "MSG" {
+		t.Errorf("argValue space form=%q", got)
+	}
+	if got := argValue([]string{"validate-msg", "--repo", "/tmp/repo"}, "--repo"); got != "/tmp/repo" {
+		t.Errorf("argValue repo form=%q", got)
+	}
+	if got := argValue([]string{"validate-msg", "--file=MSG2"}, "--file"); got != "MSG2" {
+		t.Errorf("argValue equals form=%q", got)
+	}
+	if got := argValue([]string{"validate-msg"}, "--file"); got != "" {
+		t.Errorf("argValue missing=%q", got)
 	}
 }
 

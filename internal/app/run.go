@@ -74,6 +74,7 @@ type Config struct {
 	Locale         string // UI language (en, vi, ja, zh)
 	RulesFile      string // path to validation rules file (.commitgen-rules.json)
 	StyleJSON      bool   // style command: print machine-readable JSON
+	MessageFile    string // validate-msg command: commit message file path
 
 	// PR generation
 	BaseBranch string // target branch for merge-base (e.g. main); empty = auto-detect
@@ -120,6 +121,9 @@ func Run(ctx context.Context, cfg Config) error {
 	}
 	if cfg.Command == "style" {
 		return runStyle(ctx, repoRoot, cfg.RecentN, cfg.StyleJSON)
+	}
+	if cfg.Command == "validate-msg" {
+		return runValidateMsg(cfg, repoRoot, tr)
 	}
 
 	customInstructions := ""
@@ -242,7 +246,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | version)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | validate-msg | version)", cfg.Command)
 	}
 }
 
