@@ -107,6 +107,9 @@ func runeLen(s string) int {
 // AutoFix attempts to automatically fix all issues. It returns the fixed
 // message and whether any changes were made.
 func (v *Validator) AutoFix(msg string) (string, bool) {
+	if v == nil {
+		return msg, false
+	}
 	changed := false
 	current := msg
 	for _, r := range v.rules {

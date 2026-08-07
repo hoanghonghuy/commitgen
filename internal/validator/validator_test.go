@@ -16,6 +16,29 @@ func TestHasErrors(t *testing.T) {
 	}
 }
 
+func TestValidator_EnabledAndNilSafe(t *testing.T) {
+	var nilValidator *Validator
+	if nilValidator.Enabled() {
+		t.Error("nil validator should be disabled")
+	}
+	if issues := nilValidator.Validate("feat: x"); issues != nil {
+		t.Errorf("nil validator Validate=%v", issues)
+	}
+	if fixed, changed := nilValidator.AutoFix("feat: x"); fixed != "feat: x" || changed {
+		t.Errorf("nil validator AutoFix=(%q,%v)", fixed, changed)
+	}
+
+	empty := New(Config{})
+	if empty.Enabled() {
+		t.Error("validator without enabled rules should be disabled")
+	}
+
+	active := New(Config{Rules: map[string]RuleConfig{"subject-length": {Enabled: true, Max: 10}}})
+	if !active.Enabled() {
+		t.Error("validator with enabled rules should be enabled")
+	}
+}
+
 func TestSubjectLengthRule_UnicodeRunes(t *testing.T) {
 	r := SubjectLengthRule{MaxLength: 5}
 	// 5 Vietnamese characters — should pass (count runes, not bytes).
@@ -74,6 +97,9 @@ func TestBodyLineLengthRule_Validate(t *testing.T) {
 	if len(issues) == 0 {
 		t.Error("expected issues for long body line")
 	}
+	if fixed, ok := r.AutoFix(longBody); fixed != longBody || ok {
+		t.Errorf("body line AutoFix should be no-op, got (%q,%v)", fixed, ok)
+	}
 }
 
 func TestRequiredFootersRule_Validate(t *testing.T) {
@@ -87,6 +113,9 @@ func TestRequiredFootersRule_Validate(t *testing.T) {
 	issues = r.Validate("feat: test\n\nSigned-off-by: John Doe")
 	if len(issues) != 0 {
 		t.Errorf("expected no issues, got %d", len(issues))
+	}
+	if fixed, ok := r.AutoFix("feat: test"); fixed != "feat: test" || ok {
+		t.Errorf("required footer AutoFix should be no-op, got (%q,%v)", fixed, ok)
 	}
 }
 
@@ -124,6 +153,14 @@ func TestRequiredPatternsRule_Validate(t *testing.T) {
 	issues = r.Validate("added login feature")
 	if len(issues) == 0 {
 		t.Error("expected issues for non-conventional commit")
+	}
+	if fixed, ok := r.AutoFix("added login feature"); fixed != "added login feature" || ok {
+		t.Errorf("required pattern AutoFix should be no-op, got (%q,%v)", fixed, ok)
+	}
+
+	invalidPattern := RequiredPatternsRule{Patterns: []string{"["}}
+	if issues := invalidPattern.Validate("feat: still rejected"); len(issues) == 0 {
+		t.Error("invalid required pattern should be ignored and reject message")
 	}
 }
 
