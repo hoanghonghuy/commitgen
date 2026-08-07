@@ -603,7 +603,9 @@ func (m reviewModel) View() string {
 		b.WriteString(styleEditTitle.Render(m.tr.T("tui.title.regen_hint")))
 		b.WriteString("\n")
 		b.WriteString(m.hintInput.View())
-		b.WriteString("\n\n " + m.tr.T("tui.hint.regen_instructions") + "\n")
+		b.WriteString("\n\n ")
+		b.WriteString(m.tr.T("tui.hint.regen_instructions"))
+		b.WriteString("\n")
 		inner = b.String()
 
 	case reviewStateDone:
