@@ -73,6 +73,7 @@ type Config struct {
 	ReviewLanguage string
 	Locale         string // UI language (en, vi, ja, zh)
 	RulesFile      string // path to validation rules file (.commitgen-rules.json)
+	StyleJSON      bool   // style command: print machine-readable JSON
 
 	// PR generation
 	BaseBranch string // target branch for merge-base (e.g. main); empty = auto-detect
@@ -118,7 +119,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return logger.LogError(err, "failed to resolve repository root", "repo_arg", cfg.RepoArg)
 	}
 	if cfg.Command == "style" {
-		return runStyle(ctx, repoRoot, cfg.RecentN)
+		return runStyle(ctx, repoRoot, cfg.RecentN, cfg.StyleJSON)
 	}
 
 	customInstructions := ""

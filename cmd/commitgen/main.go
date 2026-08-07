@@ -60,6 +60,7 @@ func main() {
 	countFlag := flag.Int("count", 1, "Number of commit message candidates to generate")
 	versionFlag := flag.Bool("version", false, "Print version information and exit")
 	localeFlag := flag.String("locale", "", "UI language (en, vi, ja, zh, auto). Default: en")
+	jsonFlag := flag.Bool("json", false, "Print JSON output for supported commands")
 
 	flag.Parse()
 
@@ -151,6 +152,7 @@ func main() {
 		ReviewLanguage:     config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 		Locale:             string(locale),
 		RulesFile:          fileCfg.RulesFile,
+		StyleJSON:          *jsonFlag || hasArg(flag.Args(), "--json"),
 		PromptTemplateFile: fileCfg.PromptTemplateFile,
 		TimeoutSeconds:     fileCfg.Timeout,
 		IgnoredFiles:       fileCfg.IgnoredFiles,
@@ -218,6 +220,15 @@ func resolveCommand(cmdFlag string, args []string) string {
 		}
 	}
 	return cmd
+}
+
+func hasArg(args []string, target string) bool {
+	for _, arg := range args {
+		if arg == target {
+			return true
+		}
+	}
+	return false
 }
 
 // printVersion writes build information to stdout.

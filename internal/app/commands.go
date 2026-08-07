@@ -211,8 +211,15 @@ func printModels(names []string, tr *i18n.Translator) {
 	}
 }
 
+type styleOutput struct {
+	RecentN         int                  `json:"recent_n"`
+	CommitsAnalyzed int                  `json:"commits_analyzed"`
+	Guidance        string               `json:"guidance,omitempty"`
+	Style           analyzer.CommitStyle `json:"style"`
+}
+
 // runStyle prints learned commit style without requiring staged changes or provider credentials.
-func runStyle(ctx context.Context, repoRoot string, recentN int) error {
+func runStyle(ctx context.Context, repoRoot string, recentN int, jsonOutput bool) error {
 	recentN = clampNonNegative(recentN)
 	if recentN == 0 {
 		recentN = 5
@@ -221,7 +228,18 @@ func runStyle(ctx context.Context, repoRoot string, recentN int) error {
 	if err != nil {
 		return logger.LogError(err, "failed to read recent commits")
 	}
-	guidance := analyzer.AnalyzeCommitStyle(commits).Guidance()
+	style := analyzer.AnalyzeCommitStyle(commits)
+	guidance := style.Guidance()
+	if jsonOutput {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(styleOutput{
+			RecentN:         recentN,
+			CommitsAnalyzed: len(commits),
+			Guidance:        guidance,
+			Style:           style,
+		})
+	}
 	fmt.Printf("Repository commit style (last %d commits)\n", recentN)
 	if strings.TrimSpace(guidance) == "" {
 		fmt.Println("No recurring style detected from recent commits.")

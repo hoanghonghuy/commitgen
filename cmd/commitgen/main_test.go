@@ -55,6 +55,15 @@ func TestResolveCommand(t *testing.T) {
 	}
 }
 
+func TestHasArg(t *testing.T) {
+	if !hasArg([]string{"style", "--json"}, "--json") {
+		t.Error("expected --json to be detected")
+	}
+	if hasArg([]string{"style"}, "--json") {
+		t.Error("did not expect --json to be detected")
+	}
+}
+
 func TestIsFlagSet(t *testing.T) {
 	// No flags parsed in this test process → arbitrary name is not set.
 	if isFlagSet("definitely-not-a-defined-flag") {

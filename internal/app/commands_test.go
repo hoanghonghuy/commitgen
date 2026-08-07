@@ -60,13 +60,31 @@ func TestRunStyle_PrintsLearnedGuidance(t *testing.T) {
 	runGit(t, dir, "commit", "-m", "fix(cli): repair output PROJ-124")
 
 	out := captureStdout(t, func() {
-		if err := runStyle(context.Background(), dir, 5); err != nil {
+		if err := runStyle(context.Background(), dir, 5, false); err != nil {
 			t.Errorf("runStyle error: %v", err)
 		}
 	})
 	for _, want := range []string{"Repository commit style", "Conventional Commits", "Common scopes", "Ticket references", "do not invent IDs"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("style output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRunStyle_PrintsJSON(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "README.md", "# initial\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "feat(cli): add style command PROJ-123")
+
+	out := captureStdout(t, func() {
+		if err := runStyle(context.Background(), dir, 5, true); err != nil {
+			t.Errorf("runStyle error: %v", err)
+		}
+	})
+	for _, want := range []string{"\"recent_n\": 5", "\"commits_analyzed\": 1", "\"guidance\"", "\"total_commits\": 1", "\"ticket_examples\""} {
+		if !strings.Contains(out, want) {
+			t.Errorf("JSON style output missing %q:\n%s", want, out)
 		}
 	}
 }

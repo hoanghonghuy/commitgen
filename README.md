@@ -43,7 +43,7 @@
 | `commitgen uninstall-hook` | Remove hook (restores `.bak` if present) |
 | `commitgen ping` | Test provider connectivity |
 | `commitgen models` | List models (OpenAI-compatible / Ollama) |
-| `commitgen style` | Print learned commit style from recent history |
+| `commitgen style` | Print learned commit style from recent history (`--json` for scripts) |
 | `commitgen dump-prompt` | Export the AI prompt as JSON (debug) |
 
 Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--locale`, `--repo`, `--config`, `--base` (for `pr`).

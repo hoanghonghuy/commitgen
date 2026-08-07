@@ -15,16 +15,16 @@ var (
 
 // CommitStyle captures recurring conventions found in recent repository commits.
 type CommitStyle struct {
-	TotalCommits       int
-	ConventionalCount  int
-	AverageSubjectSize int
-	Types              []string
-	Scopes             []string
-	UsesEmoji          bool
-	EmojiPlacement     string
-	Emojis             []string
-	UsesTickets        bool
-	TicketExamples     []string
+	TotalCommits       int      `json:"total_commits"`
+	ConventionalCount  int      `json:"conventional_count"`
+	AverageSubjectSize int      `json:"average_subject_size"`
+	Types              []string `json:"types,omitempty"`
+	Scopes             []string `json:"scopes,omitempty"`
+	UsesEmoji          bool     `json:"uses_emoji"`
+	EmojiPlacement     string   `json:"emoji_placement,omitempty"`
+	Emojis             []string `json:"emojis,omitempty"`
+	UsesTickets        bool     `json:"uses_tickets"`
+	TicketExamples     []string `json:"ticket_examples,omitempty"`
 }
 
 // AnalyzeCommitStyle infers lightweight, safe style hints from commit subjects.
