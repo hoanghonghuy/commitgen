@@ -12,7 +12,9 @@ import (
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/analyzer"
 	"github.com/hoanghonghuy/commitgen/internal/config"
+	"github.com/hoanghonghuy/commitgen/internal/gitx"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
@@ -207,6 +209,26 @@ func printModels(names []string, tr *i18n.Translator) {
 	for _, n := range names {
 		fmt.Println(n)
 	}
+}
+
+// runStyle prints learned commit style without requiring staged changes or provider credentials.
+func runStyle(ctx context.Context, repoRoot string, recentN int) error {
+	recentN = clampNonNegative(recentN)
+	if recentN == 0 {
+		recentN = 5
+	}
+	commits, err := gitx.RecentCommits(ctx, repoRoot, recentN)
+	if err != nil {
+		return logger.LogError(err, "failed to read recent commits")
+	}
+	guidance := analyzer.AnalyzeCommitStyle(commits).Guidance()
+	fmt.Printf("Repository commit style (last %d commits)\n", recentN)
+	if strings.TrimSpace(guidance) == "" {
+		fmt.Println("No recurring style detected from recent commits.")
+		return nil
+	}
+	fmt.Println(guidance)
+	return nil
 }
 
 // getJSON performs a GET request and decodes a JSON response.

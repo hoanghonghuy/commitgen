@@ -117,6 +117,9 @@ func Run(ctx context.Context, cfg Config) error {
 	if err != nil {
 		return logger.LogError(err, "failed to resolve repository root", "repo_arg", cfg.RepoArg)
 	}
+	if cfg.Command == "style" {
+		return runStyle(ctx, repoRoot, cfg.RecentN)
+	}
 
 	customInstructions := ""
 	if strings.TrimSpace(cfg.InstructionsPath) != "" {
@@ -238,7 +241,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	default:
-		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | version)", cfg.Command)
+		return fmt.Errorf("unknown -cmd=%s (use: suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | version)", cfg.Command)
 	}
 }
 

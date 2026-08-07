@@ -27,7 +27,7 @@ var (
 
 func main() {
 	// 1. Define flags
-	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | version)")
+	cmdFlag := flag.String("cmd", "suggest", "Command to run (suggest | review | pr | dump-prompt | config | install-hook | uninstall-hook | ping | models | style | version)")
 	repoFlag := flag.String("repo", "", "Path to git repository (default: current directory)")
 	baseURLFlag := flag.String("base-url", "", "AI provider base URL")
 	apiKeyFlag := flag.String("api-key", "", "AI provider API key")
@@ -142,24 +142,24 @@ func main() {
 		Temperature:  config.ResolveFloat(*tempFlag, isFlagSet("temp"), fileCfg.Temperature, 0.7),
 		Conventional: config.ResolveBool(*conventionalFlag, isFlagSet("conventional"), fileCfg.Conventional, true),
 
-		HookFile:         *hookFlag,
-		DumpOutPath:      *dumpOutFlag,
-		InstructionsPath: *instructionsFlag,
-		ConfigPath:       *configPathFlag,
-		Timeout:          time.Duration(timeoutSec) * time.Second,
-		PromptTemplate:   promptTemplate,
-		ReviewLanguage:   config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
-		Locale:           string(locale),
-		RulesFile:        fileCfg.RulesFile,
+		HookFile:           *hookFlag,
+		DumpOutPath:        *dumpOutFlag,
+		InstructionsPath:   *instructionsFlag,
+		ConfigPath:         *configPathFlag,
+		Timeout:            time.Duration(timeoutSec) * time.Second,
+		PromptTemplate:     promptTemplate,
+		ReviewLanguage:     config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
+		Locale:             string(locale),
+		RulesFile:          fileCfg.RulesFile,
 		PromptTemplateFile: fileCfg.PromptTemplateFile,
-		TimeoutSeconds:   fileCfg.Timeout,
-		IgnoredFiles:     fileCfg.IgnoredFiles,
-		BaseBranch:       *baseBranchFlag,
-		Print:            *printFlag,
-		DryRun:           *dryRunFlag,
-		Amend:            *amendFlag,
-		Count:            *countFlag,
-		ConfigAction:     configAction,
+		TimeoutSeconds:     fileCfg.Timeout,
+		IgnoredFiles:       fileCfg.IgnoredFiles,
+		BaseBranch:         *baseBranchFlag,
+		Print:              *printFlag,
+		DryRun:             *dryRunFlag,
+		Amend:              *amendFlag,
+		Count:              *countFlag,
+		ConfigAction:       configAction,
 
 		LogLevel:  config.ResolveString(*logLevelFlag, getenvWithFallback("COMMITGEN_LOG_LEVEL", "COMMITAI_LOG_LEVEL", tr), fileCfg.LogLevel, "info"),
 		LogOutput: config.ResolveString(*logOutputFlag, getenvWithFallback("COMMITGEN_LOG_OUTPUT", "COMMITAI_LOG_OUTPUT", tr), fileCfg.LogOutput, "both"),
@@ -213,7 +213,7 @@ func resolveCommand(cmdFlag string, args []string) string {
 	if len(args) > 0 {
 		switch args[0] {
 		case "suggest", "review", "pr", "dump-prompt", "config", "install-hook", "uninstall-hook",
-			"version", "ping", "models":
+			"version", "ping", "models", "style":
 			cmd = args[0]
 		}
 	}

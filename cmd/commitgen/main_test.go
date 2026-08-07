@@ -41,6 +41,7 @@ func TestResolveCommand(t *testing.T) {
 		{"positional overrides", "suggest", []string{"review"}, "review"},
 		{"positional config", "suggest", []string{"config"}, "config"},
 		{"positional pr", "suggest", []string{"pr"}, "pr"},
+		{"positional style", "suggest", []string{"style"}, "style"},
 		{"unrecognized positional ignored", "suggest", []string{"frobnicate"}, "suggest"},
 		{"install-hook positional", "suggest", []string{"install-hook"}, "install-hook"},
 		{"flag default kept", "dump-prompt", []string{}, "dump-prompt"},

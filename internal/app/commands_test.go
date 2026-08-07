@@ -50,6 +50,27 @@ func TestGenerateCommitMessage_Error(t *testing.T) {
 	}
 }
 
+func TestRunStyle_PrintsLearnedGuidance(t *testing.T) {
+	dir := initRepo(t)
+	writeFile(t, dir, "README.md", "# initial\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "feat(cli): add config command PROJ-123")
+	writeFile(t, dir, "main.go", "package main\n")
+	runGit(t, dir, "add", ".")
+	runGit(t, dir, "commit", "-m", "fix(cli): repair output PROJ-124")
+
+	out := captureStdout(t, func() {
+		if err := runStyle(context.Background(), dir, 5); err != nil {
+			t.Errorf("runStyle error: %v", err)
+		}
+	})
+	for _, want := range []string{"Repository commit style", "Conventional Commits", "Common scopes", "Ticket references", "do not invent IDs"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("style output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
 	hookFile := filepath.Join(t.TempDir(), "MSG")
 	cfg := Config{DryRun: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}
