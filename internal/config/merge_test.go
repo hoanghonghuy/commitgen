@@ -92,6 +92,9 @@ func TestLoadResolved_RepoLocalOverlaysGlobal(t *testing.T) {
 	if out.CompatibleBaseURL != "https://global" {
 		t.Errorf("global CompatibleBaseURL should remain, got %q", out.CompatibleBaseURL)
 	}
+	if got, ok := RepoLocalConfigPath(); !ok || got != local {
+		t.Errorf("RepoLocalConfigPath=(%q,%v); want (%q,true)", got, ok, local)
+	}
 }
 
 func TestLoadResolved_NoRepoLocalUsesGlobal(t *testing.T) {
@@ -111,5 +114,8 @@ func TestLoadResolved_NoRepoLocalUsesGlobal(t *testing.T) {
 	}
 	if out.Model != "global-only" {
 		t.Errorf("Model = %q; want global-only", out.Model)
+	}
+	if got, ok := RepoLocalConfigPath(); ok || got != "" {
+		t.Errorf("RepoLocalConfigPath=(%q,%v); want empty,false", got, ok)
 	}
 }

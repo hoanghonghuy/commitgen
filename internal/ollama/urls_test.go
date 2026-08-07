@@ -32,6 +32,18 @@ func TestIsCloudBaseURL(t *testing.T) {
 	}
 }
 
+func TestIsLocalBaseURL(t *testing.T) {
+	if !IsLocalBaseURL("http://localhost:11434/") {
+		t.Error("localhost should be local")
+	}
+	if !IsLocalBaseURL("http://127.0.0.1:11434") {
+		t.Error("127.0.0.1 should be local")
+	}
+	if IsLocalBaseURL("https://ollama.com") {
+		t.Error("ollama.com should not be local")
+	}
+}
+
 func TestResolveAPIKey(t *testing.T) {
 	t.Setenv("OLLAMA_API_KEY", "")
 	if got := ResolveAPIKey("flag-key", "file-key", "commitgen-env"); got != "flag-key" {
