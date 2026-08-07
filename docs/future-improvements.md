@@ -45,6 +45,10 @@ Findings from post-`provider-config-registry` full flow audit.
 
 Implemented in `internal/gitx/template.go` and prompt generation. CommitGen detects configured `commit.template`, repo-local `.gitmessage`, or `.git/commit_template`, then adds the template structure to the commit-message prompt.
 
+### Team Style Learning
+
+Implemented in `internal/analyzer/style.go` and prompt generation. CommitGen analyzes recent commit subjects to infer common Conventional Commit types, scopes, emoji placement, ticket references, and average subject length. Ticket guidance is safety-bounded: IDs are included only if already present in branch name, staged changes, or user instructions.
+
 ### 🌐 i18n & Localization
 
 Fully implemented in `internal/i18n/`. 130 translation keys across 4 locales (en, vi, ja, zh). TUI, CLI errors, hook messages, and config form all use `Translator.T()`. Set via `--locale`, `COMMITGEN_LOCALE`, or `locale` in config. `--locale auto` detects from `$LANG`/`$LC_ALL`/`$LC_MESSAGES`.
@@ -57,115 +61,7 @@ Fully implemented in `internal/validator/`. 5 rules: `SubjectLengthRule`, `BodyL
 
 ## Future Proposals (remaining)
 
-### 1. Team Style Learning
-
-#### Problem
-Each team has unique commit message conventions that go beyond conventional commits (emoji usage, ticket references, specific wording patterns).
-
-#### Proposed Solution
-
-**Analyze team commit patterns and adapt:**
-
-```go
-// internal/analyzer/style.go
-package analyzer
-
-type CommitStyle struct {
-  UsesEmoji          bool
-  EmojiPlacement     string // "prefix" or "suffix"
-  CommonEmojis       map[string]string // feat -> 🎉
-  TicketPattern      string // e.g., "JIRA-\d+"
-  TicketPlacement    string // "prefix", "suffix", "footer"
-  AverageLength      int
-  UsesImperativeMood bool
-  CommonPhrases      []string
-}
-
-func AnalyzeRepoStyle(commits []string) CommitStyle {
-    style := CommitStyle{
-        CommonEmojis: make(map[string]string),
-    }
-    
-    emojiCount := 0
-    for _, commit := range commits {
-        // Detect emoji usage
-        if hasEmoji(commit) {
-            emojiCount++
-            emoji, pos := extractEmoji(commit)
-            style.CommonEmojis[detectType(commit)] = emoji
-            style.EmojiPlacement = pos
-        }
-        
-        // Detect ticket pattern
-        if ticket := extractTicket(commit); ticket != "" {
-            style.TicketPattern = inferPattern(ticket)
-        }
-        
-        // Analyze length
-        style.AverageLength += len(commit)
-    }
-    
-    style.UsesEmoji = float64(emojiCount)/float64(len(commits)) > 0.5
-    style.AverageLength /= len(commits)
-    
-    return style
-}
-```
-
-
-**Integration with prompt:**
-
-```go
-// Build style guidance for AI
-func buildStyleGuidance(style CommitStyle) string {
-    var guidance strings.Builder
-    
-    guidance.WriteString("The team follows these conventions:\n")
-    
-    if style.UsesEmoji {
-        guidance.WriteString(fmt.Sprintf("- Use emojis at the %s\n", style.EmojiPlacement))
-        guidance.WriteString("- Common emojis: ")
-        for typ, emoji := range style.CommonEmojis {
-            guidance.WriteString(fmt.Sprintf("%s for %s, ", emoji, typ))
-        }
-        guidance.WriteString("\n")
-    }
-    
-    if style.TicketPattern != "" {
-        guidance.WriteString(fmt.Sprintf("- Include ticket reference matching pattern: %s\n", style.TicketPattern))
-    }
-    
-    guidance.WriteString(fmt.Sprintf("- Keep commit messages around %d characters\n", style.AverageLength))
-    
-    return guidance.String()
-}
-```
-
-**Example output:**
-
-```bash
-# Input: Team uses emojis and Jira tickets
-# Learned style: "🎉 feat(scope): description [JIRA-123]"
-
-commitgen
-# Output:
-# 🎉 feat(auth): implement OAuth2 authorization [JIRA-1234]
-```
-
-**Benefits:**
-- Zero-configuration style matching
-- Adapts to team culture
-- Reduces manual editing
-
----
-
-### 3. Interactive Fix Suggestions (AI-Powered Code Review)
-
-#### Problem
-Review mode identifies issues but doesn't help fix them. Users must manually address each issue.
-
-#### Proposed Solution
-
+### 1. Interactive Fix Suggestions (AI-Powered Code Review)
 **AI suggests and applies fixes:**
 
 ```go

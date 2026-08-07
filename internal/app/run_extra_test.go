@@ -102,6 +102,9 @@ func TestBuildPromptData(t *testing.T) {
 	if data.CommitTemplate != "type(scope): subject\n\nbody" {
 		t.Errorf("commit template not loaded: %q", data.CommitTemplate)
 	}
+	if !strings.Contains(data.CommitStyleGuidance, "Conventional Commits") {
+		t.Errorf("commit style guidance not loaded: %q", data.CommitStyleGuidance)
+	}
 	// go.sum is in defaultIgnores → only main.go remains
 	if len(data.Changes) != 1 || data.Changes[0].Path != "main.go" {
 		t.Fatalf("expected only main.go, got %+v", data.Changes)

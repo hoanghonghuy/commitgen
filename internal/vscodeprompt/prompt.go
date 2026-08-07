@@ -42,6 +42,7 @@ type Data struct {
 	RecentUserCommits    []string
 	RecentRepoCommits    []string
 	CommitTemplate       string
+	CommitStyleGuidance  string
 	Changes              []Change
 	CustomInstructions   string
 	SummarizeAttachments bool
@@ -95,6 +96,9 @@ func BuildVSCodeMessages(d Data) []VSCodeMessage {
 		systemText += "\n\n# Repository commit template\n" +
 			"The repository defines this git commit template. Follow its structure, section order, and required footers when generating the commit message.\n" +
 			"```text\n" + strings.TrimRight(d.CommitTemplate, "\r\n") + "\n```\n"
+	}
+	if strings.TrimSpace(d.CommitStyleGuidance) != "" {
+		systemText += "\n\n# Repository commit style\n" + strings.TrimRight(d.CommitStyleGuidance, "\r\n") + "\n"
 	}
 	userText := buildUserText(d)
 

@@ -90,3 +90,20 @@ func TestBuildVSCodeMessages_IncludesCommitTemplate(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildVSCodeMessages_IncludesCommitStyleGuidance(t *testing.T) {
+	data := Data{
+		RepositoryName:      "test-repo",
+		BranchName:          "main",
+		CommitStyleGuidance: "- Recent commits mostly use Conventional Commits; prefer types: feat, fix.",
+		Changes:             []Change{{Path: "main.go", Diff: "package main"}},
+	}
+
+	msgs := BuildVSCodeMessages(data)
+	systemText := msgs[0].Content[0].Text
+	for _, want := range []string{"Repository commit style", "prefer types: feat, fix"} {
+		if !strings.Contains(systemText, want) {
+			t.Errorf("system prompt missing %q", want)
+		}
+	}
+}

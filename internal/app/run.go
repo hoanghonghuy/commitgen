@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
+	"github.com/hoanghonghuy/commitgen/internal/analyzer"
 	"github.com/hoanghonghuy/commitgen/internal/anthropic"
 	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/gemini"
@@ -343,6 +344,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 
 	userCommits, _ := gitx.RecentCommitsByAuthor(ctx, repoRoot, recentN, userEmail)
 	repoCommits, _ := gitx.RecentCommits(ctx, repoRoot, recentN)
+	styleGuidance := analyzer.AnalyzeCommitStyle(repoCommits).Guidance()
 	commitTemplate, err := gitx.GetCommitTemplate(ctx, repoRoot)
 	if err != nil {
 		logger.Warn("failed to read git commit template", "error", err)
@@ -407,6 +409,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		RecentUserCommits:    userCommits,
 		RecentRepoCommits:    repoCommits,
 		CommitTemplate:       commitTemplate,
+		CommitStyleGuidance:  styleGuidance,
 		Changes:              filteredChanges,
 		CustomInstructions:   customInstructions, // inserted into <custom-instructions>
 		SummarizeAttachments: summarize,
