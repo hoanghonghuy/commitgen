@@ -17,8 +17,9 @@ import (
 )
 
 type Config struct {
-	APIKey string
-	Model  string
+	APIKey  string
+	Model   string
+	Timeout time.Duration
 }
 
 const anthropicMaxTokens = 4096
@@ -37,7 +38,7 @@ func New(cfg Config) *Client {
 		apiKey:  cfg.APIKey,
 		model:   cfg.Model,
 		baseURL: defaultAnthropicURL,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		client:  httpx.NewClient(cfg.Timeout),
 	}
 }
 
@@ -46,7 +47,7 @@ type messageRequest struct {
 	Messages    []message `json:"messages"`
 	MaxTokens   int       `json:"max_tokens"`
 	System      string    `json:"system,omitempty"`
-	Temperature float64   `json:"temperature,omitempty"`
+	Temperature float64   `json:"temperature"`
 	Stream      bool      `json:"stream,omitempty"`
 }
 

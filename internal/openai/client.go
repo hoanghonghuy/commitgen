@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hoanghonghuy/commitgen/internal/httpx"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -20,6 +21,7 @@ type Config struct {
 	BaseURL string
 	APIKey  string
 	Model   string
+	Timeout time.Duration
 }
 
 type Client struct {
@@ -32,17 +34,15 @@ func New(cfg Config) *Client {
 		cfg.BaseURL = "https://api.openai.com/v1"
 	}
 	return &Client{
-		cfg: cfg,
-		http: &http.Client{
-			Timeout: 120 * time.Second,
-		},
+		cfg:  cfg,
+		http: httpx.NewClient(cfg.Timeout),
 	}
 }
 
 type chatRequest struct {
 	Model       string                       `json:"model"`
 	Messages    []vscodeprompt.OpenAIMessage `json:"messages"`
-	Temperature float64                      `json:"temperature,omitempty"`
+	Temperature float64                      `json:"temperature"`
 	Stream      bool                         `json:"stream,omitempty"`
 }
 

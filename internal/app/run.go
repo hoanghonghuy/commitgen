@@ -55,7 +55,7 @@ type Config struct {
 	Summarize bool
 
 	Temperature float64
-	Timeout     time.Duration // passed to TUI for AI request timeout
+	Timeout     time.Duration // AI request timeout for providers and TUI
 
 	DumpOutPath string
 
@@ -315,22 +315,25 @@ func newProvider(cfg Config) (ai.Provider, error) {
 			BaseURL: baseURL,
 			Model:   cfg.Model,
 			APIKey:  cfg.APIKey,
+			Timeout: cfg.Timeout,
 		}), nil
 	case "anthropic":
 		if cfg.AnthropicKey == "" {
 			return nil, logger.LogError(ErrMissingAPIKey, "anthropic key not configured")
 		}
 		return anthropic.New(anthropic.Config{
-			APIKey: cfg.AnthropicKey,
-			Model:  cfg.Model,
+			APIKey:  cfg.AnthropicKey,
+			Model:   cfg.Model,
+			Timeout: cfg.Timeout,
 		}), nil
 	case "gemini":
 		if cfg.GeminiKey == "" {
 			return nil, logger.LogError(ErrMissingAPIKey, "gemini key not configured")
 		}
 		return gemini.New(gemini.Config{
-			APIKey: cfg.GeminiKey,
-			Model:  cfg.Model,
+			APIKey:  cfg.GeminiKey,
+			Model:   cfg.Model,
+			Timeout: cfg.Timeout,
 		}), nil
 	case "openai", "openrouter", "compatible", "":
 		if strings.TrimSpace(cfg.BaseURL) == "" && strings.TrimSpace(cfg.APIKey) == "" {
@@ -340,6 +343,7 @@ func newProvider(cfg Config) (ai.Provider, error) {
 			BaseURL: cfg.BaseURL,
 			APIKey:  cfg.APIKey,
 			Model:   cfg.Model,
+			Timeout: cfg.Timeout,
 		}), nil
 	default:
 		return nil, logger.LogError(&unknownProviderError{Provider: cfg.Provider}, "unsupported provider")

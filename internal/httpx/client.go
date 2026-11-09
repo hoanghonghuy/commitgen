@@ -15,6 +15,17 @@ import (
 // maxRetries is the number of additional attempts made for transient failures.
 const maxRetries = 2
 
+const defaultClientTimeout = 120 * time.Second
+
+// NewClient creates an HTTP client with the configured request timeout.
+// Non-positive values preserve the default two-minute timeout.
+func NewClient(timeout time.Duration) *http.Client {
+	if timeout <= 0 {
+		timeout = defaultClientTimeout
+	}
+	return &http.Client{Timeout: timeout}
+}
+
 // DoJSONRequest handles the common HTTP JSON request lifecycle:
 // marshal body → create request → set headers → execute → check status → unmarshal response.
 // Transient failures (network errors, HTTP 429 and 5xx) are retried with a

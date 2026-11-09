@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,6 +23,23 @@ func TestNew_DefaultBaseURL(t *testing.T) {
 	c := New(Config{Model: "gpt-4o"})
 	if c.cfg.BaseURL != "https://api.openai.com/v1" {
 		t.Errorf("expected default base URL, got %q", c.cfg.BaseURL)
+	}
+}
+
+func TestBuildRequest_ZeroTemperature(t *testing.T) {
+	c := New(Config{Model: "test-model"})
+	for _, stream := range []bool{false, true} {
+		payload, err := json.Marshal(c.buildRequest(sampleMsgs(), 0, stream))
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if got := string(request["temperature"]); got != "0" {
+			t.Errorf("stream=%v: temperature = %q, want 0", stream, got)
+		}
 	}
 }
 

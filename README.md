@@ -149,7 +149,8 @@ Legacy `api_key` / `base_url` / `anthropic_key` / `gemini_key` are **migrated au
 
 Other settings:
 - **Preferences**: Conventional Commits, Summarization, Ignored Files.
-- **Advanced** (edit JSON): `timeout_seconds`, `prompt_template_file`, `rules_file`.
+- **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests.
+- **Advanced** (edit JSON): `prompt_template_file`, `rules_file`.
 - **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
 - **Validation**: Place `.commitgen-rules.json` in the repo root (auto-discovered) or set `rules_file` in config.
 - **Logging**: Log level, output destination, and log file path.

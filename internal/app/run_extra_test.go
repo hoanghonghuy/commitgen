@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestTruncateUTF8(t *testing.T) {
@@ -74,6 +77,67 @@ func TestNewProvider(t *testing.T) {
 			}
 			if p == nil {
 				t.Error("expected non-nil provider")
+			}
+		})
+	}
+}
+
+type providerTimeoutTransport struct {
+	deadline time.Time
+	started  time.Time
+}
+
+func (transport *providerTimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	transport.started = time.Now()
+	transport.deadline, _ = req.Context().Deadline()
+	body := `{"choices":[{"message":{"content":"ok"}}],"content":[{"text":"ok"}],"candidates":[{"content":{"parts":[{"text":"ok"}]}}],"message":{"content":"ok"}}`
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+		Header:     make(http.Header),
+		Request:    req,
+	}, nil
+}
+
+func TestNewProvider_RequestTimeout(t *testing.T) {
+	originalTransport := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+	for _, providerID := range []string{"openai", "openrouter", "compatible", "anthropic", "gemini", "ollama", "ollama-cloud"} {
+		t.Run(providerID, func(t *testing.T) {
+			for _, test := range []struct {
+				name    string
+				timeout time.Duration
+				want    time.Duration
+			}{
+				{"configured", 3 * time.Minute, 3 * time.Minute},
+				{"default", 0, 2 * time.Minute},
+				{"negative", -time.Second, 2 * time.Minute},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					transport := &providerTimeoutTransport{}
+					http.DefaultTransport = transport
+					provider, err := newProvider(Config{
+						Provider:     providerID,
+						Model:        "test-model",
+						APIKey:       "test-key",
+						AnthropicKey: "test-key",
+						GeminiKey:    "test-key",
+						Timeout:      test.timeout,
+					})
+					if err != nil {
+						t.Fatalf("new provider: %v", err)
+					}
+					if _, err := provider.Generate(context.Background(), nil, 0); err != nil {
+						t.Fatalf("generate: %v", err)
+					}
+					if transport.deadline.IsZero() {
+						t.Fatal("request has no timeout deadline")
+					}
+					got := transport.deadline.Sub(transport.started)
+					if got > test.want || got < test.want-time.Second {
+						t.Errorf("request timeout = %s, want approximately %s", got, test.want)
+					}
+				})
 			}
 		})
 	}

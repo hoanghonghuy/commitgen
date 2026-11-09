@@ -35,6 +35,23 @@ func TestNew_SetsDefaultURL(t *testing.T) {
 	}
 }
 
+func TestBuildRequest_ZeroTemperature(t *testing.T) {
+	c := New(Config{Model: "test-model"})
+	for _, stream := range []bool{false, true} {
+		payload, err := json.Marshal(c.buildRequest(sampleMsgs(), 0, stream))
+		if err != nil {
+			t.Fatalf("marshal request: %v", err)
+		}
+		var request map[string]json.RawMessage
+		if err := json.Unmarshal(payload, &request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if got := string(request["temperature"]); got != "0" {
+			t.Errorf("stream=%v: temperature = %q, want 0", stream, got)
+		}
+	}
+}
+
 func TestGenerate_SystemPromptAndTemperature(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("x-api-key") != "test-key" {

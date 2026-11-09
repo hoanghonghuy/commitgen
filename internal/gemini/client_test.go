@@ -35,6 +35,23 @@ func TestNew_SetsDefaultURL(t *testing.T) {
 	}
 }
 
+func TestBuildRequest_ZeroTemperature(t *testing.T) {
+	c := New(Config{Model: "test-model"})
+	payload, err := json.Marshal(c.buildRequest(sampleMsgs(), 0))
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	var request struct {
+		GenerationConfig map[string]json.RawMessage `json:"generationConfig"`
+	}
+	if err := json.Unmarshal(payload, &request); err != nil {
+		t.Fatalf("decode request: %v", err)
+	}
+	if got := string(request.GenerationConfig["temperature"]); got != "0" {
+		t.Errorf("temperature = %q, want 0", got)
+	}
+}
+
 func TestGenerate_SystemInstructionAndRoles(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("x-goog-api-key"); got != "test-key" {

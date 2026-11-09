@@ -17,8 +17,9 @@ import (
 )
 
 type Config struct {
-	APIKey string
-	Model  string
+	APIKey  string
+	Model   string
+	Timeout time.Duration
 }
 
 type Client struct {
@@ -35,7 +36,7 @@ func New(cfg Config) *Client {
 		apiKey:  cfg.APIKey,
 		model:   cfg.Model,
 		baseURL: defaultGeminiBaseURL,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		client:  httpx.NewClient(cfg.Timeout),
 	}
 }
 
@@ -56,7 +57,7 @@ type part struct {
 }
 
 type generationConfig struct {
-	Temperature float64 `json:"temperature,omitempty"`
+	Temperature float64 `json:"temperature"`
 }
 
 type generateContentResponse struct {

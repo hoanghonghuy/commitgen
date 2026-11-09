@@ -21,6 +21,7 @@ type Config struct {
 	BaseURL string // e.g. "http://localhost:11434" or "https://ollama.com"
 	Model   string // e.g. "llama3" or "deepseek-v4-pro"
 	APIKey  string // optional: API key for Ollama Cloud
+	Timeout time.Duration
 }
 
 // Client implements ai.Provider for Ollama
@@ -37,7 +38,7 @@ func New(cfg Config) *Client {
 		baseURL: baseURL,
 		model:   cfg.Model,
 		apiKey:  cfg.APIKey,
-		client:  &http.Client{Timeout: 120 * time.Second},
+		client:  httpx.NewClient(cfg.Timeout),
 	}
 }
 
