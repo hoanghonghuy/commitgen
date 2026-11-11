@@ -57,6 +57,57 @@ func TestCandidatePicker_FitsTerminalAndKeepsSelectionVisible(t *testing.T) {
 	}
 }
 
+func TestValidationScreen_FitsTerminalAndScrolls(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{80, 24}, {80, 12}, {40, 24}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			m := newTestModel()
+			m.validator = validator.New(validator.Config{Rules: map[string]validator.RuleConfig{"body-line-length": {Enabled: true, Max: 10}}})
+			u, _ := m.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+			m = u.(tuiModel)
+			u, _ = m.Update(commitResultMsg{content: "feat: change\n\n" + strings.Repeat("Long body line with warning\n", 40)})
+			m = u.(tuiModel)
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = u.(tuiModel)
+			if m.state != stateValidationFailed {
+				t.Fatal("did not reach validation screen")
+			}
+			if height := lipgloss.Height(m.View()); height > m.height {
+				t.Errorf("validation height=%d exceeds terminal=%d", height, m.height)
+			}
+			m.viewport.GotoTop()
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+			m = u.(tuiModel)
+			if m.viewport.YOffset == 0 {
+				t.Error("PgDn did not scroll issues")
+			}
+			before := m.viewport.YOffset
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+			m = u.(tuiModel)
+			if m.viewport.YOffset >= before {
+				t.Error("PgUp did not scroll issues back")
+			}
+			m.viewport.GotoTop()
+			u, _ = m.Update(tea.MouseMsg{Button: tea.MouseButtonWheelDown})
+			m = u.(tuiModel)
+			if m.viewport.YOffset == 0 {
+				t.Error("mouse wheel did not scroll issues")
+			}
+			for i := 0; i < validationActionCount-1; i++ {
+				u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+				m = u.(tuiModel)
+			}
+			if !strings.Contains(m.View(), m.i18n.T("tui.action.cancel")) {
+				t.Error("selected action is hidden")
+			}
+			u, _ = m.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height + 1})
+			m = u.(tuiModel)
+			if lipgloss.Height(m.View()) > m.height || !strings.Contains(m.View(), m.i18n.T("tui.action.cancel")) {
+				t.Error("validation viewport broken after resize")
+			}
+		})
+	}
+}
+
 func TestActionFooter_IncludesNav(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
 	got := actionFooter(tr)

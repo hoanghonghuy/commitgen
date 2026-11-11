@@ -276,6 +276,9 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 
 		rawIgnores := strings.Split(ignoredFilesStr, ",")
 		var ignores []string
+		if cfg.IgnoredFiles != nil {
+			ignores = []string{}
+		}
 		for _, s := range rawIgnores {
 			s = strings.TrimSpace(s)
 			if s != "" {

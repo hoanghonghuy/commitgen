@@ -414,6 +414,10 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		}
 
 		originalPath := file.OriginalPath
+		if file.IsSubmodule {
+			filteredChanges = append(filteredChanges, ch)
+			continue
+		}
 		var orig string
 		if originalPath == "" {
 			// Added files use the index, never uncommitted working-tree content.

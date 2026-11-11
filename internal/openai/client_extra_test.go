@@ -2,12 +2,80 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
+
+func TestStreamingResponse_OptionalDataSpace(t *testing.T) {
+	for _, prefix := range []string{"data:", "data: "} {
+		for _, header := range []string{"", "text/event-stream; charset=utf-8"} {
+			for _, stream := range []bool{false, true} {
+				t.Run(fmt.Sprintf("prefix=%q/header=%q/stream=%v", prefix, header, stream), func(t *testing.T) {
+					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if header != "" {
+							w.Header().Set("Content-Type", header)
+						}
+						if header != "" {
+							fmt.Fprint(w, ": keepalive\n\nevent: message\n")
+						}
+						fmt.Fprintf(w, "%s{\"choices\":[{\"delta\":{\"content\":\"feat: valid SSE\"}}]}\n\n%s[DONE]\n\n", prefix, prefix)
+					}))
+					defer srv.Close()
+					c := New(Config{BaseURL: srv.URL, Model: "fixture"})
+					var deltas strings.Builder
+					var got string
+					var err error
+					if stream {
+						got, err = c.GenerateStream(context.Background(), sampleMsgs(), 0.7, func(s string) { deltas.WriteString(s) })
+					} else {
+						got, err = c.generate(context.Background(), sampleMsgs(), 0.7)
+					}
+					if err != nil || got != "feat: valid SSE" {
+						t.Fatalf("valid SSE rejected: content=%q err=%v", got, err)
+					}
+					if stream && deltas.String() != got {
+						t.Errorf("callback content=%q want=%q", deltas.String(), got)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestStreamingResponse_RequiresCompletion(t *testing.T) {
+	for _, terminal := range []string{"", "data: [DONE]\n\n", "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("terminal=%q/stream=%v", terminal, stream), func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"feat: partial\"},\"finish_reason\":null}]}\n\n"+terminal)
+				}))
+				defer srv.Close()
+				c := New(Config{BaseURL: srv.URL, Model: "fixture"})
+				var got string
+				var err error
+				if stream {
+					got, err = c.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
+				} else {
+					got, err = c.generate(context.Background(), sampleMsgs(), 0.7)
+				}
+				if terminal == "" {
+					if !errors.Is(err, io.ErrUnexpectedEOF) || got != "" {
+						t.Errorf("incomplete stream accepted: content=%q err=%v", got, err)
+					}
+				} else if err != nil || got != "feat: partial" {
+					t.Errorf("complete stream rejected: content=%q err=%v", got, err)
+				}
+			})
+		}
+	}
+}
 
 func TestGenerate_EmptyStreamingResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

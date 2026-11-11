@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/hoanghonghuy/commitgen/internal/gitx"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -84,6 +87,52 @@ func TestPromptData_PreservesRenameAndOriginal(t *testing.T) {
 	}
 }
 
+func TestPromptData_RenameDoesNotIncludeIgnoredDescendant(t *testing.T) {
+	for _, pr := range []bool{false, true} {
+		name := "staged"
+		if pr {
+			name = "pr"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := initRepo(t)
+			writeFile(t, dir, "settings", "Original configuration\n")
+			runGit(t, dir, "add", ".")
+			runGit(t, dir, "commit", "-m", "chore: initial")
+			runGit(t, dir, "checkout", "-b", "feature/refactor")
+			runGit(t, dir, "mv", "settings", "temporary")
+			if err := os.Mkdir(filepath.Join(dir, "settings"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			runGit(t, dir, "mv", "temporary", "settings/main.txt")
+			writeFile(t, dir, "settings/private.env", "SYNTHETIC_PRIVATE_MARKER\n")
+			runGit(t, dir, "add", ".")
+			if pr {
+				runGit(t, dir, "commit", "-m", "refactor: move settings")
+			}
+			var data vscodeprompt.Data
+			var err error
+			ignored := []string{"settings/private.env"}
+			if pr {
+				data, err = buildPRPromptData(context.Background(), dir, "main", 5, 1, false, "", ignored)
+			} else {
+				data, err = buildPromptData(context.Background(), dir, 5, 1, false, "", ignored)
+			}
+			if err != nil || len(data.Changes) != 1 {
+				t.Fatalf("changes=%+v err=%v", data.Changes, err)
+			}
+			change := data.Changes[0]
+			if !strings.Contains(change.Diff, "rename from settings") {
+				t.Error("rename metadata missing")
+			}
+			for _, messages := range [][]vscodeprompt.VSCodeMessage{vscodeprompt.BuildVSCodeMessages(data), vscodeprompt.BuildPRMessages(data), vscodeprompt.BuildReviewMessages(data, true)} {
+				if strings.Contains(messages[1].Content[0].Text, "SYNTHETIC_PRIVATE_MARKER") {
+					t.Errorf("ignored content leaked through rename diff: %s", change.Diff)
+				}
+			}
+		})
+	}
+}
+
 func TestBuildPRPromptData_ExcludesUncommittedContent(t *testing.T) {
 	dir := featureBranchRepo(t)
 	writeFile(t, dir, "main.go", "package main\n// UNCOMMITTED_PRIVATE_CONTENT\n")
@@ -96,6 +145,58 @@ func TestBuildPRPromptData_ExcludesUncommittedContent(t *testing.T) {
 	}
 	if strings.Contains(data.Changes[0].OriginalCode, "UNCOMMITTED_PRIVATE_CONTENT") {
 		t.Fatal("attachment includes uncommitted private content")
+	}
+}
+
+func TestPromptData_SubmoduleChanges(t *testing.T) {
+	child := initRepo(t)
+	runGit(t, child, "commit", "--allow-empty", "-m", "chore: child initial")
+	old, err := gitx.Git(context.Background(), child, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, child, "commit", "--allow-empty", "-m", "feat: child update")
+	newRef, err := gitx.Git(context.Background(), child, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pr := range []bool{false, true} {
+		for _, operation := range []string{"add", "update", "delete"} {
+			name := operation + "/staged"
+			if pr {
+				name = operation + "/pr"
+			}
+			t.Run(name, func(t *testing.T) {
+				dir := initRepo(t)
+				if operation != "add" {
+					runGit(t, dir, "update-index", "--add", "--cacheinfo", "160000,"+strings.TrimSpace(old)+",dependency")
+				}
+				runGit(t, dir, "commit", "--allow-empty", "-m", "chore: initial")
+				runGit(t, dir, "checkout", "-b", "feature/dependency")
+				if operation == "delete" {
+					runGit(t, dir, "update-index", "--force-remove", "dependency")
+				} else {
+					runGit(t, dir, "update-index", "--add", "--cacheinfo", "160000,"+strings.TrimSpace(newRef)+",dependency")
+				}
+				if pr {
+					runGit(t, dir, "commit", "-m", "chore: dependency change")
+				}
+				var data vscodeprompt.Data
+				var err error
+				if pr {
+					data, err = buildPRPromptData(context.Background(), dir, "main", 5, 10, false, "", nil)
+				} else {
+					data, err = buildPromptData(context.Background(), dir, 5, 10, false, "", nil)
+				}
+				if err != nil || len(data.Changes) != 1 {
+					t.Fatalf("changes=%+v err=%v", data.Changes, err)
+				}
+				change := data.Changes[0]
+				if !strings.Contains(change.Diff, "Subproject commit") || change.OriginalCode != "" {
+					t.Errorf("expected submodule pointer diff without source attachment: %+v", change)
+				}
+			})
+		}
 	}
 }
 

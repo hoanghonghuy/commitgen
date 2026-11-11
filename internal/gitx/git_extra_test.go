@@ -9,9 +9,9 @@ import (
 )
 
 func TestStagedPaths_PreserveSpecialCharacters(t *testing.T) {
-	for _, path := range []string{"tiếng-việt.txt", "line\nbreak.txt", " spaced.txt "} {
+	for _, path := range []string{"tiếng-việt.txt", "line\nbreak.txt", " spaced.txt ", "literal[1]*?.txt", "back\\slash.txt"} {
 		t.Run(path, func(t *testing.T) {
-			if runtime.GOOS == "windows" && (strings.ContainsAny(path, "\r\n") || strings.HasSuffix(path, " ")) {
+			if runtime.GOOS == "windows" && (strings.ContainsAny(path, "\r\n*?\\") || strings.HasSuffix(path, " ")) {
 				t.Skip("filename is not valid on Windows")
 			}
 			dir := initRepo(t)

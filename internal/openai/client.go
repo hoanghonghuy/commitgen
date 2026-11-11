@@ -128,17 +128,24 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf("openai: API error (status %d): %s", resp.StatusCode, truncateString(string(body), 500))
 	}
+	return readStream(resp.Body, onDelta)
+}
 
+// readStream is shared by live streaming and compatible servers that return SSE
+// for a blocking request. SSE permits one optional space after the field colon.
+func readStream(body io.Reader, onDelta func(string)) (string, error) {
 	var full strings.Builder
-	scanner := bufio.NewScanner(resp.Body)
+	completed := false
+	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || !strings.HasPrefix(line, "data: ") {
+		line := scanner.Text()
+		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
-		data := strings.TrimPrefix(line, "data: ")
+		data := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
 		if data == "[DONE]" {
+			completed = true
 			break
 		}
 		var chunk chatResponse
@@ -150,6 +157,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		}
 		if len(chunk.Choices) == 0 {
 			continue
+		}
+		if chunk.Choices[0].FinishReason != "" {
+			completed = true
 		}
 		delta := chunk.Choices[0].Delta.Content
 		if delta == "" {
@@ -164,6 +174,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	}
 	if err := scanner.Err(); err != nil {
 		return "", logger.LogError(err, "openai: stream read failed")
+	}
+	if !completed {
+		return "", fmt.Errorf("openai: stream ended before completion: %w", io.ErrUnexpectedEOF)
 	}
 
 	result := full.String()
@@ -274,47 +287,10 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		}
 	}
 
-	// Check if response is streaming (SSE format)
+	// Some compatible servers return SSE even for a blocking request.
 	responseStr := string(b)
-	if strings.HasPrefix(responseStr, "data: ") {
-		// Parse streaming response
-		lines := strings.Split(responseStr, "\n")
-		var content strings.Builder
-
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" || line == "data: [DONE]" {
-				continue
-			}
-			if strings.HasPrefix(line, "data: ") {
-				jsonStr := strings.TrimPrefix(line, "data: ")
-				var chunk chatResponse
-				if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
-					continue
-				}
-				if err := chunk.streamError(); err != nil {
-					return "", err
-				}
-				if len(chunk.Choices) > 0 {
-					// Streaming uses delta, non-streaming uses message
-					if chunk.Choices[0].Delta.Content != "" {
-						content.WriteString(chunk.Choices[0].Delta.Content)
-					} else if chunk.Choices[0].Message.Content != "" {
-						content.WriteString(chunk.Choices[0].Message.Content)
-					}
-					// Skip reasoning_content — it's the model's internal thinking process,
-					// not part of the final output we want to show.
-				}
-			}
-		}
-
-		result := content.String()
-		if result == "" {
-			// Log raw response for debugging empty responses
-			logger.Error("openai: empty streaming response", "raw_response_prefix", truncateString(responseStr, 500))
-			return "", logger.LogError(fmt.Errorf("empty streaming response"), "openai: no content in response")
-		}
-		return result, nil
+	if strings.HasPrefix(strings.ToLower(resp.Header.Get("Content-Type")), "text/event-stream") || strings.HasPrefix(responseStr, "data:") {
+		return readStream(strings.NewReader(responseStr), nil)
 	}
 
 	// Non-streaming response

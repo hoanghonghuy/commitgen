@@ -27,7 +27,8 @@ type FileConfig struct {
 
 	PromptTemplate string `json:"prompt_template,omitempty"`
 
-	IgnoredFiles []string `json:"ignored_files,omitempty"`
+	// nil inherits the parent config; an empty slice explicitly clears it.
+	IgnoredFiles []string `json:"ignored_files"`
 
 	// Advanced Settings
 	RecentN      *int     `json:"recent_n,omitempty"`

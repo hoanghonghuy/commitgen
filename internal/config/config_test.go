@@ -174,6 +174,27 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSaveAndLoad_IgnoredFilesOverride(t *testing.T) {
+	for _, ignores := range [][]string{nil, {}, {"local/**"}} {
+		path := filepath.Join(t.TempDir(), "repo.json")
+		if err := Save(FileConfig{IgnoredFiles: ignores}, path); err != nil {
+			t.Fatal(err)
+		}
+		loaded, err := Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		merged := Merge(FileConfig{IgnoredFiles: []string{"inherited/**"}}, loaded)
+		if ignores == nil {
+			if len(merged.IgnoredFiles) != 1 || merged.IgnoredFiles[0] != "inherited/**" {
+				t.Errorf("unset override stopped inheriting: %v", merged.IgnoredFiles)
+			}
+		} else if loaded.IgnoredFiles == nil || len(merged.IgnoredFiles) != len(ignores) {
+			t.Errorf("override changed on save: input=%#v loaded=%#v merged=%#v", ignores, loaded.IgnoredFiles, merged.IgnoredFiles)
+		}
+	}
+}
+
 func TestSave_RestrictsExistingPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permissions are not enforced on Windows")

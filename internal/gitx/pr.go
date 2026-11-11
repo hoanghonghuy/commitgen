@@ -60,7 +60,7 @@ func ChangedFileChanges(ctx context.Context, repoRoot, start, end string) ([]Fil
 	if start == "" || end == "" {
 		return nil, fmt.Errorf("ChangedFiles requires start and end refs")
 	}
-	out, err := Git(ctx, repoRoot, "diff", "--find-renames", "--name-status", "-z", start+"..."+end)
+	out, err := Git(ctx, repoRoot, "diff", "--find-renames", "--raw", "-z", start+"..."+end)
 	if err != nil {
 		return nil, err
 	}
@@ -74,8 +74,7 @@ func DiffFile(ctx context.Context, repoRoot, start, end, path string, originalPa
 	if start == "" || end == "" || path == "" {
 		return "", fmt.Errorf("DiffFile requires start, end, and path")
 	}
-	args := []string{"diff", "--find-renames", start + "..." + end, "--"}
-	return Git(ctx, repoRoot, append(args, diffPathspecs(path, originalPaths)...)...)
+	return fileDiff(ctx, repoRoot, []string{start + "..." + end}, path, originalPaths)
 }
 
 // ResolveBaseRef returns an explicit base when provided, otherwise tries

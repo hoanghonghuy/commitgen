@@ -3,6 +3,8 @@ package ollama
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +12,21 @@ import (
 
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
+
+func TestGenerateStream_RequiresCompletion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("{\"message\":{\"content\":\"feat: partial\"},\"done\":false}\n"))
+	}))
+	defer srv.Close()
+	var deltas strings.Builder
+	text, err := New(Config{BaseURL: srv.URL, Model: "fixture"}).GenerateStream(context.Background(), sampleMsgs(), 0.7, func(s string) { deltas.WriteString(s) })
+	if !errors.Is(err, io.ErrUnexpectedEOF) || text != "" {
+		t.Errorf("incomplete stream accepted: content=%q err=%v", text, err)
+	}
+	if deltas.String() != "feat: partial" {
+		t.Errorf("partial display lost: %q", deltas.String())
+	}
+}
 
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{

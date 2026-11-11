@@ -23,7 +23,10 @@ type StagedChange struct {
 type FileChange struct {
 	Path         string
 	OriginalPath string
+	IsSubmodule  bool
 }
+
+const gitlinkMode = "160000"
 
 // Git runs a git command in the given repository root and returns its stdout.
 func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
@@ -102,7 +105,7 @@ func StagedFileNames(ctx context.Context, repoRoot string) ([]string, error) {
 
 // StagedFileChanges lists index changes with their original paths.
 func StagedFileChanges(ctx context.Context, repoRoot string) ([]FileChange, error) {
-	out, err := Git(ctx, repoRoot, "diff", "--staged", "--find-renames", "--name-status", "-z")
+	out, err := Git(ctx, repoRoot, "diff", "--staged", "--find-renames", "--raw", "-z")
 	if err != nil {
 		return nil, err
 	}
@@ -117,8 +120,17 @@ func parseFileChanges(out string) ([]FileChange, error) {
 			return nil, fmt.Errorf("invalid git name-status output")
 		}
 		status, path := fields[i], fields[i+1]
+		isSubmodule := false
+		if strings.HasPrefix(status, ":") {
+			header := strings.Fields(status)
+			if len(header) != 5 {
+				return nil, fmt.Errorf("invalid git raw diff header")
+			}
+			status = header[4]
+			isSubmodule = strings.TrimPrefix(header[0], ":") == gitlinkMode || header[1] == gitlinkMode
+		}
 		i += 2
-		change := FileChange{Path: path, OriginalPath: path}
+		change := FileChange{Path: path, OriginalPath: path, IsSubmodule: isSubmodule}
 		switch status[0] {
 		case 'A':
 			change.OriginalPath = ""
@@ -146,8 +158,42 @@ func diffPathspecs(path string, originalPaths []string) []string {
 
 // StagedDiffFile includes the old side when a staged file was renamed.
 func StagedDiffFile(ctx context.Context, repoRoot, path string, originalPaths ...string) (string, error) {
-	args := []string{"diff", "--staged", "--find-renames", "--"}
-	return Git(ctx, repoRoot, append(args, diffPathspecs(path, originalPaths)...)...)
+	return fileDiff(ctx, repoRoot, []string{"--staged"}, path, originalPaths)
+}
+
+// fileDiff pairs NUL-delimited raw metadata with patches so a pathspec that
+// also matches a directory cannot include other files in the returned payload.
+func fileDiff(ctx context.Context, repoRoot string, revisions []string, path string, originalPaths []string) (string, error) {
+	args := []string{"diff", "--find-renames", "--no-color", "--no-ext-diff", "--submodule=short", "--raw", "-z", "--patch"}
+	args = append(args, revisions...)
+	args = append(args, "--")
+	out, err := Git(ctx, repoRoot, append(args, diffPathspecs(path, originalPaths)...)...)
+	if err != nil || out == "" {
+		return "", err
+	}
+	metadata, patchText, ok := strings.Cut(out, "\x00\x00")
+	if !ok || !strings.HasPrefix(patchText, "diff --git ") {
+		return "", fmt.Errorf("invalid git raw/patch framing")
+	}
+	changes, err := parseFileChanges(metadata)
+	if err != nil {
+		return "", err
+	}
+	patches := strings.Split(patchText, "\ndiff --git ")
+	if len(changes) != len(patches) {
+		return "", fmt.Errorf("git diff metadata and patch counts differ")
+	}
+	for i, change := range changes {
+		if change.Path != path || (len(originalPaths) > 0 && change.OriginalPath != originalPaths[0]) {
+			continue
+		}
+		patch := patches[i]
+		if i > 0 {
+			patch = "diff --git " + patch
+		}
+		return strings.TrimRight(patch, "\n") + "\n", nil
+	}
+	return "", fmt.Errorf("git diff did not contain the expected change for %q", path)
 }
 
 // StagedChanges returns staged changes, limited to maxFiles entries.

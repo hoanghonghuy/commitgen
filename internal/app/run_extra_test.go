@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/hoanghonghuy/commitgen/internal/config"
 )
 
 func TestTruncateUTF8(t *testing.T) {
@@ -83,12 +85,14 @@ func TestNewProvider(t *testing.T) {
 }
 
 type providerTimeoutTransport struct {
-	deadline time.Time
-	started  time.Time
+	deadline    time.Time
+	started     time.Time
+	destination string
 }
 
 func (transport *providerTimeoutTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	transport.started = time.Now()
+	transport.destination = req.URL.String()
 	transport.deadline, _ = req.Context().Deadline()
 	body := `{"choices":[{"message":{"content":"ok"}}],"content":[{"text":"ok"}],"candidates":[{"content":{"parts":[{"text":"ok"}]}}],"message":{"content":"ok"}}`
 	return &http.Response{
@@ -140,6 +144,27 @@ func TestNewProvider_RequestTimeout(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestNewProvider_LocalOllamaKeepsConfiguredURL(t *testing.T) {
+	previous := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	t.Setenv("OLLAMA_API_KEY", "")
+	for _, host := range []string{"http://127.0.0.1:11434/proxy/ollama.cloud", "http://ollama.cloud.local:11434"} {
+		transport := &providerTimeoutTransport{}
+		http.DefaultTransport = transport
+		credentials := config.ResolveCredentials(config.CredentialInput{File: config.FileConfig{Provider: "ollama", OllamaBaseURL: host, APIKeys: map[string]string{"ollama": "synthetic-key"}}})
+		provider, err := newProvider(Config{Provider: credentials.Provider, BaseURL: credentials.BaseURL, APIKey: credentials.APIKey, Model: "fixture"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := provider.Generate(context.Background(), baseMsgs(), 0.7); err != nil {
+			t.Fatal(err)
+		}
+		if transport.destination != host+"/api/chat" {
+			t.Errorf("configured=%q requested=%q", host, transport.destination)
+		}
 	}
 }
 

@@ -12,6 +12,8 @@ func TestResolveBaseURL(t *testing.T) {
 		{"https://ollama.com", "", CloudBaseURL},
 		{"https://api.ollama.cloud", "", CloudBaseURL},
 		{"http://192.168.1.5:11434", "", "http://192.168.1.5:11434"},
+		{"http://127.0.0.1:11434/proxy/ollama.cloud", "key", "http://127.0.0.1:11434/proxy/ollama.cloud"},
+		{"http://ollama.cloud.local:11434", "key", "http://ollama.cloud.local:11434"},
 	}
 	for _, tt := range tests {
 		if got := ResolveBaseURL(tt.baseURL, tt.apiKey); got != tt.want {
@@ -41,6 +43,22 @@ func TestIsLocalBaseURL(t *testing.T) {
 	}
 	if IsLocalBaseURL("https://ollama.com") {
 		t.Error("ollama.com should not be local")
+	}
+}
+
+func TestBaseURLClassificationUsesHostname(t *testing.T) {
+	for _, raw := range []string{"http://ollama.com.local:11434", "https://example.com/ollama.com", "https://ollama.com@example.com", "http://ollama.cloud.local:11434"} {
+		if IsCloudBaseURL(raw) {
+			t.Errorf("non-cloud URL classified as cloud: %s", raw)
+		}
+	}
+	for _, raw := range []string{"https://example.com/localhost", "https://localhost.example.com", "https://example.com/?host=127.0.0.1"} {
+		if IsLocalBaseURL(raw) {
+			t.Errorf("remote URL classified as local: %s", raw)
+		}
+	}
+	if !IsLocalBaseURL("http://[::1]:11434") {
+		t.Error("IPv6 loopback should be local")
 	}
 }
 

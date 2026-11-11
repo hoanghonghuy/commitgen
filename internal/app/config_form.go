@@ -36,6 +36,9 @@ func fileConfigFromInteractive(
 	}
 	out.Model = newCfg.Model
 	out.IgnoredFiles = newCfg.IgnoredFiles
+	if out.IgnoredFiles == nil && existing.IgnoredFiles != nil {
+		out.IgnoredFiles = []string{}
+	}
 	out.PromptTemplate = newCfg.PromptTemplate
 	out.ReviewLanguage = newCfg.ReviewLanguage
 	out.Locale = newCfg.Locale

@@ -61,6 +61,10 @@ func buildPRPromptData(ctx context.Context, repoRoot, basePreferred string, rece
 		}
 
 		originalPath := file.OriginalPath
+		if file.IsSubmodule {
+			filtered = append(filtered, ch)
+			continue
+		}
 		ref := mb
 		if originalPath == "" {
 			originalPath = path

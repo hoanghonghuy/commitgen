@@ -179,6 +179,7 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	}
 
 	var full strings.Builder
+	completed := false
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -194,6 +195,10 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		if chunk.Error != nil {
 			return "", fmt.Errorf("anthropic: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
 		}
+		if chunk.Type == "message_stop" {
+			completed = true
+			break
+		}
 		if chunk.Type == "content_block_delta" && chunk.Delta.Text != "" {
 			full.WriteString(chunk.Delta.Text)
 			if onDelta != nil {
@@ -203,6 +208,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	}
 	if err := scanner.Err(); err != nil {
 		return "", logger.LogError(err, "anthropic: stream read failed")
+	}
+	if !completed {
+		return "", fmt.Errorf("anthropic: stream ended before completion: %w", io.ErrUnexpectedEOF)
 	}
 	return full.String(), nil
 }

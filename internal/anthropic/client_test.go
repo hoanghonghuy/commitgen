@@ -3,6 +3,8 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +13,22 @@ import (
 
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
+
+func TestGenerateStream_RequiresCompletion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"feat: partial\"}}\n\n"))
+	}))
+	defer srv.Close()
+	var deltas strings.Builder
+	text, err := newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), 0.7, func(s string) { deltas.WriteString(s) })
+	if !errors.Is(err, io.ErrUnexpectedEOF) || text != "" {
+		t.Errorf("incomplete stream accepted: content=%q err=%v", text, err)
+	}
+	if deltas.String() != "feat: partial" {
+		t.Errorf("partial display lost: %q", deltas.String())
+	}
+}
 
 func TestGenerateStream_RejectsMidstreamError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

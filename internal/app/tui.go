@@ -450,6 +450,49 @@ func (m tuiModel) refreshViewport() tuiModel {
 	return m
 }
 
+func (m tuiModel) validationFooter() string {
+	return styleHint.Width(m.innerWidth()).Render(m.i18n.T("tui.hint.validation_keys") + "\n" + actionFooter(m.i18n))
+}
+
+func (m tuiModel) refreshValidationViewport() tuiModel {
+	var b strings.Builder
+	b.WriteString(statusLine(m.i18n, m.statusBanner))
+	b.WriteString("\n" + styleReviewError.Render(m.i18n.T("tui.title.validation_failed")) + "\n\n")
+	b.WriteString(m.i18n.T("tui.hint.validation_issues") + "\n")
+	for _, issue := range m.validationIssues {
+		levelKey := "tui.level.error"
+		if issue.Level == "warning" {
+			levelKey = "tui.level.warning"
+		}
+		fmt.Fprintf(&b, "  • [%s] %s\n", m.i18n.T(levelKey), issue.Message)
+	}
+	b.WriteString("\n" + styleActionTitle.Render(m.i18n.T("tui.title.action")) + "\n")
+	content := ansi.Wrap(b.String(), m.innerWidth(), " ")
+	selectedLine := 0
+	actions := []string{m.i18n.T("tui.action.autofix"), m.i18n.T("tui.action.edit"), m.i18n.T("tui.action.ignore"), m.i18n.T("tui.action.cancel")}
+	for i, action := range actions {
+		prefix := "   "
+		if i == m.cursor {
+			selectedLine = countLines(content) - 1
+			prefix = " > "
+			action = styleSelected.Render(action)
+		}
+		content += ansi.Wrap(styleBar.Render("┃")+prefix+action, m.innerWidth(), " ") + "\n"
+	}
+	// Reserve the wrapped keyboard footer and scroll hint outside the viewport.
+	scrollHint := styleHint.Width(m.innerWidth()).Render(fmt.Sprintf(m.i18n.T("tui.hint.choose_scroll"), 100))
+	m.viewport.Height = max(1, m.innerHeight()-lipgloss.Height(m.validationFooter())-lipgloss.Height(scrollHint))
+	m.cachedContent = content
+	m.viewport.SetContent(content)
+	m.needsScroll = countLines(content) > m.viewport.Height
+	if selectedLine < m.viewport.YOffset {
+		m.viewport.SetYOffset(selectedLine)
+	} else if selectedLine >= m.viewport.YOffset+m.viewport.Height {
+		m.viewport.SetYOffset(selectedLine - m.viewport.Height + 1)
+	}
+	return m
+}
+
 func (m tuiModel) refreshCandidatesViewport() tuiModel {
 	hintStyle := styleHint.Width(m.innerWidth())
 	footer := hintStyle.Render(m.i18n.T("tui.hint.choose_nav") + "\n" + m.i18n.T("tui.hint.esc_cancel"))
@@ -543,6 +586,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.validationIssues = issues
 							m.state = stateValidationFailed
 							m.cursor = 0
+							m.viewport.GotoTop()
+							m = m.refreshValidationViewport()
 							return m, nil
 						}
 					}
@@ -598,11 +643,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 				}
-				return m, nil
+				return m.refreshValidationViewport(), nil
 			case "down", "j":
 				if m.cursor < validationActionCount-1 {
 					m.cursor++
 				}
+				return m.refreshValidationViewport(), nil
+			case "pgup":
+				m.viewport.HalfPageUp()
+				return m, nil
+			case "pgdown":
+				m.viewport.HalfPageDown()
 				return m, nil
 			case "a", "A":
 				act = 0
@@ -631,7 +682,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				m.statusBanner = m.i18n.T("tui.status.autofix_noop")
-				return m, nil
+				return m.refreshValidationViewport(), nil
 			case 1:
 				m.statusBanner = ""
 				m.textarea.SetValue(m.commitMsg)
@@ -640,7 +691,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 2:
 				if validator.HasErrors(m.validationIssues) {
 					m.statusBanner = m.i18n.T("tui.status.ignore_blocked")
-					return m, nil
+					return m.refreshValidationViewport(), nil
 				}
 				m.statusBanner = ""
 				m.state = stateCommitting
@@ -694,7 +745,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		// Only handle mouse when viewport scroll is active.
-		if (m.state == stateConfirm || m.state == stateChoose) && m.needsScroll && m.viewportReady {
+		if (m.state == stateConfirm || m.state == stateChoose || m.state == stateValidationFailed) && m.needsScroll && m.viewportReady {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
@@ -718,9 +769,12 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport = viewport.New(m.innerWidth(), vpHeight)
 			m.viewportReady = true
 		}
-		if m.state == stateChoose {
+		switch m.state {
+		case stateChoose:
 			m = m.refreshCandidatesViewport()
-		} else {
+		case stateValidationFailed:
+			m = m.refreshValidationViewport()
+		default:
 			m = m.refreshViewport()
 		}
 
@@ -938,42 +992,15 @@ func (m tuiModel) View() string {
 		inner = fmt.Sprintf("\n  %s\n", m.i18n.T("tui.state.copied"))
 
 	case stateValidationFailed:
-		var b strings.Builder
-		b.WriteString(statusLine(m.i18n, m.statusBanner))
-		b.WriteString("\n")
-		b.WriteString(styleReviewError.Render(m.i18n.T("tui.title.validation_failed")))
-		b.WriteString("\n\n")
-		b.WriteString(m.i18n.T("tui.hint.validation_issues"))
-		b.WriteString("\n")
-		for _, issue := range m.validationIssues {
-			levelKey := "tui.level.error"
-			if issue.Level == "warning" {
-				levelKey = "tui.level.warning"
-			}
-			fmt.Fprintf(&b, "  • [%s] %s\n", m.i18n.T(levelKey), issue.Message)
+		if m.cachedContent == "" || !m.viewportReady {
+			m = m.refreshValidationViewport()
 		}
-		b.WriteString("\n")
-		b.WriteString(styleActionTitle.Render(m.i18n.T("tui.title.action")))
-		b.WriteString("\n")
-		barStr := styleBar.Render("┃")
-		actions := []string{
-			m.i18n.T("tui.action.autofix"),
-			m.i18n.T("tui.action.edit"),
-			m.i18n.T("tui.action.ignore"),
-			m.i18n.T("tui.action.cancel"),
+		if m.needsScroll && m.viewportReady {
+			inner = m.viewport.View() + "\n" + styleHint.Width(m.innerWidth()).Render(fmt.Sprintf(m.i18n.T("tui.hint.choose_scroll"), int(m.viewport.ScrollPercent()*100))) + "\n"
+		} else {
+			inner = m.cachedContent
 		}
-		for i, action := range actions {
-			if m.cursor == i {
-				fmt.Fprintf(&b, "%s > %s\n", barStr, styleSelected.Render(action))
-			} else {
-				fmt.Fprintf(&b, "%s   %s\n", barStr, action)
-			}
-		}
-		b.WriteString("\n")
-		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.validation_keys")))
-		b.WriteString("\n")
-		b.WriteString(styleHint.Render(actionFooter(m.i18n)))
-		inner = b.String()
+		inner += m.validationFooter()
 	}
 
 	if inner == "" {

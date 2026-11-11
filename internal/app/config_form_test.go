@@ -15,6 +15,18 @@ func TestStep2IncludesBaseURL(t *testing.T) {
 	}
 }
 
+func TestFileConfigFromInteractive_ClearsIgnoredFiles(t *testing.T) {
+	for _, previous := range [][]string{nil, {}, {"private/**"}} {
+		saved := fileConfigFromInteractive(Config{}, config.FileConfig{IgnoredFiles: previous}, "", 5, 10, 0.7, true, true, nil)
+		if previous != nil && saved.IgnoredFiles == nil {
+			t.Errorf("clearing ignores must persist an empty override: previous=%#v", previous)
+		}
+		if previous == nil && saved.IgnoredFiles != nil {
+			t.Error("untouched unset ignores must continue inheriting")
+		}
+	}
+}
+
 func TestFileConfigFromInteractive_PreservesSiblingKeys(t *testing.T) {
 	existing := config.FileConfig{
 		Provider: config.ProviderOpenAI,

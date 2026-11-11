@@ -1,6 +1,8 @@
 package ollama
 
 import (
+	"net"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -17,8 +19,8 @@ const (
 // otherwise defaults to local.
 func ResolveBaseURL(baseURL, apiKey string) string {
 	resolved := strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	lower := strings.ToLower(resolved)
-	if strings.Contains(lower, "ollama.cloud") {
+	host := baseURLHostname(resolved)
+	if host == "api.ollama.cloud" || host == "ollama.cloud" {
 		return CloudBaseURL
 	}
 	if resolved != "" {
@@ -32,17 +34,22 @@ func ResolveBaseURL(baseURL, apiKey string) string {
 
 // IsCloudBaseURL reports whether baseURL points at Ollama Cloud.
 func IsCloudBaseURL(baseURL string) bool {
-	u := strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
-	if strings.Contains(u, "ollama.com") {
-		return true
-	}
-	return strings.Contains(u, "ollama.cloud")
+	host := baseURLHostname(baseURL)
+	return host == "ollama.com" || host == "api.ollama.cloud" || host == "ollama.cloud"
 }
 
 // IsLocalBaseURL reports whether baseURL points at a local Ollama daemon.
 func IsLocalBaseURL(baseURL string) bool {
-	u := strings.ToLower(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
-	return strings.Contains(u, "localhost") || strings.Contains(u, "127.0.0.1")
+	host := baseURLHostname(baseURL)
+	return host == "localhost" || net.ParseIP(host).IsLoopback()
+}
+
+func baseURLHostname(baseURL string) string {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+		return ""
+	}
+	return strings.ToLower(u.Hostname())
 }
 
 // ResolveAPIKey picks the Ollama API key. For the ollama provider we prefer
