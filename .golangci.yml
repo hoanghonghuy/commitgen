@@ -1,11 +1,11 @@
+version: "2"
+
 run:
   timeout: 5m
   tests: true
 
 linters:
   enable:
-    - gofmt
-    - goimports
     - govet
     - ineffassign
     - misspell
@@ -13,12 +13,18 @@ linters:
     - unused
     - staticcheck
     - errcheck
+  exclusions:
+    # Test files may intentionally ignore errors for brevity.
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
 
 issues:
-  exclude-rules:
-    # Test files may intentionally ignore errors for brevity.
-    - path: _test\.go
-      linters:
-        - errcheck
   max-issues-per-linter: 0
   max-same-issues: 0

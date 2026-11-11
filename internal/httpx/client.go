@@ -78,7 +78,11 @@ func doOnce(ctx context.Context, client *http.Client, method, url string, header
 		}
 		return true, err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warn("failed to close HTTP response", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)

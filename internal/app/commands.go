@@ -263,7 +263,10 @@ func runValidateMsg(cfg Config, repoRoot string, tr *i18n.Translator) error {
 	if err != nil {
 		return fmt.Errorf("read commit message file: %w", err)
 	}
-	v := resolveValidator(cfg, repoRoot, tr)
+	v, err := resolveValidator(cfg, repoRoot)
+	if err != nil {
+		return err
+	}
 	if v == nil || !v.Enabled() {
 		fmt.Println("No validation rules configured.")
 		return nil
@@ -296,7 +299,11 @@ func getJSON(ctx context.Context, url string, headers map[string]string, out int
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warn("failed to close HTTP response", "error", err)
+		}
+	}()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))

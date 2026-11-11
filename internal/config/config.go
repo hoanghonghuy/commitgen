@@ -100,7 +100,23 @@ func Save(cfg FileConfig, path string) error {
 		return err
 	}
 
-	return os.WriteFile(path, b, 0644)
+	const privateFileMode = 0600
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, privateFileMode)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	// Tighten existing files before writing any credentials to them.
+	if err := f.Chmod(privateFileMode); err != nil {
+		return err
+	}
+	if err := f.Truncate(0); err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 // Merge overlays the non-empty/non-nil fields of override onto base and

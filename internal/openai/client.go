@@ -105,7 +105,11 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	if err != nil {
 		return "", logger.LogError(err, "openai: stream request failed", "url", url)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warn("failed to close HTTP response", "error", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -227,7 +231,11 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	if err != nil {
 		return "", logger.LogError(err, "openai: request failed", "url", url)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			logger.Warn("failed to close HTTP response", "error", err)
+		}
+	}()
 
 	b, _ := io.ReadAll(resp.Body)
 

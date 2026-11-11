@@ -80,7 +80,7 @@ func TestLoad_AlreadyMigratedNotRewritten(t *testing.T) {
 		t.Errorf("file content changed unexpectedly\nbefore:\n%s\nafter:\n%s", before, after)
 	}
 	if !infoBefore.ModTime().Equal(infoAfter.ModTime()) {
-		// Content equal is enough; some FS may touch mtime — only fail if content differs.
+		t.Error("already migrated config was rewritten")
 	}
 }
 

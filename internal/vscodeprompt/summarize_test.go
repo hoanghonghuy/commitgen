@@ -7,10 +7,10 @@ import (
 
 func TestExtractOneTextCodeBlock(t *testing.T) {
 	tests := []struct {
-		name    string
-		in      string
-		want    string
-		wantOK  bool
+		name   string
+		in     string
+		want   string
+		wantOK bool
 	}{
 		{"text block", "```text\nfeat: add x\n```", "feat: add x", true},
 		{"language block", "```go\npackage main\n```", "package main", true},

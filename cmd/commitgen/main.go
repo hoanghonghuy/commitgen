@@ -65,18 +65,16 @@ func main() {
 
 	flag.Parse()
 
-	// Support positional commands (e.g., 'commitgen config' instead of 'commitgen -cmd=config')
-	cmd := resolveCommand(*cmdFlag, flag.Args())
+	// Parse flags on both sides of a positional command or config action.
+	cmd, configAction, err := parseCommandArgs(flag.CommandLine, *cmdFlag)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
 
 	if *versionFlag || cmd == "version" {
 		printVersion()
 		return
-	}
-
-	// `config show` / `config path` — works for positional and -cmd=config forms
-	configAction := ""
-	if cmd == "config" {
-		configAction = app.ResolveConfigAction(flag.Args())
 	}
 
 	// 2. Load config from file (global + optional repo-local overlay)
@@ -130,7 +128,7 @@ func main() {
 
 	cfg := app.Config{
 		Command:  cmd,
-		RepoArg:  config.ResolveString(*repoFlag, argValue(flag.Args(), "--repo"), "", ""),
+		RepoArg:  *repoFlag,
 		BaseURL:  baseURL,
 		APIKey:   apiKey,
 		Model:    config.ResolveString(*modelFlag, getenvWithFallback("COMMITGEN_MODEL", "COMMITAI_MODEL", tr), fileCfg.Model, defaultModel),
@@ -153,8 +151,8 @@ func main() {
 		ReviewLanguage:     config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 		Locale:             string(locale),
 		RulesFile:          fileCfg.RulesFile,
-		StyleJSON:          *jsonFlag || hasArg(flag.Args(), "--json"),
-		MessageFile:        config.ResolveString(*fileFlag, argValue(flag.Args(), "--file"), "", ""),
+		StyleJSON:          *jsonFlag,
+		MessageFile:        *fileFlag,
 		PromptTemplateFile: fileCfg.PromptTemplateFile,
 		TimeoutSeconds:     fileCfg.Timeout,
 		IgnoredFiles:       fileCfg.IgnoredFiles,
@@ -210,6 +208,35 @@ func main() {
 	}
 }
 
+// parseCommandArgs consumes the arguments left after the initial flag parse.
+// Reusing the FlagSet preserves flags supplied before the command and keeps
+// Visit aware of explicit zero/false values supplied after it.
+func parseCommandArgs(flags *flag.FlagSet, defaultCommand string) (string, string, error) {
+	args := flags.Args()
+	cmd := resolveCommand(defaultCommand, args)
+	if len(args) > 0 && args[0] == cmd {
+		args = args[1:]
+	}
+	action := ""
+	for len(args) > 0 {
+		if cmd == "config" && action == "" {
+			if configAction := app.ResolveConfigAction(args[:1]); configAction != "" {
+				action = configAction
+				args = args[1:]
+				continue
+			}
+		}
+		if !strings.HasPrefix(args[0], "-") || args[0] == "-" {
+			return "", "", fmt.Errorf("unexpected argument: %s", args[0])
+		}
+		if err := flags.Parse(args); err != nil {
+			return "", "", err
+		}
+		args = flags.Args()
+	}
+	return cmd, action, nil
+}
+
 // resolveCommand returns the effective command: a recognized positional
 // argument takes precedence over the -cmd flag's default value.
 func resolveCommand(cmdFlag string, args []string) string {
@@ -222,27 +249,6 @@ func resolveCommand(cmdFlag string, args []string) string {
 		}
 	}
 	return cmd
-}
-
-func argValue(args []string, name string) string {
-	for i, arg := range args {
-		if arg == name && i+1 < len(args) {
-			return args[i+1]
-		}
-		if strings.HasPrefix(arg, name+"=") {
-			return strings.TrimPrefix(arg, name+"=")
-		}
-	}
-	return ""
-}
-
-func hasArg(args []string, target string) bool {
-	for _, arg := range args {
-		if arg == target {
-			return true
-		}
-	}
-	return false
 }
 
 // printVersion writes build information to stdout.

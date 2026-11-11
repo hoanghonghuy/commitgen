@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
+	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
@@ -39,10 +40,14 @@ func printDurableOutcome(w io.Writer, tr *i18n.Translator, err error) {
 		tr = i18n.New(i18n.LocaleEN)
 	}
 	if err != nil {
-		fmt.Fprintln(w, tr.T("tui.state.error", err))
+		if _, writeErr := fmt.Fprintln(w, tr.T("tui.state.error", err)); writeErr != nil {
+			logger.Warn("failed to print outcome", "error", writeErr)
+		}
 		return
 	}
-	fmt.Fprintln(w, tr.T("tui.state.success"))
+	if _, err := fmt.Fprintln(w, tr.T("tui.state.success")); err != nil {
+		logger.Warn("failed to print outcome", "error", err)
+	}
 }
 
 // actionFooter returns the standard nav footer for menu states.

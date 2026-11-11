@@ -36,6 +36,8 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	dir := initRepo(t)
 
 	tr := i18n.New(i18n.LocaleEN)
+	originalHook := "#!/bin/sh\n# original prepare hook\nexit 0\n"
+	writeFile(t, dir, ".git/hooks/prepare-commit-msg", originalHook)
 	if err := InstallHook(ctx, dir, false, "", tr); err != nil {
 		t.Fatalf("InstallHook error: %v", err)
 	}
@@ -70,6 +72,9 @@ func TestInstallAndUninstallHook(t *testing.T) {
 	if _, err := os.Stat(hookPath); err != nil {
 		t.Fatalf("hook should be restored from backup: %v", err)
 	}
+	if restored, err := os.ReadFile(hookPath); err != nil || string(restored) != originalHook {
+		t.Fatalf("original hook not restored: content=%q err=%v", restored, err)
+	}
 
 	// Uninstall when absent is a no-op (no error)
 	if err := UninstallHook(ctx, dir, tr); err != nil {
@@ -81,6 +86,8 @@ func TestInstallAndUninstallMsgHook(t *testing.T) {
 	ctx := context.Background()
 	dir := initRepo(t)
 	tr := i18n.New(i18n.LocaleEN)
+	originalHook := "#!/bin/sh\n# original message hook\nexit 0\n"
+	writeFile(t, dir, ".git/hooks/commit-msg", originalHook)
 
 	if err := InstallMsgHook(ctx, dir, "", tr); err != nil {
 		t.Fatalf("InstallMsgHook error: %v", err)
@@ -109,5 +116,34 @@ func TestInstallAndUninstallMsgHook(t *testing.T) {
 	}
 	if _, err := os.Stat(hookPath + ".bak"); err == nil {
 		t.Error("backup should be consumed after commit-msg restore")
+	}
+	if restored, err := os.ReadFile(hookPath); err != nil || string(restored) != originalHook {
+		t.Fatalf("original hook not restored: content=%q err=%v", restored, err)
+	}
+}
+
+func TestInstallHook_PreservesExistingBackup(t *testing.T) {
+	for _, name := range []string{"prepare-commit-msg", "commit-msg"} {
+		t.Run(name, func(t *testing.T) {
+			dir := initRepo(t)
+			hookPath := filepath.Join(dir, ".git", "hooks", name)
+			writeFile(t, dir, ".git/hooks/"+name, "custom active hook")
+			writeFile(t, dir, ".git/hooks/"+name+".bak", "original backup")
+			tr := i18n.New(i18n.LocaleEN)
+			var err error
+			if name == "commit-msg" {
+				err = InstallMsgHook(context.Background(), dir, "", tr)
+			} else {
+				err = InstallHook(context.Background(), dir, false, "", tr)
+			}
+			if err == nil {
+				t.Fatal("install must reject replacing an unrelated backup")
+			}
+			for path, want := range map[string]string{hookPath: "custom active hook", hookPath + ".bak": "original backup"} {
+				if got, readErr := os.ReadFile(path); readErr != nil || string(got) != want {
+					t.Fatalf("hook data changed: %s content=%q err=%v", path, got, readErr)
+				}
+			}
+		})
 	}
 }

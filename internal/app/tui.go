@@ -259,17 +259,26 @@ func startStreamCmd(ctx context.Context, sp ai.StreamProvider, ch chan streamEve
 			if ctx == nil {
 				ctx = context.Background()
 			}
-			ctx, cancel := context.WithTimeout(ctx, timeout)
-			defer cancel()
-			full, err := sp.GenerateStream(ctx, msgs, clampTemperature(temp), func(d string) {
+			requestCtx, cancel := context.WithTimeout(ctx, timeout)
+			full, err := sp.GenerateStream(requestCtx, msgs, clampTemperature(temp), func(d string) {
 				select {
 				case ch <- streamEvent{delta: d, genID: genID}:
 				default:
 				}
 			})
+			cancel()
+			final := streamEvent{done: true, full: full, err: err, genID: genID}
+			// A full display buffer may drop deltas, but never the result.
+			// Use the generation context so a completed request timeout
+			// cannot discard its own final event.
 			select {
-			case ch <- streamEvent{done: true, full: full, err: err, genID: genID}:
+			case ch <- final:
+				return
 			default:
+			}
+			select {
+			case ch <- final:
+			case <-ctx.Done():
 			}
 		}()
 		return nil
@@ -401,9 +410,9 @@ func (m tuiModel) buildConfirmContent() string {
 	barStr := styleBar.Render("┃")
 	for i, opt := range options {
 		if m.cursor == i {
-			b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(opt)))
+			fmt.Fprintf(&b, "%s > %s\n", barStr, styleSelected.Render(opt))
 		} else {
-			b.WriteString(fmt.Sprintf("%s   %s\n", barStr, opt))
+			fmt.Fprintf(&b, "%s   %s\n", barStr, opt)
 		}
 	}
 
@@ -492,11 +501,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "pgup":
 				if m.needsScroll {
-					m.viewport.HalfViewUp()
+					m.viewport.HalfPageUp()
 				}
 			case "pgdown":
 				if m.needsScroll {
-					m.viewport.HalfViewDown()
+					m.viewport.HalfPageDown()
 				}
 			case "enter":
 				m.statusBanner = ""
@@ -557,7 +566,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case stateValidationFailed:
-			act := -1
+			var act int
 			switch msg.String() {
 			case "up", "k":
 				if m.cursor > 0 {
@@ -875,9 +884,9 @@ func (m tuiModel) View() string {
 		for i, c := range m.candidates {
 			preview := candidatePreview(c, 2)
 			if m.cursor == i {
-				b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(preview)))
+				fmt.Fprintf(&b, "%s > %s\n", barStr, styleSelected.Render(preview))
 			} else {
-				b.WriteString(fmt.Sprintf("%s   %s\n", barStr, preview))
+				fmt.Fprintf(&b, "%s   %s\n", barStr, preview)
 			}
 		}
 		b.WriteString("\n")
@@ -910,7 +919,7 @@ func (m tuiModel) View() string {
 			if issue.Level == "warning" {
 				levelKey = "tui.level.warning"
 			}
-			b.WriteString(fmt.Sprintf("  • [%s] %s\n", m.i18n.T(levelKey), issue.Message))
+			fmt.Fprintf(&b, "  • [%s] %s\n", m.i18n.T(levelKey), issue.Message)
 		}
 		b.WriteString("\n")
 		b.WriteString(styleActionTitle.Render(m.i18n.T("tui.title.action")))
@@ -924,9 +933,9 @@ func (m tuiModel) View() string {
 		}
 		for i, action := range actions {
 			if m.cursor == i {
-				b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(action)))
+				fmt.Fprintf(&b, "%s > %s\n", barStr, styleSelected.Render(action))
 			} else {
-				b.WriteString(fmt.Sprintf("%s   %s\n", barStr, action))
+				fmt.Fprintf(&b, "%s   %s\n", barStr, action)
 			}
 		}
 		b.WriteString("\n")

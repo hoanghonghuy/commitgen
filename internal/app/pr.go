@@ -51,15 +51,28 @@ func buildPRPromptData(ctx context.Context, repoRoot, basePreferred string, rece
 		if shouldIgnore(path, allIgnores) {
 			continue
 		}
-		diff, _ := gitx.DiffFile(ctx, repoRoot, mb, "HEAD", path)
+		diff, err := gitx.DiffFile(ctx, repoRoot, mb, "HEAD", path)
+		if err != nil {
+			return vscodeprompt.Data{}, err
+		}
 		ch := vscodeprompt.Change{Path: path, Diff: diff}
 		if len(ch.Diff) > maxDiffSize {
 			ch.Diff = truncateUTF8(ch.Diff, 2000) + "\n...[Diff truncated due to size]..."
 		}
 
-		orig, _ := gitx.FileAtRef(ctx, repoRoot, mb, path)
-		if strings.TrimSpace(orig) == "" {
-			orig, _ = gitx.ReadWorkingTreeFile(repoRoot, path)
+		orig, err := gitx.FileAtRef(ctx, repoRoot, mb, path)
+		if err != nil {
+			added, diffErr := gitx.Git(ctx, repoRoot, "diff", "--diff-filter=A", "--name-only", "-z", mb+"...HEAD", "--", ":(literal)"+path)
+			if diffErr != nil {
+				return vscodeprompt.Data{}, diffErr
+			}
+			if added != path+"\x00" {
+				return vscodeprompt.Data{}, err
+			}
+			orig, err = gitx.FileAtRef(ctx, repoRoot, "HEAD", path)
+			if err != nil {
+				return vscodeprompt.Data{}, err
+			}
 		}
 		if len(orig) > maxDiffSize {
 			orig = truncateUTF8(orig, 2000) + "\n...[Content truncated due to size]..."

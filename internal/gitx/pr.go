@@ -47,22 +47,21 @@ func ChangedFiles(ctx context.Context, repoRoot, start, end string) ([]string, e
 	if start == "" || end == "" {
 		return nil, fmt.Errorf("ChangedFiles requires start and end refs")
 	}
-	out, err := Git(ctx, repoRoot, "diff", "--name-only", start+"..."+end)
+	out, err := Git(ctx, repoRoot, "diff", "--name-only", "-z", start+"..."+end)
 	if err != nil {
 		return nil, err
 	}
-	return splitNonEmptyLines(out), nil
+	return splitFileNames(out), nil
 }
 
 // DiffFile returns the unified diff for a single path between start and end.
 func DiffFile(ctx context.Context, repoRoot, start, end, path string) (string, error) {
 	start = strings.TrimSpace(start)
 	end = strings.TrimSpace(end)
-	path = strings.TrimSpace(path)
 	if start == "" || end == "" || path == "" {
 		return "", fmt.Errorf("DiffFile requires start, end, and path")
 	}
-	return Git(ctx, repoRoot, "diff", start+"..."+end, "--", path)
+	return Git(ctx, repoRoot, "diff", start+"..."+end, "--", ":(literal)"+path)
 }
 
 // ResolveBaseRef returns an explicit base when provided, otherwise tries
@@ -97,7 +96,6 @@ func ensureRevExists(ctx context.Context, repoRoot, rev string) error {
 // FileAtRef returns file content at a given git ref (e.g. merge-base SHA).
 func FileAtRef(ctx context.Context, repoRoot, ref, relPath string) (string, error) {
 	ref = strings.TrimSpace(ref)
-	relPath = strings.TrimSpace(relPath)
 	if ref == "" || relPath == "" {
 		return "", fmt.Errorf("FileAtRef requires ref and path")
 	}

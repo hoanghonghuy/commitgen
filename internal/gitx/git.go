@@ -83,11 +83,11 @@ func RecentCommitsByAuthor(ctx context.Context, repoRoot string, n int, author s
 
 // StagedFileNames returns all staged file paths (no diff content).
 func StagedFileNames(ctx context.Context, repoRoot string) ([]string, error) {
-	filesOut, err := Git(ctx, repoRoot, "diff", "--staged", "--name-only")
+	filesOut, err := Git(ctx, repoRoot, "diff", "--staged", "--name-only", "-z")
 	if err != nil {
 		return nil, err
 	}
-	return splitNonEmptyLines(filesOut), nil
+	return splitFileNames(filesOut), nil
 }
 
 // StagedChanges returns staged changes, limited to maxFiles entries.
@@ -95,18 +95,20 @@ func StagedChanges(ctx context.Context, repoRoot string, maxFiles int) ([]Staged
 	if maxFiles <= 0 {
 		maxFiles = 10
 	}
-	filesOut, err := Git(ctx, repoRoot, "diff", "--staged", "--name-only")
+	files, err := StagedFileNames(ctx, repoRoot)
 	if err != nil {
 		return nil, err
 	}
-	files := splitNonEmptyLines(filesOut)
 	if len(files) > maxFiles {
 		files = files[:maxFiles]
 	}
 
 	var out []StagedChange
 	for _, f := range files {
-		diff, _ := Git(ctx, repoRoot, "diff", "--staged", "--", f)
+		diff, err := Git(ctx, repoRoot, "diff", "--staged", "--", ":(literal)"+f)
+		if err != nil {
+			return nil, err
+		}
 		out = append(out, StagedChange{Path: f, Diff: diff})
 	}
 	return out, nil
@@ -156,6 +158,13 @@ func CommitAmend(ctx context.Context, repoRoot, message string) error {
 		return logger.LogError(err, "git commit --amend failed")
 	}
 	return nil
+}
+
+func splitFileNames(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(strings.TrimSuffix(s, "\x00"), "\x00")
 }
 
 func splitNonEmptyLines(s string) []string {

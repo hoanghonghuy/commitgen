@@ -11,6 +11,34 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
+const hookMarker = "# commitgen hook"
+const msgHookMarker = "# commitgen commit-msg hook"
+
+// backupHook preserves the first user hook across repeated installations.
+func backupHook(hookPath, marker string, tr *i18n.Translator) error {
+	content, err := os.ReadFile(hookPath)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read existing hook: %w", err)
+	}
+	if strings.HasPrefix(string(content), "#!/bin/sh\n"+marker+"\n") {
+		return nil
+	}
+	backupPath := hookPath + ".bak"
+	if _, err := os.Lstat(backupPath); err == nil {
+		return fmt.Errorf("refusing to overwrite existing hook backup %s", backupPath)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("inspect hook backup: %w", err)
+	}
+	if err := os.Rename(hookPath, backupPath); err != nil {
+		return fmt.Errorf("back up existing hook %s: %w", hookPath, err)
+	}
+	fmt.Println(tr.T("hook.backed_up", backupPath))
+	return nil
+}
+
 // resolveHooksDir returns the absolute path to the repository's git hooks
 // directory, honoring repoArg and supporting worktrees/submodules via
 // `git rev-parse --git-path hooks`.
@@ -50,12 +78,8 @@ func InstallHook(ctx context.Context, repoArg string, _ bool, configPath string,
 
 	hookPath := filepath.Join(hooksDir, "prepare-commit-msg")
 
-	if _, err := os.Stat(hookPath); err == nil {
-		backupPath := hookPath + ".bak"
-		if err := os.Rename(hookPath, backupPath); err != nil {
-			return fmt.Errorf("back up existing hook %s: %w", hookPath, err)
-		}
-		fmt.Println(tr.T("hook.backed_up", backupPath))
+	if err := backupHook(hookPath, hookMarker, tr); err != nil {
+		return err
 	}
 
 	exe, err := os.Executable()
@@ -98,12 +122,8 @@ func InstallMsgHook(ctx context.Context, repoArg string, configPath string, tr *
 	}
 
 	hookPath := filepath.Join(hooksDir, "commit-msg")
-	if _, err := os.Stat(hookPath); err == nil {
-		backupPath := hookPath + ".bak"
-		if err := os.Rename(hookPath, backupPath); err != nil {
-			return fmt.Errorf("back up existing hook %s: %w", hookPath, err)
-		}
-		fmt.Println(tr.T("hook.backed_up", backupPath))
+	if err := backupHook(hookPath, msgHookMarker, tr); err != nil {
+		return err
 	}
 
 	exe, err := os.Executable()

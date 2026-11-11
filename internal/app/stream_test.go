@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -129,6 +130,51 @@ type waitCtxStreamProvider struct{}
 
 func (waitCtxStreamProvider) Generate(context.Context, []vscodeprompt.VSCodeMessage, float64) (string, error) {
 	return "", errors.New("not used")
+}
+
+type burstStreamProvider struct {
+	fakeStreamProvider
+	requestDone chan (<-chan struct{})
+}
+
+func (p burstStreamProvider) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64, onDelta func(string)) (string, error) {
+	p.requestDone <- ctx.Done()
+	return p.fakeStreamProvider.GenerateStream(ctx, msgs, temp, onDelta)
+}
+
+func TestStartStreamCmd_FullBufferRetainsFinalEvent(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ch := make(chan streamEvent, 256)
+	provider := burstStreamProvider{
+		fakeStreamProvider: fakeStreamProvider{deltas: strings.Split(strings.Repeat("x", cap(ch)), "")},
+		requestDone:        make(chan (<-chan struct{}), 1),
+	}
+	_ = startStreamCmd(ctx, provider, ch, baseMsgs(), 0.7, time.Second, 1)()
+	deadline := time.After(2 * time.Second)
+	select {
+	case done := <-provider.requestDone:
+		select {
+		case <-done:
+		case <-deadline:
+			t.Fatal("request did not finish")
+		}
+	case <-deadline:
+		t.Fatal("producer did not start")
+	}
+	for {
+		select {
+		case ev := <-ch:
+			if ev.done {
+				if ev.err != nil || ev.full != strings.Repeat("x", cap(ch)) {
+					t.Fatalf("final event = %+v", ev)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("stream completion dropped when buffer is full")
+		}
+	}
 }
 
 func (waitCtxStreamProvider) GenerateStream(ctx context.Context, _ []vscodeprompt.VSCodeMessage, _ float64, _ func(string)) (string, error) {

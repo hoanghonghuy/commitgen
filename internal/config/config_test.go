@@ -3,14 +3,15 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestResolveString(t *testing.T) {
 	tests := []struct {
-		name                           string
-		flagVal, envVal, fileVal, def  string
-		want                           string
+		name                          string
+		flagVal, envVal, fileVal, def string
+		want                          string
 	}{
 		{"flag wins", "flag", "env", "file", "def", "flag"},
 		{"env when no flag", "", "env", "file", "def", "env"},
@@ -141,6 +142,15 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	if err := Save(in, path); err != nil {
 		t.Fatalf("Save failed: %v", err)
 	}
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode().Perm() != 0600 {
+			t.Errorf("credential file permissions = %#o, want 0600", info.Mode().Perm())
+		}
+	}
 
 	out, err := Load(path)
 	if err != nil {
@@ -161,5 +171,28 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	}
 	if out.ReviewLanguage != "vi" {
 		t.Errorf("ReviewLanguage mismatch: got %q", out.ReviewLanguage)
+	}
+}
+
+func TestSave_RestrictsExistingPermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permissions are not enforced on Windows")
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte("{}"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(FileConfig{APIKeys: map[string]string{"openai": "test-key"}}, path); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0600 {
+		t.Errorf("existing credential file permissions = %#o, want 0600", info.Mode().Perm())
 	}
 }

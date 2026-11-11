@@ -172,7 +172,10 @@ func Run(ctx context.Context, cfg Config) error {
 		return dumpPrompt(vscodeMsgs, cfg.DumpOutPath)
 
 	case "suggest":
-		v := resolveValidator(cfg, repoRoot, tr)
+		v, err := resolveValidator(cfg, repoRoot)
+		if err != nil {
+			return err
+		}
 		provider, err := newProvider(cfg)
 		if err != nil {
 			return err
@@ -204,7 +207,10 @@ func Run(ctx context.Context, cfg Config) error {
 		return nil
 
 	case "review":
-		v := resolveValidator(cfg, repoRoot, tr)
+		v, err := resolveValidator(cfg, repoRoot)
+		if err != nil {
+			return err
+		}
 		provider, err := newProvider(cfg)
 		if err != nil {
 			return err
@@ -259,29 +265,30 @@ func Run(ctx context.Context, cfg Config) error {
 // resolveValidator loads validation rules when a rules file is configured or
 // auto-discovered at <repo>/.commitgen-rules.json. Returns nil when validation
 // is disabled (no rules file).
-func resolveValidator(cfg Config, repoRoot string, tr *i18n.Translator) *validator.Validator {
+func resolveValidator(cfg Config, repoRoot string) (*validator.Validator, error) {
 	rulesPath := strings.TrimSpace(cfg.RulesFile)
 	if rulesPath == "" {
 		candidate := filepath.Join(repoRoot, ".commitgen-rules.json")
 		if _, err := os.Stat(candidate); err == nil {
 			rulesPath = candidate
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("inspect validation rules: %w", err)
 		}
 	} else if !filepath.IsAbs(rulesPath) {
 		rulesPath = filepath.Join(repoRoot, rulesPath)
 	}
 	if rulesPath == "" {
-		return nil
+		return nil, nil
 	}
 	rulesCfg, err := loadRulesConfig(rulesPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s\n", tr.T("warn.rules_file", rulesPath, err))
-		return nil
+		return nil, fmt.Errorf("load validation rules %q: %w", rulesPath, err)
 	}
 	v := validator.New(*rulesCfg)
 	if !v.Enabled() {
-		return nil
+		return nil, nil
 	}
-	return v
+	return v, nil
 }
 
 // loadRulesConfig reads a JSON rules configuration file and merges it with defaults.
@@ -393,7 +400,10 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 			continue
 		}
 
-		diff, _ := gitx.Git(ctx, repoRoot, "diff", "--staged", "--", path)
+		diff, err := gitx.Git(ctx, repoRoot, "diff", "--staged", "--", ":(literal)"+path)
+		if err != nil {
+			return vscodeprompt.Data{}, err
+		}
 		ch := vscodeprompt.Change{Path: path, Diff: diff}
 
 		const maxDiffSize = 100 * 1024 // 100KB
@@ -401,9 +411,21 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 			ch.Diff = truncateUTF8(ch.Diff, 2000) + "\n...[Diff truncated due to size]..."
 		}
 
-		orig, _ := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
-		if strings.TrimSpace(orig) == "" {
-			orig, _ = gitx.ReadWorkingTreeFile(repoRoot, ch.Path)
+		orig, err := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
+		if err != nil {
+			// Only added files have no original version. Read their staged
+			// content instead of exposing edits from the working tree.
+			added, diffErr := gitx.Git(ctx, repoRoot, "diff", "--staged", "--diff-filter=A", "--name-only", "-z", "--", ":(literal)"+path)
+			if diffErr != nil {
+				return vscodeprompt.Data{}, diffErr
+			}
+			if added != path+"\x00" {
+				return vscodeprompt.Data{}, err
+			}
+			orig, err = gitx.Git(ctx, repoRoot, "show", ":"+path)
+			if err != nil {
+				return vscodeprompt.Data{}, err
+			}
 		}
 		if len(orig) > maxDiffSize {
 			orig = truncateUTF8(orig, 2000) + "\n...[Content truncated due to size]..."
@@ -610,12 +632,12 @@ func dumpPrompt(msgs []vscodeprompt.VSCodeMessage, outPath string) error {
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	enc := json.NewEncoder(f)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(msgs); err != nil {
 		return fmt.Errorf("write json: %w", err)
 	}
-	return nil
+	return f.Close()
 }

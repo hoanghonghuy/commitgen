@@ -3,8 +3,46 @@ package gitx
 import (
 	"context"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestStagedPaths_PreserveSpecialCharacters(t *testing.T) {
+	for _, path := range []string{"tiếng-việt.txt", "line\nbreak.txt", " spaced.txt "} {
+		t.Run(path, func(t *testing.T) {
+			if runtime.GOOS == "windows" && (strings.ContainsAny(path, "\r\n") || strings.HasSuffix(path, " ")) {
+				t.Skip("filename is not valid on Windows")
+			}
+			dir := initRepo(t)
+			runGit(t, dir, "commit", "--allow-empty", "-m", "chore: init")
+			runGit(t, dir, "config", "core.quotepath", "true")
+			writeFile(t, dir, path, "special content\n")
+			runGit(t, dir, "add", ".")
+			paths, err := StagedFileNames(context.Background(), dir)
+			if err != nil || len(paths) != 1 || paths[0] != path {
+				t.Fatalf("paths=%q err=%v, want %q", paths, err, path)
+			}
+			changes, err := StagedChanges(context.Background(), dir, 10)
+			if err != nil || len(changes) != 1 || !strings.Contains(changes[0].Diff, "special content") {
+				t.Fatalf("changes=%+v err=%v", changes, err)
+			}
+			runGit(t, dir, "commit", "-m", "feat: special path")
+			paths, err = ChangedFiles(context.Background(), dir, "HEAD~1", "HEAD")
+			if err != nil || len(paths) != 1 || paths[0] != path {
+				t.Fatalf("PR paths=%q err=%v, want %q", paths, err, path)
+			}
+			diff, err := DiffFile(context.Background(), dir, "HEAD~1", "HEAD", path)
+			if err != nil || !strings.Contains(diff, "special content") {
+				t.Fatalf("PR diff=%q err=%v", diff, err)
+			}
+			content, err := FileAtRef(context.Background(), dir, "HEAD", path)
+			if err != nil || content != "special content\n" {
+				t.Fatalf("PR content=%q err=%v", content, err)
+			}
+		})
+	}
+}
 
 func TestResolveRepoRoot_FromCwd(t *testing.T) {
 	ctx := context.Background()

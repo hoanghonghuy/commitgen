@@ -33,7 +33,7 @@ func BuildAttachment(repoRoot, relPath, content string, summarize bool) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(fmt.Sprintf("<attachment id=\"%s\" isSummarized=\"%t\">\n", base, summarize))
+	fmt.Fprintf(&b, "<attachment id=\"%s\" isSummarized=\"%t\">\n", base, summarize)
 	b.WriteString(filepathCommentLine(relPath, abs))
 
 	keys := make([]int, 0, len(kept))
@@ -43,7 +43,7 @@ func BuildAttachment(repoRoot, relPath, content string, summarize bool) string {
 	sort.Ints(keys)
 
 	for _, ln := range keys {
-		b.WriteString(fmt.Sprintf("%*d: %s\n", width, ln, kept[ln]))
+		fmt.Fprintf(&b, "%*d: %s\n", width, ln, kept[ln])
 	}
 	b.WriteString("</attachment>\n")
 	return b.String()

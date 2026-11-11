@@ -115,6 +115,21 @@ func TestRunValidateMsg_OKAndError(t *testing.T) {
 	}
 }
 
+func TestRunValidateMsg_BrokenRules(t *testing.T) {
+	for _, rulesPath := range []string{"", "missing-rules.json", "rules-directory"} {
+		t.Run(rulesPath, func(t *testing.T) {
+			dir := initRepo(t)
+			writeFile(t, dir, ".commitgen-rules.json", "{invalid json")
+			writeFile(t, dir, "rules-directory/keep", "")
+			writeFile(t, dir, "MSG", strings.Repeat("x", 100))
+			err := runValidateMsg(Config{MessageFile: "MSG", RulesFile: rulesPath}, dir, i18n.New(i18n.LocaleEN))
+			if err == nil {
+				t.Fatal("configured rules failed to load but validation succeeded")
+			}
+		})
+	}
+}
+
 func TestRunValidateMsg_NoRules(t *testing.T) {
 	dir := initRepo(t)
 	writeFile(t, dir, "MSG", "whatever\n")

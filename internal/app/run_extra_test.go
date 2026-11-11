@@ -178,6 +178,35 @@ func TestBuildPromptData(t *testing.T) {
 	}
 }
 
+func TestBuildPromptData_ExcludesUnstagedContent(t *testing.T) {
+	for _, initial := range []string{"new", "empty"} {
+		t.Run(initial, func(t *testing.T) {
+			dir := stagedRepo(t)
+			if initial == "empty" {
+				writeFile(t, dir, "main.go", "")
+				runGit(t, dir, "add", "main.go")
+				runGit(t, dir, "commit", "-m", "chore: add empty file")
+			}
+			writeFile(t, dir, "main.go", "package main\n// staged content\n")
+			runGit(t, dir, "add", "main.go")
+			writeFile(t, dir, "main.go", "package main\n// UNSTAGED_PRIVATE_CONTENT\n")
+			data, err := buildPromptData(context.Background(), dir, 0, 10, false, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data.Changes) != 1 {
+				t.Fatalf("changes = %+v", data.Changes)
+			}
+			if strings.Contains(data.Changes[0].OriginalCode, "UNSTAGED_PRIVATE_CONTENT") {
+				t.Fatal("AI attachment includes unstaged private content")
+			}
+			if initial == "new" && !strings.Contains(data.Changes[0].OriginalCode, "staged content") {
+				t.Fatal("new-file attachment must contain index content")
+			}
+		})
+	}
+}
+
 func TestBuildPromptData_NoStagedChanges(t *testing.T) {
 	ctx := context.Background()
 	dir := initRepo(t)

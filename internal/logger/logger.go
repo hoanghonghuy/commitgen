@@ -86,7 +86,10 @@ func Init(cfg Config) error {
 
 func Close() {
 	if logFile != nil {
-		logFile.Close()
+		if err := logFile.Close(); err != nil {
+			// The configured log destination may already be closed.
+			fmt.Fprintln(os.Stderr, "failed to close log file:", err)
+		}
 		logFile = nil
 	}
 }
@@ -112,7 +115,6 @@ func getDefaultLogPath() string {
 		return "commitgen.log"
 	}
 	logDir := filepath.Join(home, ".commitgen")
-	os.MkdirAll(logDir, 0755)
 	return filepath.Join(logDir, "commitgen.log")
 }
 

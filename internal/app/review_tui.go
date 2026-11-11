@@ -146,10 +146,6 @@ const (
 	reviewStateRegenHint
 )
 
-const (
-	reviewActionCount = 4 // max number of options in review action menu (quick done has 4)
-)
-
 type reviewModel struct {
 	state  reviewState
 	width  int
@@ -338,9 +334,9 @@ func (m reviewModel) buildDoneContent() string {
 	barStr := styleBar.Render("┃")
 	for i, opt := range options {
 		if m.cursor == i {
-			b.WriteString(fmt.Sprintf("%s > %s\n", barStr, styleSelected.Render(opt)))
+			fmt.Fprintf(&b, "%s > %s\n", barStr, styleSelected.Render(opt))
 		} else {
-			b.WriteString(fmt.Sprintf("%s   %s\n", barStr, opt))
+			fmt.Fprintf(&b, "%s   %s\n", barStr, opt)
 		}
 	}
 
@@ -489,11 +485,11 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "pgup":
 				if m.needsScroll {
-					m.viewport.HalfViewUp()
+					m.viewport.HalfPageUp()
 				}
 			case "pgdown":
 				if m.needsScroll {
-					m.viewport.HalfViewDown()
+					m.viewport.HalfPageDown()
 				}
 			case "1", "2", "3", "4":
 				idx := int(msg.String()[0] - '1')

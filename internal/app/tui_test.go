@@ -63,7 +63,7 @@ func TestScrollHintText(t *testing.T) {
 
 func newTestModel() tuiModel {
 	tr := i18n.New(i18n.LocaleEN)
-	return newTuiModel(context.Background(),"/repo", fakeProvider{resp: "feat: x"}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
+	return newTuiModel(context.Background(), "/repo", fakeProvider{resp: "feat: x"}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
 }
 
 func TestTui_CommitResultMovesToConfirm(t *testing.T) {
@@ -171,7 +171,7 @@ func TestTui_CommitCmdWritesHookFile(t *testing.T) {
 	dir := t.TempDir()
 	hookFile := filepath.Join(dir, "COMMIT_EDITMSG")
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel(context.Background(),"/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, hookFile, tr, nil)
+	m := newTuiModel(context.Background(), "/repo", fakeProvider{}, baseMsgs(), 0.7, 5*time.Second, false, hookFile, tr, nil)
 	m.commitMsg = "feat: via hook"
 
 	msg := m.commitCmd()()
@@ -193,7 +193,7 @@ func TestTui_CommitCmdWritesHookFile(t *testing.T) {
 
 func TestTui_GenerateCommitCmd(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)
-	m := newTuiModel(context.Background(),"/repo", fakeProvider{resp: "```text\nfeat: gen\n```"}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
+	m := newTuiModel(context.Background(), "/repo", fakeProvider{resp: "```text\nfeat: gen\n```"}, baseMsgs(), 0.7, 5*time.Second, true, "", tr, nil)
 	msg := m.generateCommitCmd()()
 	res, ok := msg.(commitResultMsg)
 	if !ok {

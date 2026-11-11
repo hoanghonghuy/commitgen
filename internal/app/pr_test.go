@@ -42,6 +42,21 @@ func TestBuildPRPromptData(t *testing.T) {
 	}
 }
 
+func TestBuildPRPromptData_ExcludesUncommittedContent(t *testing.T) {
+	dir := featureBranchRepo(t)
+	writeFile(t, dir, "main.go", "package main\n// UNCOMMITTED_PRIVATE_CONTENT\n")
+	data, err := buildPRPromptData(context.Background(), dir, "main", 10, 10, false, "", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(data.Changes[0].OriginalCode, "func main()") {
+		t.Fatal("attachment must contain committed file content")
+	}
+	if strings.Contains(data.Changes[0].OriginalCode, "UNCOMMITTED_PRIVATE_CONTENT") {
+		t.Fatal("attachment includes uncommitted private content")
+	}
+}
+
 func TestBuildPRPromptData_NoChanges(t *testing.T) {
 	ctx := context.Background()
 	dir := initRepo(t)
