@@ -178,6 +178,8 @@ type reviewModel struct {
 	// scan to the full review ("View Details"). It is pre-built so a custom
 	// prompt template is honored; when nil the built-in default is used.
 	fullReviewSystem *vscodeprompt.VSCodeMessage
+	loadingDetails   bool
+	quickReviewMsgs  []vscodeprompt.VSCodeMessage
 
 	genCtx    context.Context
 	genCancel context.CancelFunc
@@ -278,11 +280,8 @@ func (m reviewModel) generateReviewCmd() tea.Cmd {
 			return reviewResultMsg{err: err, genID: id}
 		}
 
-		report, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
-		if !ok {
-			report = raw
-		}
-		return reviewResultMsg{content: report, genID: id}
+		report, err := extractGeneratedText(raw, "review")
+		return reviewResultMsg{content: report, err: err, genID: id}
 	}
 }
 
@@ -369,11 +368,12 @@ func (m reviewModel) activateReviewAction(act int) (reviewModel, tea.Cmd) {
 	if m.isQuickMode {
 		switch act {
 		case 0: // View Details → full review
+			m.loadingDetails = true
+			m.quickReviewMsgs = m.initialMsgs
+			m.initialMsgs = append([]vscodeprompt.VSCodeMessage(nil), m.initialMsgs...)
 			m.isQuickMode = false
 			m = m.beginGeneration()
 			m.state = reviewStateAnalyzing
-			m.report = ""
-			m.cachedContent = ""
 			fullSystem := vscodeprompt.VSCodeMessage{
 				Role: vscodeprompt.RoleSystem,
 				Content: []vscodeprompt.VSCodeContentPart{
@@ -427,6 +427,12 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case reviewStateAnalyzing:
 			if msg.String() == "esc" {
 				m = m.stopGeneration()
+				if m.loadingDetails {
+					m.isQuickMode = true
+					m.initialMsgs = m.quickReviewMsgs
+					m.quickReviewMsgs = nil
+					m.loadingDetails = false
+				}
 				if m.report != "" {
 					if m.isQuickMode {
 						m.state = reviewStateQuickDone
@@ -545,6 +551,8 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.reachedDone = true
 			return m, outcomeHoldCmd()
 		}
+		m.loadingDetails = false
+		m.quickReviewMsgs = nil
 		m.report = msg.content
 		if m.isQuickMode {
 			m.state = reviewStateQuickDone

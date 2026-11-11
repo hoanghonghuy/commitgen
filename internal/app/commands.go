@@ -44,13 +44,17 @@ func generateCommitMessage(ctx context.Context, provider ai.Provider, msgs []vsc
 
 // extractCommitMessage validates the final text shared by streaming and blocking generation.
 func extractCommitMessage(raw string) (string, error) {
+	return extractGeneratedText(raw, "commit message")
+}
+
+func extractGeneratedText(raw, outputName string) (string, error) {
 	msg, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
 	if !ok {
 		msg = raw
 	}
 	msg = strings.TrimSpace(msg)
 	if msg == "" {
-		return "", fmt.Errorf("AI returned an empty commit message")
+		return "", fmt.Errorf("AI returned an empty %s", outputName)
 	}
 	return msg, nil
 }
@@ -117,6 +121,8 @@ func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, 
 	return nil
 }
 
+const connectivityTimeout = 30 * time.Second
+
 // runPing verifies provider connectivity and credentials with a minimal request.
 func runPing(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	provider, err := newProvider(cfg)
@@ -125,8 +131,8 @@ func runPing(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 	}
 
 	timeout := cfg.Timeout
-	if timeout == 0 || timeout > 30*time.Second {
-		timeout = 30 * time.Second
+	if timeout <= 0 || timeout > connectivityTimeout {
+		timeout = connectivityTimeout
 	}
 	cctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -143,6 +149,12 @@ func runPing(ctx context.Context, cfg Config, tr *i18n.Translator) error {
 
 // runModels lists available models for providers that support discovery.
 func runModels(ctx context.Context, cfg Config, tr *i18n.Translator) error {
+	timeout := cfg.Timeout
+	if timeout <= 0 || timeout > connectivityTimeout {
+		timeout = connectivityTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
 	case config.ProviderOllama, config.ProviderOllamaCloud:
 		return listOllamaModels(ctx, cfg, tr)
@@ -303,7 +315,7 @@ func getJSON(ctx context.Context, url string, headers map[string]string, out int
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: connectivityTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

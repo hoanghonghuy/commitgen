@@ -42,26 +42,40 @@ func CommitsBetween(ctx context.Context, repoRoot, startExclusive, endInclusive 
 // ChangedFiles returns paths that differ between start and end (three-dot style
 // when start is a merge-base: git diff --name-only start...end).
 func ChangedFiles(ctx context.Context, repoRoot, start, end string) ([]string, error) {
+	changes, err := ChangedFileChanges(ctx, repoRoot, start, end)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, change := range changes {
+		paths = append(paths, change.Path)
+	}
+	return paths, nil
+}
+
+// ChangedFileChanges lists committed changes with their original paths.
+func ChangedFileChanges(ctx context.Context, repoRoot, start, end string) ([]FileChange, error) {
 	start = strings.TrimSpace(start)
 	end = strings.TrimSpace(end)
 	if start == "" || end == "" {
 		return nil, fmt.Errorf("ChangedFiles requires start and end refs")
 	}
-	out, err := Git(ctx, repoRoot, "diff", "--name-only", "-z", start+"..."+end)
+	out, err := Git(ctx, repoRoot, "diff", "--find-renames", "--name-status", "-z", start+"..."+end)
 	if err != nil {
 		return nil, err
 	}
-	return splitFileNames(out), nil
+	return parseFileChanges(out)
 }
 
 // DiffFile returns the unified diff for a single path between start and end.
-func DiffFile(ctx context.Context, repoRoot, start, end, path string) (string, error) {
+func DiffFile(ctx context.Context, repoRoot, start, end, path string, originalPaths ...string) (string, error) {
 	start = strings.TrimSpace(start)
 	end = strings.TrimSpace(end)
 	if start == "" || end == "" || path == "" {
 		return "", fmt.Errorf("DiffFile requires start, end, and path")
 	}
-	return Git(ctx, repoRoot, "diff", start+"..."+end, "--", ":(literal)"+path)
+	args := []string{"diff", "--find-renames", start + "..." + end, "--"}
+	return Git(ctx, repoRoot, append(args, diffPathspecs(path, originalPaths)...)...)
 }
 
 // ResolveBaseRef returns an explicit base when provided, otherwise tries

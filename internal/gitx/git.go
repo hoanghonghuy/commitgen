@@ -19,6 +19,12 @@ type StagedChange struct {
 	Diff string
 }
 
+// FileChange preserves both sides of a rename. Added files have no OriginalPath.
+type FileChange struct {
+	Path         string
+	OriginalPath string
+}
+
 // Git runs a git command in the given repository root and returns its stdout.
 func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", repoRoot}, args...)...)
@@ -83,11 +89,65 @@ func RecentCommitsByAuthor(ctx context.Context, repoRoot string, n int, author s
 
 // StagedFileNames returns all staged file paths (no diff content).
 func StagedFileNames(ctx context.Context, repoRoot string) ([]string, error) {
-	filesOut, err := Git(ctx, repoRoot, "diff", "--staged", "--name-only", "-z")
+	changes, err := StagedFileChanges(ctx, repoRoot)
 	if err != nil {
 		return nil, err
 	}
-	return splitFileNames(filesOut), nil
+	var paths []string
+	for _, change := range changes {
+		paths = append(paths, change.Path)
+	}
+	return paths, nil
+}
+
+// StagedFileChanges lists index changes with their original paths.
+func StagedFileChanges(ctx context.Context, repoRoot string) ([]FileChange, error) {
+	out, err := Git(ctx, repoRoot, "diff", "--staged", "--find-renames", "--name-status", "-z")
+	if err != nil {
+		return nil, err
+	}
+	return parseFileChanges(out)
+}
+
+func parseFileChanges(out string) ([]FileChange, error) {
+	fields := splitFileNames(out)
+	var changes []FileChange
+	for i := 0; i < len(fields); {
+		if fields[i] == "" || i+1 >= len(fields) {
+			return nil, fmt.Errorf("invalid git name-status output")
+		}
+		status, path := fields[i], fields[i+1]
+		i += 2
+		change := FileChange{Path: path, OriginalPath: path}
+		switch status[0] {
+		case 'A':
+			change.OriginalPath = ""
+		case 'R', 'C':
+			if i >= len(fields) {
+				return nil, fmt.Errorf("missing destination in git name-status output")
+			}
+			change.Path = fields[i]
+			i++
+		}
+		changes = append(changes, change)
+	}
+	return changes, nil
+}
+
+func diffPathspecs(path string, originalPaths []string) []string {
+	paths := []string{":(literal)" + path}
+	for _, original := range originalPaths {
+		if original != "" && original != path {
+			paths = append(paths, ":(literal)"+original)
+		}
+	}
+	return paths
+}
+
+// StagedDiffFile includes the old side when a staged file was renamed.
+func StagedDiffFile(ctx context.Context, repoRoot, path string, originalPaths ...string) (string, error) {
+	args := []string{"diff", "--staged", "--find-renames", "--"}
+	return Git(ctx, repoRoot, append(args, diffPathspecs(path, originalPaths)...)...)
 }
 
 // StagedChanges returns staged changes, limited to maxFiles entries.
@@ -95,7 +155,7 @@ func StagedChanges(ctx context.Context, repoRoot string, maxFiles int) ([]Staged
 	if maxFiles <= 0 {
 		maxFiles = 10
 	}
-	files, err := StagedFileNames(ctx, repoRoot)
+	files, err := StagedFileChanges(ctx, repoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -105,11 +165,11 @@ func StagedChanges(ctx context.Context, repoRoot string, maxFiles int) ([]Staged
 
 	var out []StagedChange
 	for _, f := range files {
-		diff, err := Git(ctx, repoRoot, "diff", "--staged", "--", ":(literal)"+f)
+		diff, err := StagedDiffFile(ctx, repoRoot, f.Path, f.OriginalPath)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, StagedChange{Path: f, Diff: diff})
+		out = append(out, StagedChange{Path: f.Path, Diff: diff})
 	}
 	return out, nil
 }

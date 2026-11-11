@@ -67,6 +67,27 @@ func TestActionFooter_IncludesNav(t *testing.T) {
 	}
 }
 
+func TestConfirm_NavigationKeepsWrappedActionsVisible(t *testing.T) {
+	for _, content := range []string{
+		"feat: explain change\n\n" + strings.Repeat("long wrapped body ", 150),
+		"feat: explain change\n\n" + strings.Repeat("body line\n", 80),
+	} {
+		m := newTestModel()
+		u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		m = u.(tuiModel)
+		u, _ = m.Update(commitResultMsg{content: content})
+		m = u.(tuiModel)
+		m.viewport.GotoBottom()
+		for _, key := range []tea.KeyType{tea.KeyDown, tea.KeyDown, tea.KeyUp} {
+			u, _ = m.Update(tea.KeyMsg{Type: key})
+			m = u.(tuiModel)
+			if !strings.Contains(m.View(), "Regenerate") || !strings.Contains(m.View(), "Edit") {
+				t.Errorf("actions hidden: cursor=%d offset=%d", m.cursor, m.viewport.YOffset)
+			}
+		}
+	}
+}
+
 func TestCandidatePreview_TwoLines(t *testing.T) {
 	msg := "feat: one\n\nbody line\nmore"
 	got := candidatePreview(msg, 2)

@@ -53,7 +53,18 @@ type content struct {
 }
 
 type part struct {
-	Text string `json:"text"`
+	Text    string `json:"text"`
+	Thought bool   `json:"thought,omitempty"`
+}
+
+func (c content) text() string {
+	var text strings.Builder
+	for _, part := range c.Parts {
+		if !part.Thought {
+			text.WriteString(part.Text)
+		}
+	}
+	return text.String()
 }
 
 type generationConfig struct {
@@ -137,7 +148,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		return "", logger.LogError(fmt.Errorf("empty response"), "gemini: no content")
 	}
 
-	return genResp.Candidates[0].Content.Parts[0].Text, nil
+	return genResp.Candidates[0].Content.text(), nil
 }
 
 // GenerateStream streams the completion using Gemini's SSE endpoint
@@ -190,7 +201,7 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		if len(chunk.Candidates) == 0 || len(chunk.Candidates[0].Content.Parts) == 0 {
 			continue
 		}
-		text := chunk.Candidates[0].Content.Parts[0].Text
+		text := chunk.Candidates[0].Content.text()
 		if text != "" {
 			full.WriteString(text)
 			if onDelta != nil {

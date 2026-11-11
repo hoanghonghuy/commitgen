@@ -434,22 +434,13 @@ func (m tuiModel) refreshViewport() tuiModel {
 
 	if m.needsScroll {
 		m.viewport.SetContent(content)
-		// Auto-scroll to keep the current action cursor visible.
-		// Each action line is 1 line; the cursor is at position (header lines + cursor).
-		// Header: 1 blank + 1 title + 1 blank + content lines + 1 blank + 1 action title + 1 blank = 6 + content lines.
-		// But we use a simpler heuristic: scroll to show the selected action.
-		actionLine := 3 + countLines(m.commitMsg) + 2 + m.cursor // rough estimate
-		totalLines := contentLines
-		if totalLines > m.viewport.Height {
-			// Scroll so the selected action is in the visible area.
-			scrollTo := actionLine - m.viewport.Height/2
-			if scrollTo < 0 {
-				scrollTo = 0
-			}
-			if scrollTo > totalLines-m.viewport.Height {
-				scrollTo = totalLines - m.viewport.Height
-			}
-			m.viewport.SetYOffset(scrollTo)
+		// The rendered content includes wrapped message lines, followed by
+		// the actions and a trailing newline. Use those actual line positions.
+		actionLine := contentLines - confirmActionCount - 1 + m.cursor
+		if actionLine < m.viewport.YOffset {
+			m.viewport.SetYOffset(actionLine)
+		} else if actionLine >= m.viewport.YOffset+m.viewport.Height {
+			m.viewport.SetYOffset(actionLine - m.viewport.Height + 1)
 		}
 	} else {
 		// Content fits — no scroll needed.

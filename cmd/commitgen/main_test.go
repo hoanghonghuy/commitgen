@@ -163,6 +163,54 @@ func TestCLI_RepoConfigFollowsTargetRoot(t *testing.T) {
 	}
 }
 
+func TestCLI_PromptTemplateUsesConfigDirectory(t *testing.T) {
+	for _, source := range []string{"repo", "global", "explicit"} {
+		t.Run(source, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home)
+			repo := t.TempDir()
+			initCLIRepo(t, repo)
+			if err := os.WriteFile(filepath.Join(repo, "file.txt"), []byte("staged\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command("git", "-C", repo, "add", "file.txt").CombinedOutput(); err != nil {
+				t.Fatalf("add: %v %s", err, out)
+			}
+			configDir := repo
+			args := []string{"dump-prompt", "--repo", repo}
+			switch source {
+			case "global":
+				configDir = home
+			case "explicit":
+				configDir = t.TempDir()
+				args = append(args, "--config", filepath.Join(configDir, ".commitgen.json"))
+			}
+			path := filepath.Join(configDir, ".commitgen.json")
+			if err := os.WriteFile(path, []byte(`{"prompt_template_file":"prompt.txt"}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(configDir, "prompt.txt"), []byte("SOURCE_TEMPLATE_MARKER"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if source == "global" {
+				if err := os.WriteFile(filepath.Join(repo, ".commitgen.json"), []byte(`{"review_language":"vi"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			t.Chdir(t.TempDir())
+			out, err := runCLI(t, args...)
+			if err != nil || !strings.Contains(out, "SOURCE_TEMPLATE_MARKER") {
+				t.Fatalf("relative template lost: err=%v marker=%v", err, strings.Contains(out, "SOURCE_TEMPLATE_MARKER"))
+			}
+			data, err := os.ReadFile(path)
+			if err != nil || string(data) != `{"prompt_template_file":"prompt.txt"}` {
+				t.Fatalf("loading changed raw config: %s err=%v", data, err)
+			}
+		})
+	}
+}
+
 func TestCLIProcess(t *testing.T) {
 	if os.Getenv("COMMITGEN_TEST_PROCESS") != "1" {
 		return
@@ -200,6 +248,176 @@ func cliTestEnv() []string {
 		}
 	}
 	return append(env, "COMMITGEN_TEST_PROCESS=1", "COMMITGEN_LOG_OUTPUT=stderr")
+}
+
+func buildCLI(t *testing.T) string {
+	t.Helper()
+	exe := filepath.Join(t.TempDir(), "commitgen")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	cmd := exec.Command("go", "build", "-o", exe, ".")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build CLI: %v\n%s", err, out)
+	}
+	return exe
+}
+
+func runBinary(t *testing.T, exe, dir string, args ...string) (string, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, args...)
+	cmd.Dir = dir
+	cmd.Env = cliTestEnv()
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+func initCLIRepo(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}, {"config", "commit.gpgsign", "false"}, {"commit", "--allow-empty", "-m", "chore: initial"}} {
+		if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git setup: %v: %s", err, out)
+		}
+	}
+}
+
+func TestCLI_InstalledHooksPreserveLiteralPaths(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX shell path characters are not valid Windows filenames")
+	}
+	exe := buildCLI(t)
+	name := " '$AUDIT_SLOT$(touch AUDIT_CANARY)`touch AUDIT_CANARY`"
+	binary, err := os.ReadFile(exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exe = filepath.Join(t.TempDir(), "commitgen"+name)
+	if err := os.WriteFile(exe, binary, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+	t.Setenv("AUDIT_SLOT", "EXPANDED")
+	dir := filepath.Join(t.TempDir(), "repo"+name)
+	initCLIRepo(t, dir)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"fix: literal paths"}}]}`)
+	}))
+	defer server.Close()
+	path := filepath.Join(dir, "config"+name+".json")
+	data, err := json.Marshal(map[string]string{"provider": "compatible", "model": "fixture", "compatible_base_url": server.URL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, command := range []string{"install-hook", "install-msg-hook"} {
+		if out, err := runBinary(t, exe, dir, "--config", path, command); err != nil {
+			t.Fatalf("install: %v %s", err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("staged\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", dir, "add", "file.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v %s", err, out)
+	}
+	cmd := exec.Command("git", "-C", dir, "commit")
+	cmd.Env = append(cliTestEnv(), "GIT_EDITOR=true")
+	out, commitErr := cmd.CombinedOutput()
+	if _, err := os.Stat(filepath.Join(dir, "AUDIT_CANARY")); !os.IsNotExist(err) {
+		t.Errorf("hook executed a command from a path: %v", err)
+	}
+	if commitErr != nil || !strings.Contains(string(out), "fix: literal paths") {
+		t.Fatalf("hook did not preserve literal paths: %v %s", commitErr, out)
+	}
+}
+
+func TestCLI_MsgHookValidationContext(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("hook integration uses a POSIX shell")
+	}
+	exe := buildCLI(t)
+	for _, scenario := range []string{"worktree", "missing-config", "invalid-config", "invalid-overlay"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			dir := t.TempDir()
+			initCLIRepo(t, dir)
+			target := dir
+			args := []string{"install-msg-hook"}
+			configPath := filepath.Join(dir, "policy.json")
+			switch scenario {
+			case "worktree":
+				target = filepath.Join(t.TempDir(), "linked")
+				if out, err := exec.Command("git", "-C", dir, "worktree", "add", "-b", "feature/linked", target).CombinedOutput(); err != nil {
+					t.Fatalf("worktree: %v %s", err, out)
+				}
+			case "invalid-overlay":
+				configPath = filepath.Join(dir, ".commitgen.json")
+			default:
+				args = append(args, "--config", configPath)
+			}
+			rules := filepath.Join(target, ".commitgen-rules.json")
+			if scenario != "worktree" {
+				rules = filepath.Join(dir, "rules.json")
+				if err := os.WriteFile(configPath, []byte(`{"rules_file":"rules.json"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(rules, []byte(`{"rules":{"required-patterns":{"enabled":true,"patterns":["^fix:"]}}}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := runBinary(t, exe, dir, args...); err != nil {
+				t.Fatalf("install: %v %s", err, out)
+			}
+			if scenario == "missing-config" {
+				if err := os.Remove(configPath); err != nil {
+					t.Fatal(err)
+				}
+			} else if scenario != "worktree" {
+				if err := os.WriteFile(configPath, []byte(`{"rules_file":`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(target, "file.txt"), []byte("staged\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command("git", "-C", target, "add", "file.txt").CombinedOutput(); err != nil {
+				t.Fatalf("add: %v %s", err, out)
+			}
+			before, err := exec.Command("git", "-C", target, "rev-parse", "HEAD").Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cmd := exec.Command("git", "-C", target, "commit", "-m", "feat: disallowed")
+			cmd.Env = cliTestEnv()
+			out, err := cmd.CombinedOutput()
+			after, headErr := exec.Command("git", "-C", target, "rev-parse", "HEAD").Output()
+			if err == nil || headErr != nil || !bytes.Equal(before, after) {
+				t.Fatalf("hook allowed commit with wrong/missing policy: err=%v headErr=%v output=%s", err, headErr, out)
+			}
+			if scenario == "worktree" && !strings.Contains(string(out), "required pattern") {
+				t.Fatalf("worktree hook failed for an unrelated reason: %s", out)
+			}
+			if scenario != "worktree" {
+				if err := os.WriteFile(configPath, []byte(`{"rules_file":"rules.json"}`), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			cmd = exec.Command("git", "-C", target, "commit", "-m", "fix: allowed")
+			cmd.Env = cliTestEnv()
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("valid commit rejected: %v %s", err, out)
+			}
+		})
+	}
 }
 
 func TestCLI_SubcommandConfigFlags(t *testing.T) {

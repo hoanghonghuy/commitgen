@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +84,31 @@ func TestGenerate_SystemInstructionAndRoles(t *testing.T) {
 	}
 	if got != "docs: update" {
 		t.Errorf("got %q", got)
+	}
+}
+
+func TestGenerate_PreservesAllTextParts(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			body := `{"candidates":[{"content":{"parts":[{"thought":true,"text":"PRIVATE_THOUGHT"},{"text":"feat: complete"},{"text":"\n\nBody and footer"}]}},{"content":{"parts":[{"text":"OTHER_CANDIDATE"}]}}]}`
+			if stream {
+				body = "data: " + body + "\n\n"
+			}
+			_, _ = w.Write([]byte(body))
+		}))
+		c := newTestClient(srv.URL)
+		var got string
+		var err error
+		var deltas strings.Builder
+		if stream {
+			got, err = c.GenerateStream(context.Background(), sampleMsgs(), 0.7, func(delta string) { deltas.WriteString(delta) })
+		} else {
+			got, err = c.Generate(context.Background(), sampleMsgs(), 0.7)
+		}
+		srv.Close()
+		if err != nil || got != "feat: complete\n\nBody and footer" || (stream && deltas.String() != got) {
+			t.Errorf("stream=%v: parts lost: content=%q deltas=%q err=%v", stream, got, deltas.String(), err)
+		}
 	}
 }
 

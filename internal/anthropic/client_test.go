@@ -24,6 +24,19 @@ func TestGenerateStream_RejectsMidstreamError(t *testing.T) {
 	}
 }
 
+func TestGenerate_PreservesAllTextBlocks(t *testing.T) {
+	for _, prefix := range []string{"", `{"type":"thinking","thinking":"PRIVATE_THOUGHT"},`} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`{"content":[` + prefix + `{"type":"text","text":"feat: complete"},{"type":"text","text":"\n\nBody and footer"}]}`))
+		}))
+		got, err := newTestClient(srv.URL).Generate(context.Background(), sampleMsgs(), 0.7)
+		srv.Close()
+		if err != nil || got != "feat: complete\n\nBody and footer" {
+			t.Errorf("text blocks lost: got=%q err=%v", got, err)
+		}
+	}
+}
+
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{
 		{Role: vscodeprompt.RoleSystem, Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "system prompt"}}},

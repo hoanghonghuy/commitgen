@@ -14,6 +14,11 @@ import (
 const hookMarker = "# commitgen hook"
 const msgHookMarker = "# commitgen commit-msg hook"
 
+// shellQuote keeps literal arguments safe in generated POSIX shell scripts.
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 func isManagedHook(content []byte, marker string) bool {
 	return strings.HasPrefix(string(content), "#!/bin/sh\n"+marker+"\n")
 }
@@ -98,7 +103,7 @@ func InstallHook(ctx context.Context, repoArg string, _ bool, configPath string,
 		if abs, absErr := filepath.Abs(configPath); absErr == nil {
 			configPath = abs
 		}
-		configArg = fmt.Sprintf(" --config \"%s\"", configPath)
+		configArg = " --config " + shellQuote(configPath)
 	}
 
 	script := buildHookScript(exe, configArg, tr.T("hook.analyzing"), tr.T("hook.failed"))
@@ -113,10 +118,6 @@ func InstallHook(ctx context.Context, repoArg string, _ bool, configPath string,
 
 // InstallMsgHook installs a commit-msg hook that validates the final commit message.
 func InstallMsgHook(ctx context.Context, repoArg string, configPath string, tr *i18n.Translator) error {
-	repoRoot, err := gitx.ResolveRepoRoot(ctx, repoArg)
-	if err != nil {
-		return err
-	}
 	hooksDir, err := resolveHooksDir(ctx, repoArg)
 	if err != nil {
 		return err
@@ -142,10 +143,10 @@ func InstallMsgHook(ctx context.Context, repoArg string, configPath string, tr *
 		if abs, absErr := filepath.Abs(configPath); absErr == nil {
 			configPath = abs
 		}
-		configArg = fmt.Sprintf(" --config \"%s\"", configPath)
+		configArg = " --config " + shellQuote(configPath)
 	}
 
-	script := buildMsgHookScript(exe, configArg, repoRoot, tr.T("hook.failed"))
+	script := buildMsgHookScript(exe, configArg, tr.T("hook.failed"))
 	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write hook file: %w", err)
 	}
@@ -170,15 +171,15 @@ case "$COMMIT_SOURCE" in
     ;;
 esac
 
-echo "%s"
-if ! "%s" --hook "$COMMIT_MSG_FILE" --print%s; then
-  echo "%s" >&2
+printf '%%s\n' %s
+if ! %s --hook "$COMMIT_MSG_FILE" --print%s; then
+  printf '%%s\n' %s >&2
   exit 1
 fi
-`, analyzingMsg, exe, configArg, failedMsg)
+`, shellQuote(analyzingMsg), shellQuote(exe), configArg, shellQuote(failedMsg))
 }
 
-func buildMsgHookScript(exe, configArg, repoRoot, failedMsg string) string {
+func buildMsgHookScript(exe, configArg, failedMsg string) string {
 	return fmt.Sprintf(`#!/bin/sh
 # commitgen commit-msg hook
 # This hook validates the final commit message.
@@ -190,11 +191,11 @@ if [ -z "$COMMIT_MSG_FILE" ]; then
 	exit 1
 fi
 
-if ! "%s"%s validate-msg --repo "%s" --file "$COMMIT_MSG_FILE"; then
-	echo "%s" >&2
+if ! %s%s validate-msg --file "$COMMIT_MSG_FILE"; then
+	printf '%%s\n' %s >&2
 	exit 1
 fi
-`, exe, configArg, repoRoot, failedMsg)
+`, shellQuote(exe), configArg, shellQuote(failedMsg))
 }
 
 // UninstallHook removes the prepare-commit-msg hook. When a .bak file exists

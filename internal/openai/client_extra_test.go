@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -136,6 +137,33 @@ func TestGenerateStream_CollectsDeltas(t *testing.T) {
 	}
 	if len(deltas) != 2 {
 		t.Errorf("expected 2 deltas, got %d: %v", len(deltas), deltas)
+	}
+}
+
+func TestStreamingResponse_RejectsMidstreamError(t *testing.T) {
+	for _, failure := range []string{
+		`{"error":{"message":"Provider failed","type":"server_error"},"choices":[{"delta":{},"finish_reason":"error"}]}`,
+		`{"choices":[{"delta":{},"finish_reason":"error"}]}`,
+	} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", failure, stream), func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"feat: partial\"}}]}\n\ndata: %s\n\ndata: [DONE]\n\n", failure)
+				}))
+				defer srv.Close()
+				c := New(Config{BaseURL: srv.URL, Model: "fixture"})
+				var text string
+				var err error
+				if stream {
+					text, err = c.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
+				} else {
+					text, err = c.generate(context.Background(), sampleMsgs(), 0.7)
+				}
+				if err == nil || text != "" {
+					t.Fatalf("midstream error accepted: content=%q err=%v", text, err)
+				}
+			})
+		}
 	}
 }
 

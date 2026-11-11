@@ -65,6 +65,8 @@ Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--loca
 
 Config form: abort step 2 (Esc / cancel) returns to provider selection. Set `ACCESSIBLE=1` or `TERM=dumb` for huh accessible mode.
 
+After upgrading, reinstall existing CommitGen hooks with `install-hook` / `install-msg-hook` to refresh their scripts. The validation hook uses the worktree where the commit is running, including linked worktrees.
+
 ### Pull request draft
 
 ```bash
@@ -150,13 +152,17 @@ Legacy `api_key` / `base_url` / `anthropic_key` / `gemini_key` are **migrated au
 Other settings:
 - **Preferences**: Conventional Commits, Summarization, Ignored Files.
 - **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests.
+- **Connectivity timeout**: `ping` and `models` use at most 30 seconds and honor shorter configured timeouts.
 - **Advanced** (edit JSON): `prompt_template_file`, `rules_file`.
+- **Template paths**: Relative `prompt_template_file` paths resolve from the config file that supplied them, including inherited global settings and explicit `--config` files.
 - **Custom Ollama host**: Set `ollama_base_url` in JSON for a LAN/remote daemon. It is independent of `compatible_base_url`; older Ollama host settings are migrated automatically.
 - **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. With `--repo`, the overlay comes from the target repository root, including when the argument points to a subdirectory. An explicit `--config` still takes precedence. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
 - **Validation**: Place `.commitgen-rules.json` in the repo root (auto-discovered) or set `rules_file` in config.
 - **Logging**: Log level, output destination, and log file path.
 
 `commitgen config` loads merged settings (global + repo overlay) but **saves to `~/.commitgen.json`** unless you pass `--config`. Leave the API key empty (or `********`) to keep the existing key for that provider.
+
+Commands stop when an existing config file cannot be read or parsed, and an explicit `--config` must exist. The config editor can create a new explicit config file. This prevents a validation hook from silently dropping its configured rules when its config is missing or invalid.
 
 ### Environment variables
 

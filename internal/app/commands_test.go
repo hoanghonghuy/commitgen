@@ -50,6 +50,25 @@ func TestGenerateCommitMessage_Error(t *testing.T) {
 	}
 }
 
+func TestRunModels_RespectsTimeout(t *testing.T) {
+	previous := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	for _, provider := range []string{"compatible", "ollama"} {
+		transport := &providerTimeoutTransport{}
+		http.DefaultTransport = transport
+		var err error
+		_ = captureStdout(t, func() {
+			err = runModels(context.Background(), Config{Provider: provider, BaseURL: "http://unused.invalid", Timeout: time.Second}, i18n.New(i18n.LocaleEN))
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if remaining := transport.deadline.Sub(transport.started); remaining <= 0 || remaining > time.Second {
+			t.Errorf("provider=%s: --timeout=1 ignored; deadline in %s", provider, remaining.Round(time.Millisecond))
+		}
+	}
+}
+
 func TestRunStyle_PrintsLearnedGuidance(t *testing.T) {
 	dir := initRepo(t)
 	writeFile(t, dir, "README.md", "# initial\n")

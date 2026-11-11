@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
@@ -31,7 +30,7 @@ func buildPRPromptData(ctx context.Context, repoRoot, basePreferred string, rece
 
 	branch, _ := gitx.CurrentBranch(ctx, repoRoot)
 	commits, _ := gitx.CommitsBetween(ctx, repoRoot, mb, "HEAD", recentN)
-	files, err := gitx.ChangedFiles(ctx, repoRoot, mb, "HEAD")
+	files, err := gitx.ChangedFileChanges(ctx, repoRoot, mb, "HEAD")
 	if err != nil {
 		return vscodeprompt.Data{}, logger.LogError(err, "failed to list changed files since merge-base")
 	}
@@ -44,14 +43,15 @@ func buildPRPromptData(ctx context.Context, repoRoot, basePreferred string, rece
 
 	const maxDiffSize = 100 * 1024
 	filtered := make([]vscodeprompt.Change, 0, maxFiles)
-	for _, path := range files {
+	for _, file := range files {
+		path := file.Path
 		if len(filtered) >= maxFiles {
 			break
 		}
 		if shouldIgnore(path, allIgnores) {
 			continue
 		}
-		diff, err := gitx.DiffFile(ctx, repoRoot, mb, "HEAD", path)
+		diff, err := gitx.DiffFile(ctx, repoRoot, mb, "HEAD", path, file.OriginalPath)
 		if err != nil {
 			return vscodeprompt.Data{}, err
 		}
@@ -60,24 +60,20 @@ func buildPRPromptData(ctx context.Context, repoRoot, basePreferred string, rece
 			ch.Diff = truncateUTF8(ch.Diff, 2000) + "\n...[Diff truncated due to size]..."
 		}
 
-		orig, err := gitx.FileAtRef(ctx, repoRoot, mb, path)
+		originalPath := file.OriginalPath
+		ref := mb
+		if originalPath == "" {
+			originalPath = path
+			ref = "HEAD"
+		}
+		orig, err := gitx.FileAtRef(ctx, repoRoot, ref, originalPath)
 		if err != nil {
-			added, diffErr := gitx.Git(ctx, repoRoot, "diff", "--diff-filter=A", "--name-only", "-z", mb+"...HEAD", "--", ":(literal)"+path)
-			if diffErr != nil {
-				return vscodeprompt.Data{}, diffErr
-			}
-			if added != path+"\x00" {
-				return vscodeprompt.Data{}, err
-			}
-			orig, err = gitx.FileAtRef(ctx, repoRoot, "HEAD", path)
-			if err != nil {
-				return vscodeprompt.Data{}, err
-			}
+			return vscodeprompt.Data{}, err
 		}
 		if len(orig) > maxDiffSize {
 			orig = truncateUTF8(orig, 2000) + "\n...[Content truncated due to size]..."
 		}
-		attachment := vscodeprompt.BuildAttachment(repoRoot, path, orig, summarize)
+		attachment := vscodeprompt.BuildAttachment(repoRoot, originalPath, orig, summarize)
 		filtered = append(filtered, vscodeprompt.Change{
 			Path:         path,
 			Diff:         ch.Diff,
@@ -112,9 +108,13 @@ func runPR(ctx context.Context, cfg Config, repoRoot string, provider ai.Provide
 		return logger.LogError(err, "failed to generate PR description")
 	}
 
-	title, body, ok := vscodeprompt.ParsePROutput(raw)
+	content, err := extractGeneratedText(raw, "PR description")
+	if err != nil {
+		return logger.LogError(err, "failed to generate PR description")
+	}
+	title, body, ok := vscodeprompt.ParsePROutput(content)
 	if !ok {
-		fmt.Println(strings.TrimSpace(raw))
+		fmt.Println(content)
 		return nil
 	}
 

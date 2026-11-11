@@ -2,9 +2,9 @@ package vscodeprompt
 
 import (
 	"bytes"
-	"html/template"
 	"regexp"
 	"strings"
+	"text/template"
 )
 
 // Role constants for VSCodeMessage

@@ -58,6 +58,7 @@ type message struct {
 
 type messageResponse struct {
 	Content []struct {
+		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
 }
@@ -122,7 +123,13 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		return "", logger.LogError(fmt.Errorf("empty response"), "anthropic: no content")
 	}
 
-	return msgResp.Content[0].Text, nil
+	var text strings.Builder
+	for _, block := range msgResp.Content {
+		if block.Type == "" || block.Type == "text" {
+			text.WriteString(block.Text)
+		}
+	}
+	return text.String(), nil
 }
 
 // anthropicStreamChunk is a single SSE event from the streaming messages API.

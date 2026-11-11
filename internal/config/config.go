@@ -39,6 +39,7 @@ type FileConfig struct {
 
 	// Prompt template loaded from a file (takes precedence over PromptTemplate when set)
 	PromptTemplateFile string `json:"prompt_template_file,omitempty"`
+	promptTemplateDir  string // Source directory; kept out of the persisted schema.
 
 	// Locale for UI language (en, vi, ja, zh). Defaults to "en".
 	Locale string `json:"locale,omitempty"`
@@ -57,6 +58,10 @@ type FileConfig struct {
 
 // Load reads configuration from the given path, or from ~/.commitgen.json if path is empty.
 func Load(path string) (FileConfig, error) {
+	return load(path, true)
+}
+
+func load(path string, optional bool) (FileConfig, error) {
 	var cfg FileConfig
 	if path == "" {
 		home, err := os.UserHomeDir()
@@ -67,7 +72,7 @@ func Load(path string) (FileConfig, error) {
 	}
 
 	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
+	if optional && os.IsNotExist(err) {
 		return cfg, nil
 	}
 	if err != nil {
@@ -83,7 +88,19 @@ func Load(path string) (FileConfig, error) {
 			fmt.Fprintf(os.Stderr, "warning: failed to rewrite migrated config %s: %v\n", path, saveErr)
 		}
 	}
+	migrated.promptTemplateDir = filepath.Dir(path)
+	if absolute, err := filepath.Abs(migrated.promptTemplateDir); err == nil {
+		migrated.promptTemplateDir = absolute
+	}
 	return migrated, nil
+}
+
+// PromptTemplatePath resolves a template against the config that supplied it.
+func (c FileConfig) PromptTemplatePath() string {
+	if c.PromptTemplateFile == "" || filepath.IsAbs(c.PromptTemplateFile) || c.promptTemplateDir == "" {
+		return c.PromptTemplateFile
+	}
+	return filepath.Join(c.promptTemplateDir, c.PromptTemplateFile)
 }
 
 // Save writes configuration to the given path, or to ~/.commitgen.json if path is empty.
@@ -156,6 +173,7 @@ func Merge(base, override FileConfig) FileConfig {
 	}
 	if override.PromptTemplateFile != "" {
 		out.PromptTemplateFile = override.PromptTemplateFile
+		out.promptTemplateDir = override.promptTemplateDir
 	}
 	if override.IgnoredFiles != nil {
 		out.IgnoredFiles = override.IgnoredFiles
@@ -231,17 +249,16 @@ func LoadResolved(explicitPath string) (FileConfig, error) {
 // is supplied. Explicit config paths continue to bypass global and repo files.
 func LoadResolvedForRepo(explicitPath, repoRoot string) (FileConfig, error) {
 	if explicitPath != "" {
-		return Load(explicitPath)
+		return load(explicitPath, false)
 	}
 	global, err := Load("")
 	if err != nil {
 		return global, err
 	}
 	if local, ok := findRepoLocalConfig(repoRoot); ok {
-		lc, lerr := Load(local)
+		lc, lerr := load(local, false)
 		if lerr != nil {
-			fmt.Fprintf(os.Stderr, "warning: failed to load repo config %s: %v\n", local, lerr)
-			return global, nil
+			return FileConfig{}, fmt.Errorf("load repo config %s: %w", local, lerr)
 		}
 		return Merge(global, lc), nil
 	}

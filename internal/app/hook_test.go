@@ -101,7 +101,7 @@ func TestInstallAndUninstallMsgHook(t *testing.T) {
 		t.Fatalf("commit-msg hook file not created: %v", err)
 	}
 	script := string(b)
-	for _, want := range []string{"validate-msg", "--repo", "--file", "COMMIT_MSG_FILE"} {
+	for _, want := range []string{"validate-msg", "--file", "COMMIT_MSG_FILE"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("commit-msg hook missing %q:\n%s", want, script)
 		}

@@ -52,8 +52,8 @@ func TestBuildVSCodeMessages_DefaultTemplate(t *testing.T) {
 func TestBuildVSCodeMessages_CustomTemplate(t *testing.T) {
 	customTmpl := "Hello {{.RepositoryName}} on branch {{.BranchName}}"
 	data := Data{
-		RepositoryName:       "my-repo",
-		BranchName:           "dev",
+		RepositoryName:       "my&repo",
+		BranchName:           "feature/<parser>",
 		Changes:              []Change{{Path: "main.go", Diff: "package main"}},
 		SystemPromptTemplate: customTmpl,
 	}
@@ -65,7 +65,7 @@ func TestBuildVSCodeMessages_CustomTemplate(t *testing.T) {
 	}
 
 	sysContent := msgs[0].Content[0].Text
-	expected := "Hello my-repo on branch dev"
+	expected := "Hello my&repo on branch feature/<parser>"
 	if sysContent != expected {
 		t.Errorf("expected %q, got %q", expected, sysContent)
 	}

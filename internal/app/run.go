@@ -376,7 +376,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 		logger.Warn("failed to read git commit template", "error", err)
 	}
 
-	stagedFiles, err := gitx.StagedFileNames(ctx, repoRoot)
+	stagedFiles, err := gitx.StagedFileChanges(ctx, repoRoot)
 	if err != nil {
 		return vscodeprompt.Data{}, logger.LogError(err, "failed to get staged changes")
 	}
@@ -393,7 +393,8 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 	allIgnores := append(defaultIgnores, ignoredFiles...)
 
 	filteredChanges := make([]vscodeprompt.Change, 0, maxFiles)
-	for _, path := range stagedFiles {
+	for _, file := range stagedFiles {
+		path := file.Path
 		if len(filteredChanges) >= maxFiles {
 			break
 		}
@@ -401,7 +402,7 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 			continue
 		}
 
-		diff, err := gitx.Git(ctx, repoRoot, "diff", "--staged", "--", ":(literal)"+path)
+		diff, err := gitx.StagedDiffFile(ctx, repoRoot, path, file.OriginalPath)
 		if err != nil {
 			return vscodeprompt.Data{}, err
 		}
@@ -412,27 +413,23 @@ func buildPromptData(ctx context.Context, repoRoot string, recentN, maxFiles int
 			ch.Diff = truncateUTF8(ch.Diff, 2000) + "\n...[Diff truncated due to size]..."
 		}
 
-		orig, err := gitx.OriginalFileAtHEAD(ctx, repoRoot, ch.Path)
-		if err != nil {
-			// Only added files have no original version. Read their staged
-			// content instead of exposing edits from the working tree.
-			added, diffErr := gitx.Git(ctx, repoRoot, "diff", "--staged", "--diff-filter=A", "--name-only", "-z", "--", ":(literal)"+path)
-			if diffErr != nil {
-				return vscodeprompt.Data{}, diffErr
-			}
-			if added != path+"\x00" {
-				return vscodeprompt.Data{}, err
-			}
+		originalPath := file.OriginalPath
+		var orig string
+		if originalPath == "" {
+			// Added files use the index, never uncommitted working-tree content.
+			originalPath = path
 			orig, err = gitx.Git(ctx, repoRoot, "show", ":"+path)
-			if err != nil {
-				return vscodeprompt.Data{}, err
-			}
+		} else {
+			orig, err = gitx.OriginalFileAtHEAD(ctx, repoRoot, originalPath)
+		}
+		if err != nil {
+			return vscodeprompt.Data{}, err
 		}
 		if len(orig) > maxDiffSize {
 			orig = truncateUTF8(orig, 2000) + "\n...[Content truncated due to size]..."
 		}
 
-		attachment := vscodeprompt.BuildAttachment(repoRoot, ch.Path, orig, summarize)
+		attachment := vscodeprompt.BuildAttachment(repoRoot, originalPath, orig, summarize)
 		filteredChanges = append(filteredChanges, vscodeprompt.Change{
 			Path:         ch.Path,
 			Diff:         ch.Diff,

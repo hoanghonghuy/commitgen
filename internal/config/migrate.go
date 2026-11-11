@@ -71,6 +71,9 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 			}
 		default:
 			out.Provider = ProviderOllama
+			if base != "" && out.OllamaBaseURL == "" {
+				out.OllamaBaseURL = base
+			}
 		}
 		setKeyIfEmpty(out.APIKeys, "ollama", apiKey)
 	case ProviderOpenRouter:

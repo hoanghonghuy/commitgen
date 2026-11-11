@@ -87,9 +87,16 @@ func main() {
 			os.Exit(1)
 		}
 	}
-	fileCfg, err := config.LoadResolvedForRepo(*configPathFlag, configRepoRoot)
+	var fileCfg config.FileConfig
+	if cmd == "config" && *configPathFlag != "" {
+		// The editor may create a new explicit config file.
+		fileCfg, err = config.Load(*configPathFlag)
+	} else {
+		fileCfg, err = config.LoadResolvedForRepo(*configPathFlag, configRepoRoot)
+	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Error loading config: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error loading config: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Resolve locale early so we can use it for warning/error messages.
@@ -105,7 +112,7 @@ func main() {
 	// Prompt template: a file (prompt_template_file) takes precedence over the inline template.
 	promptTemplate := fileCfg.PromptTemplate
 	if strings.TrimSpace(fileCfg.PromptTemplateFile) != "" {
-		if b, readErr := os.ReadFile(fileCfg.PromptTemplateFile); readErr == nil {
+		if b, readErr := os.ReadFile(fileCfg.PromptTemplatePath()); readErr == nil {
 			promptTemplate = string(b)
 		} else {
 			fmt.Fprintf(os.Stderr, "%s\n", tr.T("warn.prompt_template_file", fileCfg.PromptTemplateFile, readErr))

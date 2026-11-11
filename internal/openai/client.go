@@ -55,11 +55,24 @@ type chatResponse struct {
 			Content          string `json:"content"`
 			ReasoningContent string `json:"reasoning_content"`
 		} `json:"delta"`
+		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
 	Error *struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
 	} `json:"error,omitempty"`
+}
+
+func (r chatResponse) streamError() error {
+	if r.Error != nil {
+		return fmt.Errorf("openai: stream error: %s (%s)", r.Error.Message, r.Error.Type)
+	}
+	for _, choice := range r.Choices {
+		if choice.FinishReason == "error" {
+			return fmt.Errorf("openai: stream finished with an error")
+		}
+	}
+	return nil
 }
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temp float64) (string, error) {
@@ -131,6 +144,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		var chunk chatResponse
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		if err := chunk.streamError(); err != nil {
+			return "", err
 		}
 		if len(chunk.Choices) == 0 {
 			continue
@@ -275,6 +291,9 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 				var chunk chatResponse
 				if err := json.Unmarshal([]byte(jsonStr), &chunk); err != nil {
 					continue
+				}
+				if err := chunk.streamError(); err != nil {
+					return "", err
 				}
 				if len(chunk.Choices) > 0 {
 					// Streaming uses delta, non-streaming uses message

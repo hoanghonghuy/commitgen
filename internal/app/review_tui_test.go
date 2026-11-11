@@ -90,6 +90,30 @@ func TestReview_CancelRegenerationRestoresReport(t *testing.T) {
 	}
 }
 
+func TestReview_CancelViewDetailsRestoresQuickReview(t *testing.T) {
+	m := newTestReviewModel(true)
+	originalSystem := m.initialMsgs[0].Content[0].Text
+	u, _ := m.Update(reviewResultMsg{content: "Original quick review"})
+	m = u.(reviewModel)
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = u.(reviewModel)
+	stale := m.genID
+	u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = u.(reviewModel)
+	u, _ = m.Update(reviewResultMsg{content: "Late full review", genID: stale})
+	m = u.(reviewModel)
+	if m.quitting || !m.isQuickMode || m.report != "Original quick review" || m.state != reviewStateQuickDone {
+		t.Fatalf("quick review lost: quitting=%v quick=%v report=%q state=%v", m.quitting, m.isQuickMode, m.report, m.state)
+	}
+	if got := m.initialMsgs[0].Content[0].Text; got != originalSystem {
+		t.Fatalf("cancel kept full-review prompt: %q", got)
+	}
+	m.viewport.GotoBottom()
+	if !strings.Contains(m.View(), "View Details") {
+		t.Error("quick-review actions not restored")
+	}
+}
+
 func TestReview_ResultQuickDone(t *testing.T) {
 	m := newTestReviewModel(true)
 	u, _ := m.Update(reviewResultMsg{content: "## Conclusion\nlooks good"})
@@ -192,6 +216,17 @@ func TestReview_GenerateReviewCmd(t *testing.T) {
 	}
 	if res.err != nil || !strings.Contains(res.content, "Conclusion") {
 		t.Errorf("unexpected result: content=%q err=%v", res.content, res.err)
+	}
+}
+
+func TestReview_EmptyResponseIsError(t *testing.T) {
+	for _, response := range []string{"", " \n\t", "```markdown\n\n```"} {
+		m := newTestReviewModel(true)
+		m.provider = fakeProvider{resp: response}
+		result := m.generateReviewCmd()().(reviewResultMsg)
+		if result.err == nil {
+			t.Errorf("empty review accepted: content=%q", result.content)
+		}
 	}
 }
 
