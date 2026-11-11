@@ -3,15 +3,59 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/validator"
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
+
+func TestCandidatePicker_FitsTerminalAndKeepsSelectionVisible(t *testing.T) {
+	for _, size := range []struct{ width, height int }{{80, 24}, {80, 12}, {40, 24}} {
+		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {
+			m := newTestModel()
+			u, _ := m.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+			m = u.(tuiModel)
+			var contents []string
+			for i := 0; i < 20; i++ {
+				contents = append(contents, fmt.Sprintf("feat: option %02d\n\nDetailed body", i+1))
+			}
+			u, _ = m.Update(candidatesMsg{contents: contents})
+			m = u.(tuiModel)
+			if height := lipgloss.Height(m.View()); height > m.height {
+				t.Errorf("picker height=%d exceeds terminal=%d", height, m.height)
+			}
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgDown})
+			m = u.(tuiModel)
+			if m.viewport.YOffset == 0 {
+				t.Error("PgDn did not scroll candidates")
+			}
+			before := m.viewport.YOffset
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyPgUp})
+			m = u.(tuiModel)
+			if m.viewport.YOffset >= before {
+				t.Error("PgUp did not scroll candidates back")
+			}
+			for i := 0; i < len(contents)-1; i++ {
+				u, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+				m = u.(tuiModel)
+			}
+			if !strings.Contains(m.View(), "feat: option 20") {
+				t.Error("selected candidate is outside viewport")
+			}
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = u.(tuiModel)
+			if m.commitMsg != contents[19] || m.state != stateConfirm {
+				t.Errorf("selected wrong candidate: %q", m.commitMsg)
+			}
+		})
+	}
+}
 
 func TestActionFooter_IncludesNav(t *testing.T) {
 	tr := i18n.New(i18n.LocaleEN)

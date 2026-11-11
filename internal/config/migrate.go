@@ -35,6 +35,9 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 	base := strings.TrimSpace(out.BaseURL)
 	lowerBase := strings.ToLower(base)
 	apiKey := strings.TrimSpace(out.APIKey)
+	if provider == ProviderOllama && out.OllamaBaseURL == "" && out.CompatibleBaseURL != "" {
+		out.OllamaBaseURL = out.CompatibleBaseURL
+	}
 
 	switch provider {
 	case ProviderOpenAI:
@@ -62,6 +65,9 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 			out.Provider = ProviderOllama
 			if out.CompatibleBaseURL == "" {
 				out.CompatibleBaseURL = base
+			}
+			if out.OllamaBaseURL == "" {
+				out.OllamaBaseURL = base
 			}
 		default:
 			out.Provider = ProviderOllama
@@ -104,6 +110,9 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 }
 
 func needsMigration(cfg FileConfig) bool {
+	if normalizeProviderID(cfg.Provider) == ProviderOllama && cfg.OllamaBaseURL == "" && cfg.CompatibleBaseURL != "" {
+		return true
+	}
 	if strings.TrimSpace(cfg.APIKey) != "" {
 		return true
 	}

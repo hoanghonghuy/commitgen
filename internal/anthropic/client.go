@@ -129,6 +129,10 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 // Only content_block_delta events carry text in delta.text.
 type anthropicStreamChunk struct {
 	Type  string `json:"type"`
+	Error *struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
 	Delta struct {
 		Text string `json:"text"`
 	} `json:"delta"`
@@ -179,6 +183,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		var chunk anthropicStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
+		}
+		if chunk.Error != nil {
+			return "", fmt.Errorf("anthropic: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
 		}
 		if chunk.Type == "content_block_delta" && chunk.Delta.Text != "" {
 			full.WriteString(chunk.Delta.Text)

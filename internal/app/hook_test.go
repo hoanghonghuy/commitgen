@@ -76,9 +76,12 @@ func TestInstallAndUninstallHook(t *testing.T) {
 		t.Fatalf("original hook not restored: content=%q err=%v", restored, err)
 	}
 
-	// Uninstall when absent is a no-op (no error)
+	// Repeating uninstall must leave the restored user hook untouched.
 	if err := UninstallHook(ctx, dir, tr); err != nil {
 		t.Errorf("UninstallHook on absent hook should not error: %v", err)
+	}
+	if restored, err := os.ReadFile(hookPath); err != nil || string(restored) != originalHook {
+		t.Fatalf("repeated uninstall removed user hook: content=%q err=%v", restored, err)
 	}
 }
 
@@ -119,6 +122,12 @@ func TestInstallAndUninstallMsgHook(t *testing.T) {
 	}
 	if restored, err := os.ReadFile(hookPath); err != nil || string(restored) != originalHook {
 		t.Fatalf("original hook not restored: content=%q err=%v", restored, err)
+	}
+	if err := UninstallMsgHook(ctx, dir, tr); err != nil {
+		t.Fatal(err)
+	}
+	if restored, err := os.ReadFile(hookPath); err != nil || string(restored) != originalHook {
+		t.Fatalf("repeated uninstall removed user hook: content=%q err=%v", restored, err)
 	}
 }
 

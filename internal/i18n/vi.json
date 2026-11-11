@@ -33,6 +33,7 @@
   "tui.hint.scroll_mid": " ↑↓ PgUp/PgDn  %d%%  |  y Sao Chép ",
   "tui.hint.validation_issues": "Vấn đề:",
   "tui.hint.choose_nav": " ↑↓ chọn  •  Enter xác nhận  •  r tạo lại tất cả ",
+  "tui.hint.choose_scroll": " PgUp/PgDn/Scroll  %d%% ",
   "tui.state.copied": "✓ Đã sao chép vào clipboard!",
   "tui.state.success": "✓ Commit thành công!",
   "tui.state.error": "✗ Lỗi: %v",

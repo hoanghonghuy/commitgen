@@ -39,9 +39,18 @@ func generateCommitMessage(ctx context.Context, provider ai.Provider, msgs []vsc
 	if err != nil {
 		return "", err
 	}
+	return extractCommitMessage(raw)
+}
+
+// extractCommitMessage validates the final text shared by streaming and blocking generation.
+func extractCommitMessage(raw string) (string, error) {
 	msg, ok := vscodeprompt.ExtractOneTextCodeBlock(raw)
 	if !ok {
 		msg = raw
+	}
+	msg = strings.TrimSpace(msg)
+	if msg == "" {
+		return "", fmt.Errorf("AI returned an empty commit message")
 	}
 	return msg, nil
 }

@@ -13,6 +13,7 @@ import (
 
 	"github.com/hoanghonghuy/commitgen/internal/app"
 	"github.com/hoanghonghuy/commitgen/internal/config"
+	"github.com/hoanghonghuy/commitgen/internal/gitx"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
@@ -78,7 +79,15 @@ func main() {
 	}
 
 	// 2. Load config from file (global + optional repo-local overlay)
-	fileCfg, err := config.LoadResolved(*configPathFlag)
+	configRepoRoot := ""
+	if *repoFlag != "" && *configPathFlag == "" {
+		configRepoRoot, err = gitx.ResolveRepoRoot(context.Background(), *repoFlag)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+	fileCfg, err := config.LoadResolvedForRepo(*configPathFlag, configRepoRoot)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Error loading config: %v\n", err)
 	}
@@ -150,6 +159,7 @@ func main() {
 		PromptTemplate:     promptTemplate,
 		ReviewLanguage:     config.ResolveString("", "", fileCfg.ReviewLanguage, "en"),
 		Locale:             string(locale),
+		LocaleSetting:      fileCfg.Locale,
 		RulesFile:          fileCfg.RulesFile,
 		StyleJSON:          *jsonFlag,
 		MessageFile:        *fileFlag,

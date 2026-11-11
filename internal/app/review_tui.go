@@ -353,7 +353,6 @@ func (m reviewModel) refreshViewport() reviewModel {
 	m.needsScroll = true // always use viewport for review report (handles word-wrap)
 
 	if m.viewportReady {
-		m.viewport.GotoTop() // ensure we start at the top
 		m.viewport.SetContent(content)
 	}
 	return m
@@ -455,8 +454,6 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.regenHint = strings.TrimSpace(m.hintInput.Value())
 				m = m.beginGeneration()
 				m.state = reviewStateAnalyzing
-				m.report = ""
-				m.cachedContent = ""
 				return m, tea.Batch(m.spinner.Tick, m.generateReviewCmd())
 			}
 			var cmd tea.Cmd
@@ -477,11 +474,13 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.cursor > 0 {
 					m.cursor--
 					m = m.refreshViewport()
+					m.viewport.GotoBottom()
 				}
 			case "down", "j":
 				if m.cursor < m.reviewActionCount()-1 {
 					m.cursor++
 					m = m.refreshViewport()
+					m.viewport.GotoBottom()
 				}
 			case "pgup":
 				if m.needsScroll {

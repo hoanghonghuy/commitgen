@@ -33,6 +33,7 @@
   "tui.hint.scroll_mid": " ↑↓ PgUp/PgDn  %d%%  |  y 复制 ",
   "tui.hint.validation_issues": "问题:",
   "tui.hint.choose_nav": " ↑↓ 选择  •  Enter 确认  •  r 全部重新生成 ",
+  "tui.hint.choose_scroll": " PgUp/PgDn/Scroll  %d%% ",
   "tui.state.copied": "✓ 已复制到剪贴板！",
   "tui.state.success": "✓ 提交成功！",
   "tui.state.error": "✗ 错误: %v",

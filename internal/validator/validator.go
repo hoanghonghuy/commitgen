@@ -253,13 +253,16 @@ func (r *ProhibitedWordsRule) AutoFix(msg string) (string, bool) {
 		// Case-insensitive replace
 		re := regexp.MustCompile(`(?i)` + regexp.QuoteMeta(word))
 		if re.MatchString(current) {
+			// A removed first word must not leave a new leading space.
+			prefix := regexp.MustCompile(`(?im)^([ \t]*)` + regexp.QuoteMeta(word) + `[ \t]+`)
+			current = prefix.ReplaceAllString(current, "${1}")
 			current = re.ReplaceAllString(current, "")
 			changed = true
 		}
 	}
-	// Clean up double spaces and leading/trailing whitespace
+	// Collapse horizontal whitespace without joining subject, body and footers.
 	if changed {
-		current = regexp.MustCompile(`\s+`).ReplaceAllString(strings.TrimSpace(current), " ")
+		current = regexp.MustCompile(`(\S)[ \t]+`).ReplaceAllString(strings.TrimSpace(current), "${1} ")
 	}
 	return current, changed
 }

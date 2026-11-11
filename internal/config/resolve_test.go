@@ -83,3 +83,15 @@ func TestResolveCredentials(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveCredentials_OllamaOverrideDoesNotUseCompatibleURL(t *testing.T) {
+	file := FileConfig{Provider: ProviderCompatible, CompatibleBaseURL: "https://proxy.invalid/v1"}
+	for _, input := range []CredentialInput{
+		{File: file, FlagProvider: ProviderOllama},
+		{File: Merge(file, FileConfig{Provider: ProviderOllama})},
+	} {
+		if got := ResolveCredentials(input); got.BaseURL != "http://localhost:11434" {
+			t.Errorf("Ollama inherited Compatible URL: %q", got.BaseURL)
+		}
+	}
+}

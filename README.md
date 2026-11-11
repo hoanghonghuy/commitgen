@@ -40,9 +40,9 @@
 | `commitgen config show` | Print saved config (secrets masked) |
 | `commitgen config path` | Print config file path |
 | `commitgen install-hook` | Install `prepare-commit-msg` hook |
-| `commitgen uninstall-hook` | Remove `prepare-commit-msg` hook (restores `.bak` if present) |
+| `commitgen uninstall-hook` | Remove the CommitGen `prepare-commit-msg` hook (restores `.bak`; leaves other hooks intact) |
 | `commitgen install-msg-hook` | Install `commit-msg` validation hook |
-| `commitgen uninstall-msg-hook` | Remove `commit-msg` validation hook (restores `.bak` if present) |
+| `commitgen uninstall-msg-hook` | Remove the CommitGen `commit-msg` hook (restores `.bak`; leaves other hooks intact) |
 | `commitgen ping` | Test provider connectivity |
 | `commitgen models` | List models (OpenAI-compatible / Ollama) |
 | `commitgen style` | Print learned commit style from recent history (`--json` for scripts) |
@@ -151,7 +151,8 @@ Other settings:
 - **Preferences**: Conventional Commits, Summarization, Ignored Files.
 - **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests.
 - **Advanced** (edit JSON): `prompt_template_file`, `rules_file`.
-- **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
+- **Custom Ollama host**: Set `ollama_base_url` in JSON for a LAN/remote daemon. It is independent of `compatible_base_url`; older Ollama host settings are migrated automatically.
+- **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. With `--repo`, the overlay comes from the target repository root, including when the argument points to a subdirectory. An explicit `--config` still takes precedence. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
 - **Validation**: Place `.commitgen-rules.json` in the repo root (auto-discovered) or set `rules_file` in config.
 - **Logging**: Log level, output destination, and log file path.
 

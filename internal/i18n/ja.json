@@ -33,6 +33,7 @@
   "tui.hint.scroll_mid": " ↑↓ PgUp/PgDn  %d%%  |  y コピー ",
   "tui.hint.validation_issues": "問題:",
   "tui.hint.choose_nav": " ↑↓ 選択  •  Enter 決定  •  r すべて再生成 ",
+  "tui.hint.choose_scroll": " PgUp/PgDn/Scroll  %d%% ",
   "tui.state.copied": "✓ クリップボードにコピーしました！",
   "tui.state.success": "✓ コミットに成功しました！",
   "tui.state.error": "✗ エラー: %v",

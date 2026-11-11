@@ -33,6 +33,7 @@
   "tui.hint.scroll_mid": " ↑↓ PgUp/PgDn  %d%%  |  y Copy ",
   "tui.hint.validation_issues": "Issues:",
   "tui.hint.choose_nav": " ↑↓ select  •  Enter choose  •  r regenerate all ",
+  "tui.hint.choose_scroll": " PgUp/PgDn/Scroll  %d%% ",
   "tui.state.copied": "✓ Copied to clipboard!",
   "tui.state.success": "✓ Committed successfully!",
   "tui.state.error": "✗ Error: %v",

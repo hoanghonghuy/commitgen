@@ -52,6 +52,44 @@ func newTestReviewModel(quick bool) reviewModel {
 	return newReviewModel(context.Background(), fakeProvider{resp: "## Conclusion\nok"}, baseMsgs(), 0.7, 5*time.Second, quick, tr)
 }
 
+func TestReview_NavigationKeepsSelectedActionVisible(t *testing.T) {
+	for _, quick := range []bool{false, true} {
+		m := newTestReviewModel(quick)
+		u, _ := m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+		m = u.(reviewModel)
+		u, _ = m.Update(reviewResultMsg{content: strings.Repeat("Review detail\n", 80)})
+		m = u.(reviewModel)
+		m.viewport.GotoBottom()
+		for _, key := range []tea.KeyType{tea.KeyDown, tea.KeyUp} {
+			u, _ = m.Update(tea.KeyMsg{Type: key})
+			m = u.(reviewModel)
+			if !strings.Contains(m.View(), "Suggest Commit Message") {
+				t.Errorf("quick=%v: action hidden after navigation; scroll=%d", quick, m.viewport.YOffset)
+			}
+		}
+	}
+}
+
+func TestReview_CancelRegenerationRestoresReport(t *testing.T) {
+	for _, quick := range []bool{false, true} {
+		m := newTestReviewModel(quick)
+		const original = "Original useful report"
+		u, _ := m.Update(reviewResultMsg{content: original})
+		m = u.(reviewModel)
+		m.cursor = 1
+		if quick {
+			m.cursor = 2
+		}
+		for _, key := range []tea.KeyType{tea.KeyEnter, tea.KeyEnter, tea.KeyEsc} {
+			u, _ = m.Update(tea.KeyMsg{Type: key})
+			m = u.(reviewModel)
+		}
+		if m.quitting || m.report != original || m.state == reviewStateAnalyzing {
+			t.Errorf("quick=%v: regeneration cancel lost report: quitting=%v report=%q", quick, m.quitting, m.report)
+		}
+	}
+}
+
 func TestReview_ResultQuickDone(t *testing.T) {
 	m := newTestReviewModel(true)
 	u, _ := m.Update(reviewResultMsg{content: "## Conclusion\nlooks good"})

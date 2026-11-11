@@ -158,6 +158,21 @@ func TestRunSuggestNonInteractive_DryRunPrintsNoSideEffect(t *testing.T) {
 	}
 }
 
+func TestRunSuggestNonInteractive_EmptyResponsePreservesHook(t *testing.T) {
+	for _, response := range []string{"", " \n\t", "```text\n\n```"} {
+		t.Run(response, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "MSG", "Existing message")
+			path := filepath.Join(dir, "MSG")
+			err := runSuggestNonInteractive(context.Background(), Config{Print: true, HookFile: path, Timeout: time.Second}, dir, fakeProvider{resp: response}, baseMsgs(), nil, i18n.New(i18n.LocaleEN))
+			b, readErr := os.ReadFile(path)
+			if err == nil || readErr != nil || string(b) != "Existing message" {
+				t.Fatalf("empty response accepted: err=%v stored=%q readErr=%v", err, b, readErr)
+			}
+		})
+	}
+}
+
 func TestRunSuggestNonInteractive_PrintWritesHook(t *testing.T) {
 	hookFile := filepath.Join(t.TempDir(), "MSG")
 	cfg := Config{Print: true, HookFile: hookFile, Temperature: 0.7, Timeout: time.Second}

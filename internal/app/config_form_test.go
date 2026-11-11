@@ -71,3 +71,16 @@ func TestFileConfigFromInteractive_EmptyKeyPreserves(t *testing.T) {
 		t.Fatalf("masked key not preserved: %v", out2.APIKeys)
 	}
 }
+
+func TestFileConfigFromInteractive_SwitchToOllamaDoesNotReuseProxy(t *testing.T) {
+	existing := config.FileConfig{Provider: config.ProviderCompatible, CompatibleBaseURL: "https://proxy.invalid/v1"}
+	form := Config{Provider: config.ProviderOllama, Model: "llama3", BaseURL: existing.CompatibleBaseURL}
+	saved := fileConfigFromInteractive(form, existing, "", 5, 10, 0.7, true, true, nil)
+	resolved := config.ResolveCredentials(config.CredentialInput{File: saved})
+	if resolved.BaseURL != "http://localhost:11434" {
+		t.Fatalf("Ollama inherited proxy: %q", resolved.BaseURL)
+	}
+	if saved.CompatibleBaseURL != existing.CompatibleBaseURL {
+		t.Fatal("switching provider must preserve the saved Compatible URL")
+	}
+}

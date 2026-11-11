@@ -13,9 +13,10 @@ type FileConfig struct {
 	Provider string `json:"provider,omitempty"` // openai, openrouter, compatible, ollama, ollama-cloud, anthropic, gemini
 	Model    string `json:"model"`
 
-	// New schema: per-provider API keys and optional custom URL for compatible.
+	// Per-provider API keys and independent custom hosts for Compatible/Ollama.
 	APIKeys           map[string]string `json:"api_keys,omitempty"`
 	CompatibleBaseURL string            `json:"compatible_base_url,omitempty"`
+	OllamaBaseURL     string            `json:"ollama_base_url,omitempty"`
 
 	// Legacy fields — read for migration only; cleared after MigrateFileConfig.
 	// omitempty so Save after migrate does not rewrite them.
@@ -126,6 +127,11 @@ func Merge(base, override FileConfig) FileConfig {
 	if override.CompatibleBaseURL != "" {
 		out.CompatibleBaseURL = override.CompatibleBaseURL
 	}
+	if override.OllamaBaseURL != "" {
+		out.OllamaBaseURL = override.OllamaBaseURL
+	} else if normalizeProviderID(override.Provider) == ProviderOllama && normalizeProviderID(base.Provider) != ProviderOllama && out.OllamaBaseURL == "" {
+		out.OllamaBaseURL = providerRegistry[ProviderOllama].FixedBaseURL
+	}
 	if override.BaseURL != "" {
 		out.BaseURL = override.BaseURL
 	}
@@ -218,6 +224,12 @@ func mergeAPIKeys(base, override map[string]string) map[string]string {
 // that file. Otherwise it loads the global ~/.commitgen.json and overlays a
 // repo-local .commitgen.json (found by walking up from the current directory).
 func LoadResolved(explicitPath string) (FileConfig, error) {
+	return LoadResolvedForRepo(explicitPath, "")
+}
+
+// LoadResolvedForRepo applies the overlay from repoRoot when a target repository
+// is supplied. Explicit config paths continue to bypass global and repo files.
+func LoadResolvedForRepo(explicitPath, repoRoot string) (FileConfig, error) {
 	if explicitPath != "" {
 		return Load(explicitPath)
 	}
@@ -225,7 +237,7 @@ func LoadResolved(explicitPath string) (FileConfig, error) {
 	if err != nil {
 		return global, err
 	}
-	if local, ok := findRepoLocalConfig(); ok {
+	if local, ok := findRepoLocalConfig(repoRoot); ok {
 		lc, lerr := Load(local)
 		if lerr != nil {
 			fmt.Fprintf(os.Stderr, "warning: failed to load repo config %s: %v\n", local, lerr)
@@ -239,16 +251,19 @@ func LoadResolved(explicitPath string) (FileConfig, error) {
 // RepoLocalConfigPath walks up from the current directory looking for a
 // .commitgen.json that is not the global one in the home directory.
 func RepoLocalConfigPath() (string, bool) {
-	return findRepoLocalConfig()
+	return findRepoLocalConfig("")
 }
 
-// findRepoLocalConfig walks up from the current directory looking for a
-// .commitgen.json that is not the global one in the home directory. The search
-// is bounded at the home directory so it never descends into system paths.
-func findRepoLocalConfig() (string, bool) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", false
+// findRepoLocalConfig checks an explicit repository root, or walks upward from
+// cwd when empty. The global home config is excluded from the overlay search.
+func findRepoLocalConfig(repoRoot string) (string, bool) {
+	cwd := repoRoot
+	if cwd == "" {
+		var err error
+		cwd, err = os.Getwd()
+		if err != nil {
+			return "", false
+		}
 	}
 	homeDir := ""
 	globalPath := ""
@@ -265,7 +280,7 @@ func findRepoLocalConfig() (string, bool) {
 			}
 		}
 		// Stop once we have inspected the home directory.
-		if homeDir != "" && cur == homeDir {
+		if repoRoot != "" || (homeDir != "" && cur == homeDir) {
 			break
 		}
 		parent := filepath.Dir(cur)

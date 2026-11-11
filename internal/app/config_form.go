@@ -62,6 +62,13 @@ func fileConfigFromInteractive(
 	if step2IncludesBaseURL(out.Provider) {
 		out.CompatibleBaseURL = strings.TrimSpace(newCfg.BaseURL)
 	}
+	if out.Provider == config.ProviderOllama && out.OllamaBaseURL == "" {
+		if existing.Provider == config.ProviderOllama && existing.CompatibleBaseURL != "" {
+			out.OllamaBaseURL = existing.CompatibleBaseURL
+		} else if info, ok := config.Lookup(config.ProviderOllama); ok {
+			out.OllamaBaseURL = info.FixedBaseURL
+		}
+	}
 
 	out.APIKey = ""
 	out.BaseURL = ""

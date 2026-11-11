@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/hoanghonghuy/commitgen/internal/ai"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
@@ -423,6 +424,7 @@ func (m tuiModel) buildConfirmContent() string {
 // and auto-scrolls to keep the current action cursor visible.
 // Must be called from Update() only (modifies model state).
 func (m tuiModel) refreshViewport() tuiModel {
+	m.viewport.Height = max(3, m.innerHeight()-3)
 	content := m.buildConfirmContent()
 	m.cachedContent = content
 
@@ -454,6 +456,39 @@ func (m tuiModel) refreshViewport() tuiModel {
 		m.viewport.SetContent("")
 	}
 
+	return m
+}
+
+func (m tuiModel) refreshCandidatesViewport() tuiModel {
+	hintStyle := styleHint.Width(m.innerWidth())
+	footer := hintStyle.Render(m.i18n.T("tui.hint.choose_nav") + "\n" + m.i18n.T("tui.hint.esc_cancel"))
+	scrollHint := hintStyle.Render(fmt.Sprintf(m.i18n.T("tui.hint.choose_scroll"), 100))
+	statusHeight := 0
+	if status := strings.TrimSuffix(statusLine(m.i18n, m.statusBanner), "\n"); status != "" {
+		statusHeight = lipgloss.Height(hintStyle.Render(status))
+	}
+	m.viewport.Height = max(1, m.innerHeight()-lipgloss.Height(footer)-lipgloss.Height(scrollHint)-statusHeight)
+	var b strings.Builder
+	b.WriteString("\n" + styleMsgTitle.Render(m.i18n.T("tui.title.choose")) + "\n")
+	selectedLine := 0
+	bar := styleBar.Render("┃")
+	for i, candidate := range m.candidates {
+		preview := ansi.Wrap(candidatePreview(candidate, 2), m.innerWidth()-4, " ")
+		if i == m.cursor {
+			selectedLine = countLines(b.String()) - 1
+			fmt.Fprintf(&b, "%s > %s\n", bar, styleSelected.Render(preview))
+		} else {
+			fmt.Fprintf(&b, "%s   %s\n", bar, preview)
+		}
+	}
+	m.cachedContent = b.String()
+	m.viewport.SetContent(m.cachedContent)
+	m.needsScroll = countLines(m.cachedContent) > m.viewport.Height
+	if selectedLine < m.viewport.YOffset {
+		m.viewport.SetYOffset(selectedLine)
+	} else if selectedLine >= m.viewport.YOffset+m.viewport.Height {
+		m.viewport.SetYOffset(selectedLine - m.viewport.Height + 1)
+	}
 	return m
 }
 
@@ -632,11 +667,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
+					m = m.refreshCandidatesViewport()
 				}
 			case "down", "j":
 				if m.cursor < len(m.candidates)-1 {
 					m.cursor++
+					m = m.refreshCandidatesViewport()
 				}
+			case "pgup":
+				m.viewport.HalfPageUp()
+			case "pgdown":
+				m.viewport.HalfPageDown()
 			case "enter":
 				if len(m.candidates) > 0 {
 					m.commitMsg = m.candidates[m.cursor]
@@ -662,7 +703,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		// Only handle mouse when viewport scroll is active.
-		if m.state == stateConfirm && m.needsScroll && m.viewportReady {
+		if (m.state == stateConfirm || m.state == stateChoose) && m.needsScroll && m.viewportReady {
 			var cmd tea.Cmd
 			m.viewport, cmd = m.viewport.Update(msg)
 			return m, cmd
@@ -686,7 +727,11 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewport = viewport.New(m.innerWidth(), vpHeight)
 			m.viewportReady = true
 		}
-		m = m.refreshViewport()
+		if m.state == stateChoose {
+			m = m.refreshCandidatesViewport()
+		} else {
+			m = m.refreshViewport()
+		}
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -718,16 +763,17 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		if msg.done {
-			if msg.err != nil {
-				logger.Error("stream generation failed", "error", msg.err)
-				m.err = msg.err
+			err := msg.err
+			content := ""
+			if err == nil {
+				content, err = extractCommitMessage(msg.full)
+			}
+			if err != nil {
+				logger.Error("stream generation failed", "error", err)
+				m.err = err
 				m.state = stateDone
 				m.reachedDone = true
 				return m, outcomeHoldCmd()
-			}
-			content := msg.full
-			if extracted, ok := vscodeprompt.ExtractOneTextCodeBlock(content); ok {
-				content = extracted
 			}
 			m.commitMsg = content
 			m.streamView = ""
@@ -777,6 +823,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.state = stateChoose
+		m.viewport.GotoTop()
+		m = m.refreshCandidatesViewport()
 		return m, nil
 
 	case commitDoneMsg:
@@ -875,26 +923,18 @@ func (m tuiModel) View() string {
 		inner = b.String()
 
 	case stateChoose:
-		var b strings.Builder
-		b.WriteString(statusLine(m.i18n, m.statusBanner))
-		b.WriteString("\n")
-		b.WriteString(styleMsgTitle.Render(m.i18n.T("tui.title.choose")))
-		b.WriteString("\n")
-		barStr := styleBar.Render("┃")
-		for i, c := range m.candidates {
-			preview := candidatePreview(c, 2)
-			if m.cursor == i {
-				fmt.Fprintf(&b, "%s > %s\n", barStr, styleSelected.Render(preview))
-			} else {
-				fmt.Fprintf(&b, "%s   %s\n", barStr, preview)
-			}
+		if m.cachedContent == "" {
+			m = m.refreshCandidatesViewport()
 		}
-		b.WriteString("\n")
-		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.choose_nav")))
-		b.WriteString("\n")
-		b.WriteString(styleHint.Render(m.i18n.T("tui.hint.esc_cancel")))
-		b.WriteString("\n")
-		inner = b.String()
+		hintStyle := styleHint.Width(m.innerWidth())
+		inner = statusLine(m.i18n, m.statusBanner)
+		if m.needsScroll && m.viewportReady {
+			pct := int(m.viewport.ScrollPercent() * 100)
+			inner += m.viewport.View() + "\n" + hintStyle.Render(fmt.Sprintf(m.i18n.T("tui.hint.choose_scroll"), pct)) + "\n"
+		} else {
+			inner += m.cachedContent
+		}
+		inner += hintStyle.Render(m.i18n.T("tui.hint.choose_nav") + "\n" + m.i18n.T("tui.hint.esc_cancel"))
 
 	case stateDone:
 		if m.err != nil {

@@ -25,13 +25,6 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	if provider == "" {
 		provider = config.ProviderOpenAI
 	}
-	// Map legacy ollama+url to new ids when opening the form.
-	if provider == "ollama" {
-		if config.APIKeyFor(existing, config.ProviderOllamaCloud) != "" || strings.Contains(strings.ToLower(cfg.BaseURL), "ollama.com") {
-			provider = config.ProviderOllamaCloud
-		}
-	}
-
 	model := cfg.Model
 	if model == "" {
 		model = existing.Model
@@ -55,10 +48,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	if reviewLanguage == "" {
 		reviewLanguage = "en"
 	}
-	locale := cfg.Locale
-	if locale == "" {
-		locale = "en"
-	}
+	locale := firstNonEmpty(cfg.LocaleSetting, existing.Locale, cfg.Locale, "en")
 	logLevel := cfg.LogLevel
 	if logLevel == "" {
 		logLevel = "info"

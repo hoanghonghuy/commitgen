@@ -72,6 +72,7 @@ type Config struct {
 	PromptTemplate string
 	ReviewLanguage string
 	Locale         string // UI language (en, vi, ja, zh)
+	LocaleSetting  string // Unresolved preference, including "auto", for config forms
 	RulesFile      string // path to validation rules file (.commitgen-rules.json)
 	StyleJSON      bool   // style command: print machine-readable JSON
 	MessageFile    string // validate-msg command: commit message file path

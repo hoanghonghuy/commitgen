@@ -120,6 +120,18 @@ func TestGenerateStream_HTTPError(t *testing.T) {
 	}
 }
 
+func TestGenerateStream_RejectsMidstreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("{\"message\":{\"content\":\"feat: partial\"},\"done\":false}\n{\"error\":\"model failed mid-stream\"}\n"))
+	}))
+	defer srv.Close()
+	client := New(Config{BaseURL: srv.URL, Model: "test"})
+	text, err := client.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
+	if err == nil || !strings.Contains(err.Error(), "model failed mid-stream") {
+		t.Fatalf("midstream error accepted: content=%q err=%v", text, err)
+	}
+}
+
 func TestGenerate_WithAPIKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer test-cloud-key" {

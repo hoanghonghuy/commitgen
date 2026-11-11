@@ -1,19 +1,167 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
+
+type formStep struct {
+	prompt string
+	input  string
+}
+
+type formDriver struct {
+	input   io.Writer
+	steps   []formStep
+	pending string
+	output  strings.Builder
+}
+
+func (d *formDriver) Write(p []byte) (int, error) {
+	d.output.Write(p)
+	d.pending += string(p)
+	for len(d.steps) > 0 {
+		step := d.steps[0]
+		index := strings.Index(d.pending, step.prompt)
+		if index < 0 {
+			break
+		}
+		d.pending = d.pending[index+len(step.prompt):]
+		d.steps = d.steps[1:]
+		if _, err := io.WriteString(d.input, step.input); err != nil {
+			return 0, err
+		}
+	}
+	return len(p), nil
+}
+
+func runConfigForm(t *testing.T, path string) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("interactive CLI test uses Linux script PTY")
+	}
+	script, err := exec.LookPath("script")
+	if err != nil {
+		t.Skip("script PTY utility is unavailable")
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	command := quote(exe) + " -test.run=^TestCLIProcess$ -- --config " + quote(path) + " config"
+	cmd := exec.CommandContext(ctx, script, "-q", "-e", "-c", command, "/dev/null")
+	cmd.Env = append(cliTestEnv(), "ACCESSIBLE=1", "TERM=dumb", "COMMITGEN_LOCALE=en")
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	driver := &formDriver{input: input, steps: []formStep{
+		{"Enter a number between 1 and 7: ", "\n"}, {"Model ", "\n"}, {"API Key ", "\n"},
+		{"System Prompt Template ", "\n"}, {"Recent Commits ", "5\n"}, {"Max Files ", "10\n"},
+		{"Temperature ", "0.7\n"}, {"Request Timeout (seconds) ", "120\n"},
+		{"Summarize Changes [Y/n] ", "\n"}, {"Conventional Commits [Y/n] ", "\n"},
+		{"Ignored Files ", "\n"}, {"Rules File ", "\n"},
+		{"Enter a number between 1 and 5: ", "\n"}, {"Enter a number between 1 and 4: ", "\n"},
+		{"Enter a number between 1 and 4: ", "\n"}, {"Enter a number between 1 and 3: ", "\n"}, {"Log File Path ", "\n"},
+	}}
+	var stderr bytes.Buffer
+	cmd.Stdout = driver
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("config form: %v\n%s\n%s", err, driver.output.String(), stderr.String())
+	}
+	if len(driver.steps) != 0 {
+		t.Fatalf("form finished before all prompts: %s", driver.output.String())
+	}
+}
+
+func TestCLI_ConfigKeepsLocalOllamaWithSavedKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider":"ollama","model":"llama3","api_keys":{"ollama":"synthetic-key"},"log_output":"stderr"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runConfigForm(t, path)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct{ Provider string }
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Provider != "ollama" {
+		t.Fatalf("unchanged Local provider became %q", saved.Provider)
+	}
+}
+
+func TestCLI_ConfigPreservesAutoLocale(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider":"ollama","model":"llama3","locale":"auto","log_output":"stderr"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	runConfigForm(t, path)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct{ Locale string }
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.Locale != "auto" {
+		t.Fatalf("unchanged auto setting became %q", saved.Locale)
+	}
+}
+
+func TestCLI_RepoConfigFollowsTargetRoot(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	current := t.TempDir()
+	target := t.TempDir()
+	for dir, prompt := range map[string]string{current: "CURRENT_REPO_PROMPT", target: "TARGET_REPO_PROMPT"} {
+		for _, args := range [][]string{{"init"}, {"config", "user.email", "test@example.com"}, {"config", "user.name", "Test"}, {"-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "chore: initial"}} {
+			if out, err := exec.Command("git", append([]string{"-C", dir}, args...)...).CombinedOutput(); err != nil {
+				t.Fatalf("git setup: %v: %s", err, out)
+			}
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".commitgen.json"), []byte(fmt.Sprintf(`{"prompt_template":%q}`, prompt)), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(target, "file.txt"), []byte("staged\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("git", "-C", target, "add", "file.txt").CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v: %s", err, out)
+	}
+	subdir := filepath.Join(target, "subdir")
+	if err := os.Mkdir(subdir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(current)
+	out, err := runCLI(t, "dump-prompt", "--repo", subdir)
+	if err != nil || !strings.Contains(out, "TARGET_REPO_PROMPT") || strings.Contains(out, "CURRENT_REPO_PROMPT") {
+		t.Fatalf("wrong repo configuration: err=%v output=%s", err, out)
+	}
+}
 
 func TestCLIProcess(t *testing.T) {
 	if os.Getenv("COMMITGEN_TEST_PROCESS") != "1" {
@@ -39,14 +187,19 @@ func runCLI(t *testing.T, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, append([]string{"-test.run=^TestCLIProcess$", "--"}, args...)...)
-	for _, value := range os.Environ() {
-		if !strings.HasPrefix(value, "COMMITGEN_") && !strings.HasPrefix(value, "COMMITAI_") && !strings.HasPrefix(value, "OLLAMA_API_KEY=") {
-			cmd.Env = append(cmd.Env, value)
-		}
-	}
-	cmd.Env = append(cmd.Env, "COMMITGEN_TEST_PROCESS=1", "COMMITGEN_LOG_OUTPUT=stderr")
+	cmd.Env = cliTestEnv()
 	out, err := cmd.CombinedOutput()
 	return string(out), err
+}
+
+func cliTestEnv() []string {
+	var env []string
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "COMMITGEN_") && !strings.HasPrefix(value, "COMMITAI_") && !strings.HasPrefix(value, "OLLAMA_API_KEY=") {
+			env = append(env, value)
+		}
+	}
+	return append(env, "COMMITGEN_TEST_PROCESS=1", "COMMITGEN_LOG_OUTPUT=stderr")
 }
 
 func TestCLI_SubcommandConfigFlags(t *testing.T) {

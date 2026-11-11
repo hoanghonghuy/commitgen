@@ -5,11 +5,24 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
+
+func TestGenerateStream_RejectsMidstreamError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"feat: partial\"}}\n\nevent: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\",\"message\":\"Overloaded\"}}\n\n"))
+	}))
+	defer srv.Close()
+	text, err := newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
+	if err == nil || !strings.Contains(err.Error(), "Overloaded") {
+		t.Fatalf("midstream error accepted: content=%q err=%v", text, err)
+	}
+}
 
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{

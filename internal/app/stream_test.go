@@ -88,6 +88,15 @@ func TestTui_StreamDoneError(t *testing.T) {
 	}
 }
 
+func TestTui_StreamEmptyResponseIsAnError(t *testing.T) {
+	m := newTestModel()
+	u, _ := m.Update(streamEvent{done: true, full: " \n\t"})
+	m = u.(tuiModel)
+	if m.err == nil || m.state != stateDone {
+		t.Fatalf("empty stream result accepted: state=%v err=%v", m.state, m.err)
+	}
+}
+
 func TestTui_StreamGenerateCmdEndToEnd(t *testing.T) {
 	// startStreamCmd should push deltas then a final done event onto the channel.
 	sp := fakeStreamProvider{deltas: []string{"feat: ", "stream"}}

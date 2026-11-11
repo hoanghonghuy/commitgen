@@ -14,6 +14,10 @@ import (
 const hookMarker = "# commitgen hook"
 const msgHookMarker = "# commitgen commit-msg hook"
 
+func isManagedHook(content []byte, marker string) bool {
+	return strings.HasPrefix(string(content), "#!/bin/sh\n"+marker+"\n")
+}
+
 // backupHook preserves the first user hook across repeated installations.
 func backupHook(hookPath, marker string, tr *i18n.Translator) error {
 	content, err := os.ReadFile(hookPath)
@@ -23,7 +27,7 @@ func backupHook(hookPath, marker string, tr *i18n.Translator) error {
 	if err != nil {
 		return fmt.Errorf("read existing hook: %w", err)
 	}
-	if strings.HasPrefix(string(content), "#!/bin/sh\n"+marker+"\n") {
+	if isManagedHook(content, marker) {
 		return nil
 	}
 	backupPath := hookPath + ".bak"
@@ -213,7 +217,8 @@ func uninstallHookFile(ctx context.Context, repoArg, name string, tr *i18n.Trans
 	hookPath := filepath.Join(hooksDir, name)
 	backupPath := hookPath + ".bak"
 
-	if _, err := os.Stat(hookPath); os.IsNotExist(err) {
+	content, err := os.ReadFile(hookPath)
+	if os.IsNotExist(err) {
 		if _, berr := os.Stat(backupPath); berr == nil {
 			if err := os.Rename(backupPath, hookPath); err != nil {
 				return fmt.Errorf("restore hook from backup: %w", err)
@@ -221,6 +226,17 @@ func uninstallHookFile(ctx context.Context, repoArg, name string, tr *i18n.Trans
 			fmt.Println(tr.T("hook.restored_backup", hookPath))
 			return nil
 		}
+		fmt.Println(tr.T("hook.not_installed"))
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read hook before uninstall: %w", err)
+	}
+	marker := hookMarker
+	if name == "commit-msg" {
+		marker = msgHookMarker
+	}
+	if !isManagedHook(content, marker) {
 		fmt.Println(tr.T("hook.not_installed"))
 		return nil
 	}

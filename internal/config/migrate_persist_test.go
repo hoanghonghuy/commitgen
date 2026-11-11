@@ -45,6 +45,25 @@ func TestLoad_EagerRewriteLegacy(t *testing.T) {
 	}
 }
 
+func TestLoad_OllamaLegacyHostGetsDedicatedSlot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider":"ollama","compatible_base_url":"http://192.168.1.10:11434","model":"llama3"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.OllamaBaseURL != "http://192.168.1.10:11434" {
+		t.Fatalf("legacy host not preserved independently: %q", loaded.OllamaBaseURL)
+	}
+	loaded.Provider = ProviderCompatible
+	loaded.CompatibleBaseURL = "https://proxy.invalid/v1"
+	if got := ResolveCredentials(CredentialInput{File: loaded, FlagProvider: ProviderOllama}); got.BaseURL != "http://192.168.1.10:11434" {
+		t.Fatalf("switching Compatible URL overwrote Ollama host: %q", got.BaseURL)
+	}
+}
+
 func TestLoad_AlreadyMigratedNotRewritten(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "new.json")

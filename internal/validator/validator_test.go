@@ -131,6 +131,17 @@ func TestProhibitedWordsRule_Validate(t *testing.T) {
 	}
 }
 
+func TestProhibitedWordsRule_AutoFixPreservesParagraphs(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		rule := ProhibitedWordsRule{Words: []string{"WIP"}}
+		message := strings.Join([]string{"feat: add feature", "", "WIP details", "", "Signed-off-by: Test <test@example.com>"}, newline)
+		want := strings.Replace(message, "WIP ", "", 1)
+		if got, changed := rule.AutoFix(message); !changed || got != want {
+			t.Errorf("auto-fix changed paragraphs: got=%q want=%q", got, want)
+		}
+	}
+}
+
 func TestProhibitedWordsRule_AutoFix(t *testing.T) {
 	r := ProhibitedWordsRule{Words: []string{"WIP"}}
 	fixed, ok := r.AutoFix("WIP: work in progress")

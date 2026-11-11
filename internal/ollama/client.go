@@ -61,6 +61,7 @@ type options struct {
 type chatResponse struct {
 	Message message `json:"message"`
 	Done    bool    `json:"done"`
+	Error   string  `json:"error,omitempty"`
 }
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
@@ -147,6 +148,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		var chunk chatResponse
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
 			continue
+		}
+		if chunk.Error != "" {
+			return "", fmt.Errorf("ollama: stream error: %s", chunk.Error)
 		}
 		if chunk.Message.Content != "" {
 			full.WriteString(chunk.Message.Content)
