@@ -92,8 +92,8 @@ func candidatesProgress(tr *i18n.Translator, current, total int) string {
 	return tr.T("tui.hint.candidates_progress", current, total)
 }
 
-// shouldUseAccessibleForm enables huh accessible mode for screen readers / dumb terminals.
-func shouldUseAccessibleForm(getenv func(string) string) bool {
+// UseAccessibleForm reports whether config uses screen-reader-friendly prompts.
+func UseAccessibleForm(getenv func(string) string) bool {
 	if getenv == nil {
 		getenv = os.Getenv
 	}
@@ -139,7 +139,7 @@ func applyFormAccessibility(form *huh.Form, getenv func(string) string) *huh.For
 	}
 	keymap := huh.NewDefaultKeyMap()
 	keymap.Quit = key.NewBinding(key.WithKeys("esc", "ctrl+c"))
-	return form.WithKeyMap(keymap).WithAccessible(shouldUseAccessibleForm(getenv))
+	return form.WithKeyMap(keymap).WithAccessible(UseAccessibleForm(getenv))
 }
 
 // validateIntField maps strconv failures to a localized error.

@@ -169,6 +169,7 @@ func newTuiModel(ctx context.Context, repoRoot string, provider ai.Provider, msg
 
 	hi := textinput.New()
 	hi.Placeholder = tr.T("tui.placeholder.regen_hint")
+	hi.Width = calcInnerWidth(80) - lipgloss.Width(hi.Prompt)
 
 	genCtx, genCancel := context.WithCancel(ctx)
 
@@ -553,6 +554,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m = m.stopGeneration()
 				if m.commitMsg != "" {
 					m.state = stateConfirm
+					m.cursor = 0
 					m = m.refreshViewport()
 					return m, nil
 				}
@@ -743,6 +745,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "esc":
 				if m.commitMsg != "" {
 					m.state = stateConfirm
+					m.cursor = 0
 					m = m.refreshViewport()
 					return m, nil
 				}
@@ -767,6 +770,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.textarea.SetWidth(m.innerWidth() - 4)
+		m.hintInput.Width = max(1, m.innerWidth()-lipgloss.Width(m.hintInput.Prompt))
+		m.hintInput.SetCursor(m.hintInput.Position())
 
 		// Viewport height must account for border (2), padding (2), and hint (1).
 		// innerHeight() subtracts border (2), so we subtract 3 more (padding 2 + hint 1).

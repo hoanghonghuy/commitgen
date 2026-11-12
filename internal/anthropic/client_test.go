@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,37 @@ import (
 
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
+
+func TestGenerate_RejectsIncompleteCompletion(t *testing.T) {
+	for _, reason := range []string{"max_tokens", "refusal", "model_context_window_exceeded"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", reason, stream), func(t *testing.T) {
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if stream {
+						fmt.Fprintf(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"text\":\"feat: partial\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":%q}}\n\ndata: {\"type\":\"message_stop\"}\n\n", reason)
+					} else {
+						fmt.Fprintf(w, `{"content":[{"type":"text","text":"feat: partial"}],"stop_reason":%q}`, reason)
+					}
+				}))
+				defer srv.Close()
+				var got string
+				var err error
+				var deltas strings.Builder
+				if stream {
+					got, err = newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), .7, func(s string) { deltas.WriteString(s) })
+				} else {
+					got, err = newTestClient(srv.URL).Generate(context.Background(), sampleMsgs(), .7)
+				}
+				if err == nil || !strings.Contains(err.Error(), reason) || got != "" {
+					t.Errorf("incomplete completion accepted: text=%q err=%v", got, err)
+				}
+				if stream && deltas.String() != "feat: partial" {
+					t.Errorf("partial display lost: %q", deltas.String())
+				}
+			})
+		}
+	}
+}
 
 func TestGenerateStream_RequiresCompletion(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +152,7 @@ func TestGenerate_SystemPromptAndTemperature(t *testing.T) {
 		if len(req.Messages) != 1 || req.Messages[0].Role != "user" {
 			t.Errorf("messages mapping wrong: %+v", req.Messages)
 		}
-		_, _ = w.Write([]byte(`{"content":[{"text":"fix: bug"}]}`))
+		_, _ = w.Write([]byte(`{"content":[{"text":"fix: bug"}],"stop_reason":"end_turn"}`))
 	}))
 	defer srv.Close()
 
@@ -172,6 +204,7 @@ func TestGenerateStream_CollectsDeltas(t *testing.T) {
 				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"feat: \"}}\n\n" +
 				"event: content_block_delta\n" +
 				"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"add stream\"}}\n\n" +
+				"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n" +
 				"event: message_stop\n" +
 				"data: {\"type\":\"message_stop\"}\n\n"))
 	}))

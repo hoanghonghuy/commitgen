@@ -377,6 +377,22 @@ func TestRun_ConfigPathAndShow(t *testing.T) {
 	if !strings.Contains(showOut, "Config file:") {
 		t.Errorf("config show output = %q", showOut)
 	}
+	path := filepath.Join(home, "settings.json")
+	writeFile(t, home, "settings.json", `{"provider":"openai","locale":"en"}`)
+	localized := captureStdout(t, func() {
+		if err := Run(context.Background(), Config{Command: "config", ConfigAction: "show", ConfigPath: path, Locale: "vi"}); err != nil {
+			t.Errorf("localized config show: %v", err)
+		}
+	})
+	if !strings.Contains(localized, i18n.New(i18n.LocaleVI).T("config.file_path", path)) {
+		t.Errorf("config show ignored runtime locale: %s", localized)
+	}
+	captureStdout(t, func() {
+		err := Run(context.Background(), Config{Command: "config", ConfigAction: "show", ConfigPath: filepath.Join(home, "missing.json")})
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Errorf("missing explicit config must fail: %v", err)
+		}
+	})
 }
 
 func TestMaskSecret(t *testing.T) {

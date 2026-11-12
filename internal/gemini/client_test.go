@@ -32,6 +32,21 @@ func newTestClient(baseURL string) *Client {
 	}
 }
 
+func TestGenerate_RejectsIncompleteCompletion(t *testing.T) {
+	for _, reason := range []string{"MAX_TOKENS", "SAFETY"} {
+		t.Run(reason, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				fmt.Fprintf(w, `{"candidates":[{"content":{"parts":[{"text":"feat: partial"}]},"finishReason":%q}]}`, reason)
+			}))
+			defer srv.Close()
+			text, err := newTestClient(srv.URL).Generate(context.Background(), sampleMsgs(), .7)
+			if err == nil || !strings.Contains(err.Error(), reason) || text != "" {
+				t.Errorf("incomplete completion accepted: text=%q err=%v", text, err)
+			}
+		})
+	}
+}
+
 func TestNew_SetsDefaultURL(t *testing.T) {
 	c := New(Config{APIKey: "k", Model: "m"})
 	if c.baseURL != defaultGeminiBaseURL {

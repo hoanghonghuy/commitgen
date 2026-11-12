@@ -53,13 +53,15 @@ type clipboardErrMsg struct{ err error }
 // clipboardCopyCmd writes content to clipboard and returns a tea.Cmd that
 // either signals failure or sets a 1500ms timer before the done message.
 func clipboardCopyCmd(content string, onDone tea.Msg) tea.Cmd {
-	if err := clipboard.WriteAll(content); err != nil {
-		logger.Error("failed to copy to clipboard", "error", err)
-		return func() tea.Msg { return clipboardErrMsg{err: err} }
+	return func() tea.Msg {
+		if err := clipboard.WriteAll(content); err != nil {
+			logger.Error("failed to copy to clipboard", "error", err)
+			return clipboardErrMsg{err: err}
+		}
+		return tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
+			return onDone
+		})()
 	}
-	return tea.Tick(1500*time.Millisecond, func(_ time.Time) tea.Msg {
-		return onDone
-	})
 }
 
 // scrollHintText returns the formatted scroll hint string based on scroll position.

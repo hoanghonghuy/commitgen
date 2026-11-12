@@ -63,13 +63,15 @@ type chatResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func (r chatResponse) streamError() error {
+var errIncompleteCompletion = errors.New("openai: incomplete completion")
+
+func (r chatResponse) responseError() error {
 	if r.Error != nil {
 		return fmt.Errorf("openai: stream error: %s (%s)", r.Error.Message, r.Error.Type)
 	}
 	for _, choice := range r.Choices {
-		if choice.FinishReason == "error" {
-			return fmt.Errorf("openai: stream finished with an error")
+		if choice.FinishReason != "" && choice.FinishReason != "stop" {
+			return fmt.Errorf("%w: finish_reason=%s", errIncompleteCompletion, choice.FinishReason)
 		}
 	}
 	return nil
@@ -166,7 +168,7 @@ func readStream(body io.Reader, onDelta func(string)) (string, error) {
 		// Decode once the event's JSON is complete. This also preserves
 		// compatible servers that omit blank lines between complete records.
 		pending.Reset()
-		if err := chunk.streamError(); err != nil {
+		if err := chunk.responseError(); err != nil {
 			return "", err
 		}
 		if len(chunk.Choices) == 0 {
@@ -214,6 +216,9 @@ func (e *apiStatusError) Error() string { return e.msg }
 // errors (e.g. 401/403/400/404) are not. Non-API errors (network/transport)
 // are retried unless the context deadline was exceeded or the call timed out.
 func isRetryableErr(err error) bool {
+	if errors.Is(err, errIncompleteCompletion) {
+		return false
+	}
 	var se *apiStatusError
 	if errors.As(err, &se) {
 		return se.status == http.StatusTooManyRequests || (se.status >= 500 && se.status <= 599)
@@ -320,6 +325,9 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	if out.Error != nil {
 		logger.Error("openai: API error", "message", out.Error.Message, "type", out.Error.Type)
 		return "", fmt.Errorf("llm error: %s (%s)", out.Error.Message, out.Error.Type)
+	}
+	if err := out.responseError(); err != nil {
+		return "", err
 	}
 	if len(out.Choices) == 0 {
 		return "", logger.LogError(fmt.Errorf("empty choices"), "openai: no choices in response")

@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/hoanghonghuy/commitgen/internal/app"
 	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/gitx"
@@ -88,8 +89,8 @@ func main() {
 		}
 	}
 	var fileCfg config.FileConfig
-	if cmd == "config" && *configPathFlag != "" {
-		// The editor may create a new explicit config file.
+	if cmd == "config" && configAction != "show" && *configPathFlag != "" {
+		// Editing and path lookup may target a new explicit config file.
 		fileCfg, err = config.Load(*configPathFlag)
 	} else {
 		fileCfg, err = config.LoadResolvedForRepo(*configPathFlag, configRepoRoot)
@@ -202,11 +203,31 @@ func main() {
 	defer cancel()
 
 	// Handle signals
+	accessibleConfig := cmd == "config" && configAction == "" && app.UseAccessibleForm(os.Getenv)
+	var terminalState *term.State
+	inputFD := os.Stdin.Fd()
+	if accessibleConfig && term.IsTerminal(inputFD) {
+		terminalState, err = term.GetState(inputFD)
+		if err != nil {
+			logger.Warn("failed to capture terminal state", "error", err)
+		}
+	}
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(sigChan)
 	go func() {
 		<-sigChan
 		cancel()
+		if accessibleConfig {
+			// Huh's accessible prompts (including ReadPassword) ignore context.
+			// Stop at the process boundary after restoring password echo.
+			if terminalState != nil {
+				if err := term.Restore(inputFD, terminalState); err != nil {
+					logger.Warn("failed to restore terminal state", "error", err)
+				}
+			}
+			os.Exit(0)
+		}
 	}()
 
 	// 6. Run application
@@ -309,7 +330,7 @@ func defaultModelForProvider(provider string) string {
 	case config.ProviderGemini:
 		return "gemini-3.8-flash"
 	case config.ProviderOpenRouter:
-		return "anthropic/claude-sonnet-4"
+		return "anthropic/claude-sonnet-4.6"
 	default:
 		return "gpt-4.1-mini"
 	}

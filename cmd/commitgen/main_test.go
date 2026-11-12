@@ -30,7 +30,7 @@ type formStep struct {
 
 func TestDefaultModels_SupportedProviders(t *testing.T) {
 	// Official lifecycle tables checked on 2026-11-12.
-	for provider, want := range map[string]string{"anthropic": "claude-sonnet-4-6", "gemini": "gemini-3.8-flash"} {
+	for provider, want := range map[string]string{"anthropic": "claude-sonnet-4-6", "gemini": "gemini-3.8-flash", "openrouter": "anthropic/claude-sonnet-4.6"} {
 		if got := defaultModelForProvider(provider); got != want {
 			t.Errorf("%s default model=%q, want supported model %q", provider, got, want)
 		}
@@ -89,6 +89,14 @@ func (d *formDriver) Write(p []byte) (int, error) {
 
 func runConfigForm(t *testing.T, path string, terminalSteps ...[]formStep) string {
 	t.Helper()
+	if len(terminalSteps) > 0 {
+		return runConfigFormMode(t, path, true, terminalSteps[0])
+	}
+	return runConfigFormMode(t, path, false, nil)
+}
+
+func runConfigFormMode(t *testing.T, path string, normal bool, steps []formStep) string {
+	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("interactive CLI test uses Linux script PTY")
 	}
@@ -102,7 +110,7 @@ func runConfigForm(t *testing.T, path string, terminalSteps ...[]formStep) strin
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
 	timeout := 15 * time.Second
-	if len(terminalSteps) > 0 {
+	if steps != nil {
 		timeout = 5 * time.Second
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -124,9 +132,12 @@ func runConfigForm(t *testing.T, path string, terminalSteps ...[]formStep) strin
 		{prompt: "Enter a number between 1 and 5: ", input: "\n"}, {prompt: "Enter a number between 1 and 4: ", input: "\n"},
 		{prompt: "Enter a number between 1 and 4: ", input: "\n"}, {prompt: "Enter a number between 1 and 3: ", input: "\n"}, {prompt: "Log File Path ", input: "\n"},
 	}}
-	if len(terminalSteps) > 0 {
-		cmd.Env = append(cmd.Env, "ACCESSIBLE=", "TERM=xterm-256color", "NO_COLOR=1", "COMMITGEN_TEST_PTY=1", "GORACE=atexit_sleep_ms=0")
-		driver.steps = terminalSteps[0]
+	if steps != nil {
+		cmd.Env = append(cmd.Env, "NO_COLOR=1", "COMMITGEN_TEST_PTY=1", "GORACE=atexit_sleep_ms=0")
+		if normal {
+			cmd.Env = append(cmd.Env, "ACCESSIBLE=", "TERM=xterm-256color")
+		}
+		driver.steps = steps
 		driver.terminal = true
 		cmd.Cancel = func() error {
 			if pid := driver.pid.Load(); pid > 0 {
@@ -180,6 +191,75 @@ func TestCLI_ConfigTerminalNumbers(t *testing.T) {
 	}
 	if saved.RecentN != 15 || saved.MaxFiles != 7 || saved.Timeout != 45 {
 		t.Errorf("accepted settings were lost: %+v", saved)
+	}
+}
+
+func TestCLI_ConfigProviderAndTemperature(t *testing.T) {
+	for _, tt := range []struct{ name, initial, selectKeys, model, invalid, limit string }{
+		{name: "provider default", selectKeys: "\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r", model: "claude-sonnet-4-6"},
+		{name: "custom model retained", initial: `{"provider":"openai","model":"custom-model"}`, selectKeys: "\x1b[B\x1b[B\x1b[B\x1b[B\x1b[B\r", model: "custom-model"},
+		{name: "NaN rejected in form", selectKeys: "\r", model: "gpt-4.1-mini", invalid: "NaN", limit: "2.0"},
+		{name: "Anthropic range", initial: `{"provider":"anthropic","model":"claude-sonnet-4-6"}`, selectKeys: "\r", model: "claude-sonnet-4-6", invalid: "1.5", limit: "1.0"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			if tt.initial != "" {
+				if err := os.WriteFile(path, []byte(tt.initial), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			steps := []formStep{{prompt: "┃ AI Provider", input: tt.selectKeys}}
+			for _, field := range []string{"Model", "API Key", "System Prompt Template", "Number of recent commits to include", "Max staged files to analyze"} {
+				steps = append(steps, formStep{prompt: "┃ " + field, input: "\r"})
+			}
+			temperature := "\r"
+			if tt.invalid != "" {
+				temperature = "\x01\x0b" + tt.invalid + "\r"
+			}
+			steps = append(steps, formStep{prompt: "┃ LLM temperature", input: temperature})
+			if tt.invalid != "" {
+				steps = append(steps, formStep{prompt: "must be between 0.0 and " + tt.limit, input: "\x01\x0b0.7\r"})
+			}
+			for _, field := range []string{"AI request timeout in seconds (default 120)", "Summarize Changes", "Conventional Commits", "Ignored Files", "Rules File", "UI Language", "Review Language", "Log Level", "Log Output", "Log File Path"} {
+				steps = append(steps, formStep{prompt: "┃ " + field, input: "\r"})
+			}
+			runConfigForm(t, path, steps)
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved struct {
+				Model       string  `json:"model"`
+				Temperature float64 `json:"temperature"`
+			}
+			if err := json.Unmarshal(data, &saved); err != nil {
+				t.Fatal(err)
+			}
+			if saved.Model != tt.model || saved.Temperature != .7 {
+				t.Errorf("wrong saved form values: model=%q temperature=%v", saved.Model, saved.Temperature)
+			}
+		})
+	}
+}
+
+func TestCLI_ConfigAccessibleCancel(t *testing.T) {
+	for _, password := range []bool{false, true} {
+		for _, sig := range []syscall.Signal{syscall.SIGINT, syscall.SIGTERM} {
+			t.Run(fmt.Sprintf("password=%v/signal=%v", password, sig), func(t *testing.T) {
+				steps := []formStep{}
+				prompt := "Enter a number between 1 and 7: "
+				if password {
+					steps = append(steps, formStep{prompt: prompt, input: "\n"}, formStep{prompt: "Model ", input: "\n"})
+					prompt = "API Key "
+				}
+				steps = append(steps, formStep{prompt: prompt, signal: sig})
+				path := filepath.Join(t.TempDir(), "config.json")
+				runConfigFormMode(t, path, false, steps)
+				if _, err := os.Stat(path); !os.IsNotExist(err) {
+					t.Errorf("cancel saved config: %v", err)
+				}
+			})
+		}
 	}
 }
 

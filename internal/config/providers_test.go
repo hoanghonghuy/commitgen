@@ -46,8 +46,8 @@ func TestLookup_Unknown(t *testing.T) {
 
 func TestModelSuggestions_LockedTable(t *testing.T) {
 	tests := map[string][]string{
-		"openai":       {"gpt-4.1-mini", "gpt-4.1", "o4-mini", "gpt-4o"},
-		"openrouter":   {"anthropic/claude-sonnet-4", "openai/gpt-4.1-mini", "google/gemini-2.5-flash"},
+		"openai":       {"gpt-4.1-mini", "gpt-4.1", "gpt-4o"},
+		"openrouter":   {"anthropic/claude-sonnet-4.6", "openai/gpt-4.1-mini", "google/gemini-2.5-flash"},
 		"compatible":   {"gpt-4o", "llama3", "deepseek-v4-pro"},
 		"ollama":       {"llama3", "mistral", "qwen2.5"},
 		"ollama-cloud": {"deepseek-v4-pro", "llama3.3", "qwen2.5-coder"},

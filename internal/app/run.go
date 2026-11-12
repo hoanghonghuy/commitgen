@@ -306,6 +306,9 @@ func loadRulesConfig(path string) (*validator.Config, error) {
 }
 
 func newProvider(cfg Config) (ai.Provider, error) {
+	if err := validateTemperature(i18n.New(i18n.Locale(cfg.Locale)), cfg.Provider, cfg.Temperature); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(cfg.Model) == "" {
 		return nil, logger.LogError(ErrMissingModel, "model not configured")
 	}
@@ -519,12 +522,17 @@ func resolveConfigPath(path string) string {
 }
 
 // showConfig prints the saved configuration with secret values masked.
-func showConfig(path string) error {
-	fileCfg, err := config.Load(path)
+func showConfig(path string, tr *i18n.Translator) error {
+	var fileCfg config.FileConfig
+	var err error
+	if path == "" {
+		fileCfg, err = config.Load(path)
+	} else {
+		fileCfg, err = config.LoadResolved(path)
+	}
 	if err != nil {
 		return logger.LogError(err, "failed to load config", "path", resolveConfigPath(path))
 	}
-	tr := i18n.New(i18n.Locale(firstNonEmpty(fileCfg.Locale, "en")))
 	resolvedPath := resolveConfigPath(path)
 	fmt.Printf("%s\n", tr.T("config.file_path", resolvedPath))
 	fmt.Printf("%s\n", tr.T("config.show.provider", providerConfigLabel(fileCfg.Provider, fileCfg.CompatibleBaseURL, config.APIKeyFor(fileCfg, fileCfg.Provider))))
@@ -579,7 +587,7 @@ func runConfig(ctx context.Context, cfg Config) error {
 		fmt.Println(resolveConfigPath(cfg.ConfigPath))
 		return nil
 	case "show":
-		return showConfig(cfg.ConfigPath)
+		return showConfig(cfg.ConfigPath, tr)
 	}
 
 	savePath := resolveConfigPath(cfg.ConfigPath)

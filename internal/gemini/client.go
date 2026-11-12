@@ -84,6 +84,13 @@ type candidate struct {
 	FinishReason string  `json:"finishReason"`
 }
 
+func (c candidate) completionError() error {
+	if c.FinishReason != "" && c.FinishReason != "STOP" {
+		return fmt.Errorf("gemini: incomplete completion: finishReason=%s", c.FinishReason)
+	}
+	return nil
+}
+
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
 	return c.generate(ctx, msgs, temperature)
 }
@@ -153,6 +160,9 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		return "", logger.LogError(fmt.Errorf("empty response"), "gemini: no content")
 	}
 
+	if err := genResp.Candidates[0].completionError(); err != nil {
+		return "", err
+	}
 	return genResp.Candidates[0].Content.text(), nil
 }
 
@@ -211,8 +221,8 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 			continue
 		}
 		selected := chunk.Candidates[0]
-		if selected.FinishReason != "" && selected.FinishReason != "STOP" {
-			return "", fmt.Errorf("gemini: stream finished with %s", selected.FinishReason)
+		if err := selected.completionError(); err != nil {
+			return "", err
 		}
 		text := selected.Content.text()
 		if text != "" {

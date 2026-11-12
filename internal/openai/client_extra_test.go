@@ -13,6 +13,40 @@ import (
 	"time"
 )
 
+func TestGenerate_RejectsIncompleteCompletion(t *testing.T) {
+	for _, reason := range []string{"length", "content_filter", "tool_calls"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", reason, stream), func(t *testing.T) {
+				var calls atomic.Int32
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					calls.Add(1)
+					if stream {
+						fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"content\":\"feat: partial\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":%q}]}\n\ndata: [DONE]\n\n", reason)
+					} else {
+						fmt.Fprintf(w, `{"choices":[{"message":{"content":"feat: partial"},"finish_reason":%q}]}`, reason)
+					}
+				}))
+				defer srv.Close()
+				client := New(Config{BaseURL: srv.URL, Model: "fixture"})
+				var got string
+				var err error
+				var deltas strings.Builder
+				if stream {
+					got, err = client.GenerateStream(context.Background(), sampleMsgs(), .7, func(s string) { deltas.WriteString(s) })
+				} else {
+					got, err = client.Generate(context.Background(), sampleMsgs(), .7)
+				}
+				if err == nil || !strings.Contains(err.Error(), reason) || got != "" {
+					t.Errorf("incomplete completion accepted: text=%q err=%v", got, err)
+				}
+				if calls.Load() != 1 || (stream && deltas.String() != "feat: partial") {
+					t.Errorf("calls=%d partial display=%q", calls.Load(), deltas.String())
+				}
+			})
+		}
+	}
+}
+
 func TestStreamingResponse_MultilineData(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

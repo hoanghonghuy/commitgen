@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -217,7 +221,7 @@ func TestCandidatesProgress(t *testing.T) {
 }
 
 func TestShouldUseAccessibleForm(t *testing.T) {
-	if !shouldUseAccessibleForm(func(k string) string {
+	if !UseAccessibleForm(func(k string) string {
 		if k == "ACCESSIBLE" {
 			return "1"
 		}
@@ -225,7 +229,7 @@ func TestShouldUseAccessibleForm(t *testing.T) {
 	}) {
 		t.Fatal("ACCESSIBLE should enable")
 	}
-	if !shouldUseAccessibleForm(func(k string) string {
+	if !UseAccessibleForm(func(k string) string {
 		if k == "TERM" {
 			return "dumb"
 		}
@@ -233,7 +237,7 @@ func TestShouldUseAccessibleForm(t *testing.T) {
 	}) {
 		t.Fatal("TERM=dumb should enable")
 	}
-	if shouldUseAccessibleForm(func(string) string { return "" }) {
+	if UseAccessibleForm(func(string) string { return "" }) {
 		t.Fatal("default should be false")
 	}
 }
@@ -377,18 +381,119 @@ func TestEscCancelsGenerating(t *testing.T) {
 }
 
 func TestChooseEsc_DoesNotSelect(t *testing.T) {
-	m := newTestModel()
-	m.state = stateChoose
-	m.candidates = []string{"feat: a", "feat: b"}
-	m.cursor = 1
-	m.commitMsg = "feat: old"
-	u, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
-	tm := u.(tuiModel)
-	if tm.commitMsg != "feat: old" {
-		t.Fatalf("Esc must not apply candidate, got %q", tm.commitMsg)
+	for _, regenerate := range []bool{false, true} {
+		m := newTestModel()
+		m.state = stateChoose
+		m.candidates = []string{"feat: a", "feat: b", "feat: c", "feat: d", "feat: e"}
+		m.cursor = 4
+		m.commitMsg = "feat: old"
+		var u tea.Model = m
+		if regenerate {
+			u, _ = u.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+		}
+		u, _ = u.Update(tea.KeyMsg{Type: tea.KeyEsc})
+		tm := u.(tuiModel)
+		if tm.commitMsg != "feat: old" || tm.state != stateConfirm {
+			t.Errorf("regenerate=%v: Esc applied candidate or failed to return: message=%q state=%v", regenerate, tm.commitMsg, tm.state)
+		}
+		if tm.cursor < 0 || tm.cursor >= confirmActionCount || !strings.Contains(tm.View(), "> ") {
+			t.Errorf("regenerate=%v: invalid confirm selection: cursor=%d", regenerate, tm.cursor)
+		}
 	}
-	if tm.state != stateConfirm {
-		t.Fatalf("state=%v", tm.state)
+}
+
+func TestRegenHint_FitsTerminalAfterPasteAndResize(t *testing.T) {
+	for _, locale := range []i18n.Locale{i18n.LocaleEN, i18n.LocaleVI, i18n.LocaleJA, i18n.LocaleZH} {
+		for _, review := range []bool{false, true} {
+			var model tea.Model
+			if review {
+				m := newTestReviewModel(false)
+				m.tr = i18n.New(locale)
+				m, _ = m.enterRegenHint()
+				m.hintInput.SetValue(strings.Repeat("Keep the public API compatible. ", 40))
+				model = m
+			} else {
+				m := newTestModel()
+				m.i18n = i18n.New(locale)
+				m.state = stateRegenHint
+				m.hintInput.Focus()
+				m.hintInput.SetValue(strings.Repeat("Keep the public API compatible. ", 40))
+				model = m
+			}
+			for _, width := range []int{80, 40, 80} {
+				model, _ = model.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+				if view := model.View(); lipgloss.Height(view) > 24 || lipgloss.Width(view) > width {
+					t.Errorf("locale=%s review=%v: guidance overflow %dx%d in %dx24", locale, review, lipgloss.Width(view), lipgloss.Height(view), width)
+				}
+			}
+			var value string
+			switch m := model.(type) {
+			case tuiModel:
+				value = m.hintInput.Value()
+			case reviewModel:
+				value = m.hintInput.Value()
+			}
+			if value != strings.Repeat("Keep the public API compatible. ", 40) {
+				t.Error("resizing discarded guidance text")
+			}
+		}
+	}
+}
+
+func TestClipboardCopy_DoesNotRunInsideUpdate(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("clipboard fixture uses a Linux executable")
+	}
+	if os.Getenv("COMMITGEN_TEST_CLIPBOARD_CHILD") == "1" {
+		marker := os.Getenv("COMMITGEN_TEST_CLIPBOARD_FILE")
+		for _, review := range []bool{false, true} {
+			var model tea.Model
+			if review {
+				m := newTestReviewModel(false)
+				m.state, m.report = reviewStateDone, "clipboard fixture text"
+				model = m
+			} else {
+				m := newTestModel()
+				m.state, m.commitMsg = stateConfirm, "clipboard fixture text"
+				model = m
+			}
+			_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Errorf("review=%v: clipboard ran inside Update: %v", review, err)
+			}
+			if cmd == nil {
+				t.Fatal("missing clipboard command")
+			}
+			msg := cmd()
+			switch msg.(type) {
+			case copyDoneMsg, reviewCopyDoneMsg:
+			default:
+				t.Fatalf("copy failed: %T %v", msg, msg)
+			}
+			if content, err := os.ReadFile(marker); err != nil || string(content) != "clipboard fixture text" {
+				t.Errorf("wrong clipboard content: %q err=%v", content, err)
+			}
+			if err := os.Remove(marker); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "copied.txt")
+	if err := os.WriteFile(filepath.Join(dir, "xclip"), []byte("#!/bin/sh\n/bin/cat > "+shellQuote(marker)+"\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, exe, "-test.run=^TestClipboardCopy_DoesNotRunInsideUpdate$")
+	cmd.Env = append(os.Environ(), "COMMITGEN_TEST_CLIPBOARD_CHILD=1", "COMMITGEN_TEST_CLIPBOARD_FILE="+marker, "WAYLAND_DISPLAY=", "PATH="+dir+string(os.PathListSeparator)+os.Getenv("PATH"), "GORACE=atexit_sleep_ms=0")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("clipboard subprocess: %v\n%s", err, out)
 	}
 }
 

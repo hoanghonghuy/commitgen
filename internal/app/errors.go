@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
@@ -106,13 +107,33 @@ func (e *unknownProviderError) Unwrap() error {
 	return ErrUnknownProvider
 }
 
+const (
+	defaultMaxTemperature   = 2.0
+	anthropicMaxTemperature = 1.0
+)
+
+func maxTemperature(provider string) float64 {
+	if strings.EqualFold(strings.TrimSpace(provider), "anthropic") {
+		return anthropicMaxTemperature
+	}
+	return defaultMaxTemperature
+}
+
+func validateTemperature(tr *i18n.Translator, provider string, value float64) error {
+	limit := maxTemperature(provider)
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || value > limit {
+		return fmt.Errorf("%s", tr.T("config.field.temperature.error", limit))
+	}
+	return nil
+}
+
 // clampTemperature constrains the LLM temperature to the valid [0, 2] range.
 func clampTemperature(t float64) float64 {
 	if t < 0 {
 		return 0
 	}
-	if t > 2 {
-		return 2
+	if t > defaultMaxTemperature {
+		return defaultMaxTemperature
 	}
 	return t
 }

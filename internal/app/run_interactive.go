@@ -21,7 +21,7 @@ func runConfigForm(ctx context.Context, form *huh.Form) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if shouldUseAccessibleForm(os.Getenv) {
+	if UseAccessibleForm(os.Getenv) {
 		return form.RunWithContext(ctx)
 	}
 	form.SubmitCmd = tea.Quit
@@ -62,6 +62,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 	if model == "" {
 		model = existing.Model
 	}
+	modelProvider := provider
 	apiKey := maskSecret(config.APIKeyFor(existing, provider))
 	baseURL := existing.CompatibleBaseURL
 	if baseURL == "" && step2IncludesBaseURL(provider) {
@@ -129,6 +130,15 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 			return cfg, "", false, err
 		}
 
+		if provider != modelProvider {
+			previous := config.ModelSuggestions(modelProvider)
+			if model == "" || (len(previous) > 0 && model == previous[0]) {
+				if selected := config.ModelSuggestions(provider); len(selected) > 0 {
+					model = selected[0]
+				}
+			}
+			modelProvider = provider
+		}
 		// Refresh masked key when provider changes.
 		apiKey = maskSecret(config.APIKeyFor(existing, provider))
 		if baseURL == "" && step2IncludesBaseURL(provider) {
@@ -181,17 +191,14 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					Validate(func(s string) error { return validateIntField(tr, s) }),
 				huh.NewInput().
 					Title(tr.T("config.field.temperature")).
-					Description(tr.T("config.field.temperature.desc")).
+					Description(tr.T("config.field.temperature.desc", maxTemperature(provider))).
 					Value(&tempStr).
 					Validate(func(s string) error {
-						v, err := strconv.ParseFloat(s, 64)
+						v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 						if err != nil {
-							return fmt.Errorf("%s", tr.T("config.field.temperature.error"))
+							return fmt.Errorf("%s", tr.T("config.field.temperature.error", maxTemperature(provider)))
 						}
-						if v < 0 || v > 2.0 {
-							return fmt.Errorf("%s", tr.T("config.field.temperature.error"))
-						}
-						return nil
+						return validateTemperature(tr, provider, v)
 					}),
 				huh.NewInput().
 					Title(tr.T("config.field.timeout")).
@@ -303,7 +310,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 		if v, err := strconv.Atoi(strings.TrimSpace(maxFilesStr)); err == nil {
 			cfg.MaxFiles = v
 		}
-		if v, err := strconv.ParseFloat(tempStr, 64); err == nil {
+		if v, err := strconv.ParseFloat(strings.TrimSpace(tempStr), 64); err == nil {
 			cfg.Temperature = v
 		}
 		if v, err := strconv.Atoi(strings.TrimSpace(timeoutStr)); err == nil && v > 0 {

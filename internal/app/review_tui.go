@@ -207,6 +207,7 @@ func newReviewModel(ctx context.Context, provider ai.Provider, msgs []vscodeprom
 
 	hi := textinput.New()
 	hi.Placeholder = tr.T("tui.placeholder.regen_hint")
+	hi.Width = calcInnerWidth(80) - lipgloss.Width(hi.Prompt)
 
 	genCtx, genCancel := context.WithCancel(ctx)
 
@@ -518,6 +519,8 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.hintInput.Width = max(1, m.innerWidth()-lipgloss.Width(m.hintInput.Prompt))
+		m.hintInput.SetCursor(m.hintInput.Position())
 
 		// Viewport height must account for the border (2 lines), padding (2 lines),
 		// and the scroll hint line (1 line) that follows viewport.View().

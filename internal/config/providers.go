@@ -77,8 +77,8 @@ var providerRegistry = map[string]ProviderInfo{
 }
 
 var modelSuggestions = map[string][]string{
-	ProviderOpenAI:      {"gpt-4.1-mini", "gpt-4.1", "o4-mini", "gpt-4o"},
-	ProviderOpenRouter:  {"anthropic/claude-sonnet-4", "openai/gpt-4.1-mini", "google/gemini-2.5-flash"},
+	ProviderOpenAI:      {"gpt-4.1-mini", "gpt-4.1", "gpt-4o"},
+	ProviderOpenRouter:  {"anthropic/claude-sonnet-4.6", "openai/gpt-4.1-mini", "google/gemini-2.5-flash"},
 	ProviderCompatible:  {"gpt-4o", "llama3", "deepseek-v4-pro"},
 	ProviderOllama:      {"llama3", "mistral", "qwen2.5"},
 	ProviderOllamaCloud: {"deepseek-v4-pro", "llama3.3", "qwen2.5-coder"},

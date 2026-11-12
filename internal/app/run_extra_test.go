@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -54,6 +55,11 @@ func TestNewProvider(t *testing.T) {
 		{"ollama cloud ok", Config{Provider: "ollama", Model: "deepseek-v4-pro", BaseURL: "https://ollama.com", APIKey: "sk-test"}, false},
 		{"anthropic missing key", Config{Provider: "anthropic", Model: "claude"}, true},
 		{"anthropic ok", Config{Provider: "anthropic", Model: "claude", AnthropicKey: "k"}, false},
+		{"anthropic temperature too high", Config{Provider: "anthropic", Model: "claude-sonnet-4-6", AnthropicKey: "k", Temperature: 1.5}, true},
+		{"anthropic temperature maximum", Config{Provider: "anthropic", Model: "claude-sonnet-4-6", AnthropicKey: "k", Temperature: 1}, false},
+		{"openai temperature above one", Config{Provider: "openai", Model: "gpt-4.1-mini", APIKey: "k", Temperature: 1.5}, false},
+		{"NaN temperature", Config{Provider: "openai", Model: "gpt-4.1-mini", APIKey: "k", Temperature: math.NaN()}, true},
+		{"infinite temperature", Config{Provider: "gemini", Model: "gemini-3.8-flash", GeminiKey: "k", Temperature: math.Inf(1)}, true},
 		{"gemini missing key", Config{Provider: "gemini", Model: "gemini"}, true},
 		{"gemini ok", Config{Provider: "gemini", Model: "gemini", GeminiKey: "k"}, false},
 		{"openai missing creds", Config{Provider: "openai", Model: "gpt"}, true},

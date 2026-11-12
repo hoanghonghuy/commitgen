@@ -57,10 +57,20 @@ type message struct {
 }
 
 type messageResponse struct {
-	Content []struct {
+	StopReason string `json:"stop_reason"`
+	Content    []struct {
 		Type string `json:"type"`
 		Text string `json:"text"`
 	} `json:"content"`
+}
+
+func completionError(reason string) error {
+	switch reason {
+	case "", "end_turn", "stop_sequence":
+		return nil
+	default:
+		return fmt.Errorf("anthropic: incomplete completion: stop_reason=%s", reason)
+	}
 }
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
@@ -118,6 +128,9 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 	if err := httpx.DoJSONRequest(ctx, c.client, "POST", c.baseURL, headers, reqBody, &msgResp); err != nil {
 		return "", logger.LogError(err, "anthropic: request failed")
 	}
+	if err := completionError(msgResp.StopReason); err != nil {
+		return "", err
+	}
 
 	if len(msgResp.Content) == 0 {
 		return "", logger.LogError(fmt.Errorf("empty response"), "anthropic: no content")
@@ -141,7 +154,8 @@ type anthropicStreamChunk struct {
 		Message string `json:"message"`
 	} `json:"error,omitempty"`
 	Delta struct {
-		Text string `json:"text"`
+		Text       string `json:"text"`
+		StopReason string `json:"stop_reason"`
 	} `json:"delta"`
 }
 
@@ -194,6 +208,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		}
 		if chunk.Error != nil {
 			return "", fmt.Errorf("anthropic: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
+		}
+		if err := completionError(chunk.Delta.StopReason); err != nil {
+			return "", err
 		}
 		if chunk.Type == "message_stop" {
 			completed = true
