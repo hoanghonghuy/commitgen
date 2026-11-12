@@ -350,6 +350,7 @@ func (m reviewModel) refreshViewport() reviewModel {
 	content := m.buildDoneContent()
 	m.cachedContent = content
 	m.needsScroll = true // always use viewport for review report (handles word-wrap)
+	m.viewport.Height = menuViewportHeight(m.innerHeight(), m.innerWidth(), m.tr, m.statusBanner)
 
 	if m.viewportReady {
 		m.viewport.SetContent(content)
@@ -583,7 +584,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.state = reviewStateDone
 		}
-		return m, nil
+		return m.refreshViewport(), nil
 	}
 
 	return m, nil
@@ -617,11 +618,11 @@ func (m reviewModel) View() string {
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(m.tr, pct, m.viewport.AtTop(), m.viewport.AtBottom())
-			inner = statusLine(m.tr, m.statusBanner) + m.viewport.View() + "\n" + styleHint.Render(hint) + "\n" + styleHint.Render(actionFooter(m.tr))
+			inner = statusLine(m.tr, m.statusBanner, m.innerWidth()) + m.viewport.View() + "\n" + styleHint.Width(m.innerWidth()).Render(hint) + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.tr))
 		} else if m.cachedContent != "" {
-			inner = statusLine(m.tr, m.statusBanner) + m.cachedContent + "\n" + styleHint.Render(actionFooter(m.tr))
+			inner = statusLine(m.tr, m.statusBanner, m.innerWidth()) + m.cachedContent + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.tr))
 		} else {
-			inner = statusLine(m.tr, m.statusBanner) + m.buildDoneContent() + "\n" + styleHint.Render(actionFooter(m.tr))
+			inner = statusLine(m.tr, m.statusBanner, m.innerWidth()) + m.buildDoneContent() + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.tr))
 		}
 
 	case reviewStateQuickDone:
@@ -630,11 +631,11 @@ func (m reviewModel) View() string {
 		} else if m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(m.tr, pct, m.viewport.AtTop(), m.viewport.AtBottom())
-			inner = statusLine(m.tr, m.statusBanner) + m.viewport.View() + "\n" + styleHint.Render(hint) + "\n" + styleHint.Render(actionFooter(m.tr))
+			inner = statusLine(m.tr, m.statusBanner, m.innerWidth()) + m.viewport.View() + "\n" + styleHint.Width(m.innerWidth()).Render(hint) + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.tr))
 		} else if m.cachedContent != "" {
-			inner = statusLine(m.tr, m.statusBanner) + m.cachedContent + "\n" + styleHint.Render(actionFooter(m.tr))
+			inner = statusLine(m.tr, m.statusBanner, m.innerWidth()) + m.cachedContent + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.tr))
 		} else {
-			inner = statusLine(m.tr, m.statusBanner) + m.buildDoneContent() + "\n" + styleHint.Render(actionFooter(m.tr))
+			inner = statusLine(m.tr, m.statusBanner, m.innerWidth()) + m.buildDoneContent() + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.tr))
 		}
 
 	case reviewStateCopied:

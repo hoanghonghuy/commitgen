@@ -3,6 +3,9 @@ package gemini
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -90,7 +93,7 @@ func TestGenerate_SystemInstructionAndRoles(t *testing.T) {
 func TestGenerate_PreservesAllTextParts(t *testing.T) {
 	for _, stream := range []bool{false, true} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			body := `{"candidates":[{"content":{"parts":[{"thought":true,"text":"PRIVATE_THOUGHT"},{"text":"feat: complete"},{"text":"\n\nBody and footer"}]}},{"content":{"parts":[{"text":"OTHER_CANDIDATE"}]}}]}`
+			body := `{"candidates":[{"content":{"parts":[{"thought":true,"text":"PRIVATE_THOUGHT"},{"text":"feat: complete"},{"text":"\n\nBody and footer"}]},"finishReason":"STOP"},{"content":{"parts":[{"text":"OTHER_CANDIDATE"}]}}]}`
 			if stream {
 				body = "data: " + body + "\n\n"
 			}
@@ -147,7 +150,7 @@ func TestGenerateStream_CollectsDeltas(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(
 			"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"feat: \"}]}}]}\n\n" +
-				"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"add stream\"}]}}]}\n\n"))
+				"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"add stream\"}]},\"finishReason\":\"STOP\"}]}\n\n"))
 	}))
 	defer srv.Close()
 
@@ -178,5 +181,40 @@ func TestGenerateStream_HTTPError(t *testing.T) {
 	_, err := c.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
 	if err == nil {
 		t.Error("expected error for non-200 stream response")
+	}
+}
+
+func TestGenerateStream_Completion(t *testing.T) {
+	for _, tt := range []struct{ name, terminal, wantError string }{
+		{"early EOF", "", "unexpected EOF"},
+		{"provider error", `{"error":{"code":429,"message":"synthetic overload","status":"RESOURCE_EXHAUSTED"}}`, "synthetic overload"},
+		{"token limit", `{"candidates":[{"finishReason":"MAX_TOKENS"}]}`, "MAX_TOKENS"},
+		{"finished without text in final chunk", `{"candidates":[{"finishReason":"STOP"}]}`, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				fmt.Fprint(w, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"feat: partial\"}]}}]}\n\n")
+				if tt.terminal != "" {
+					fmt.Fprintf(w, "data: %s\n\n", tt.terminal)
+				}
+			}))
+			defer srv.Close()
+			var deltas strings.Builder
+			got, err := newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), 0.7, func(s string) { deltas.WriteString(s) })
+			if tt.wantError == "" {
+				if err != nil || got != "feat: partial" {
+					t.Fatalf("completed response=%q err=%v", got, err)
+				}
+			} else if err == nil || !strings.Contains(err.Error(), tt.wantError) || got != "" {
+				t.Fatalf("incomplete stream accepted: content=%q err=%v", got, err)
+			}
+			if tt.terminal == "" && !errors.Is(err, io.ErrUnexpectedEOF) {
+				t.Errorf("want unexpected EOF, got %v", err)
+			}
+			if deltas.String() != "feat: partial" {
+				t.Errorf("partial display lost: %q", deltas.String())
+			}
+		})
 	}
 }

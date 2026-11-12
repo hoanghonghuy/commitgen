@@ -101,7 +101,7 @@ func Run(ctx context.Context, cfg Config) error {
 	tr := i18n.New(i18n.Locale(cfg.Locale))
 
 	if cfg.Command == "config" {
-		return runConfig(cfg)
+		return runConfig(ctx, cfg)
 	}
 	if cfg.Command == "install-hook" {
 		return InstallHook(ctx, cfg.RepoArg, cfg.Print, cfg.ConfigPath, tr)
@@ -569,7 +569,10 @@ func preserveSecret(submitted, existing string) string {
 	return s
 }
 
-func runConfig(cfg Config) error {
+func runConfig(ctx context.Context, cfg Config) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	tr := i18n.New(i18n.Locale(cfg.Locale))
 	switch strings.ToLower(strings.TrimSpace(cfg.ConfigAction)) {
 	case "path":
@@ -586,13 +589,16 @@ func runConfig(cfg Config) error {
 		}
 	}
 
-	newCfg, submittedKey, ok, err := runConfigInteractive(cfg, savePath, tr)
+	newCfg, submittedKey, ok, err := runConfigInteractive(ctx, cfg, savePath, tr)
 	if err != nil {
 		return err
 	}
 	if !ok {
 		fmt.Println(tr.T("config.cancelled"))
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 
 	existing, _ := config.Load(cfg.ConfigPath)

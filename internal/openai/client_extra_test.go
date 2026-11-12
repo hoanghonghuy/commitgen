@@ -10,7 +10,41 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
+
+func TestStreamingResponse_MultilineData(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			fmt.Fprint(w, ": keepalive\n\ndata: {\"choices\":[\ndata: {\"delta\":{\"content\":\"feat: complete event\"},\"finish_reason\":\"stop\"}]}\n\ndata:[DONE]\n\n")
+		}))
+		c := New(Config{BaseURL: srv.URL, Model: "fixture"})
+		var got string
+		var err error
+		if stream {
+			got, err = c.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
+		} else {
+			got, err = c.generate(context.Background(), sampleMsgs(), 0.7)
+		}
+		srv.Close()
+		if err != nil || got != "feat: complete event" {
+			t.Errorf("stream=%v: content=%q err=%v", stream, got, err)
+		}
+	}
+}
+
+func TestGenerate_CancelsRetryBackoff(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusServiceUnavailable) }))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	_, err := New(Config{BaseURL: srv.URL, Model: "fixture"}).Generate(ctx, sampleMsgs(), 0.7)
+	if !errors.Is(err, context.DeadlineExceeded) || time.Since(started) > 750*time.Millisecond {
+		t.Errorf("retry ignored deadline: elapsed=%s err=%v", time.Since(started), err)
+	}
+}
 
 func TestStreamingResponse_OptionalDataSpace(t *testing.T) {
 	for _, prefix := range []string{"data:", "data: "} {

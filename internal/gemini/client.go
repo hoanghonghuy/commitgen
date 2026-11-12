@@ -73,10 +73,15 @@ type generationConfig struct {
 
 type generateContentResponse struct {
 	Candidates []candidate `json:"candidates"`
+	Error      *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error,omitempty"`
 }
 
 type candidate struct {
-	Content content `json:"content"`
+	Content      content `json:"content"`
+	FinishReason string  `json:"finishReason"`
 }
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
@@ -186,6 +191,7 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 	}
 
 	var full strings.Builder
+	completed := false
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -198,19 +204,33 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
-		if len(chunk.Candidates) == 0 || len(chunk.Candidates[0].Content.Parts) == 0 {
+		if chunk.Error != nil {
+			return "", fmt.Errorf("gemini: stream error (%d): %s", chunk.Error.Code, chunk.Error.Message)
+		}
+		if len(chunk.Candidates) == 0 {
 			continue
 		}
-		text := chunk.Candidates[0].Content.text()
+		selected := chunk.Candidates[0]
+		if selected.FinishReason != "" && selected.FinishReason != "STOP" {
+			return "", fmt.Errorf("gemini: stream finished with %s", selected.FinishReason)
+		}
+		text := selected.Content.text()
 		if text != "" {
 			full.WriteString(text)
 			if onDelta != nil {
 				onDelta(text)
 			}
 		}
+		if selected.FinishReason == "STOP" {
+			completed = true
+			break
+		}
 	}
 	if err := scanner.Err(); err != nil {
 		return "", logger.LogError(err, "gemini: stream read failed")
+	}
+	if !completed {
+		return "", fmt.Errorf("gemini: stream ended before completion: %w", io.ErrUnexpectedEOF)
 	}
 	return full.String(), nil
 }

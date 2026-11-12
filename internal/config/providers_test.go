@@ -51,8 +51,8 @@ func TestModelSuggestions_LockedTable(t *testing.T) {
 		"compatible":   {"gpt-4o", "llama3", "deepseek-v4-pro"},
 		"ollama":       {"llama3", "mistral", "qwen2.5"},
 		"ollama-cloud": {"deepseek-v4-pro", "llama3.3", "qwen2.5-coder"},
-		"anthropic":    {"claude-sonnet-4-20250514", "claude-3-5-haiku-latest", "claude-3-opus-20240229"},
-		"gemini":       {"gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"},
+		"anthropic":    {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"},
+		"gemini":       {"gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"},
 	}
 	for id, want := range tests {
 		got := ModelSuggestions(id)

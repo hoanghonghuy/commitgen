@@ -45,6 +45,36 @@ func TestLoad_EagerRewriteLegacy(t *testing.T) {
 	}
 }
 
+func TestLoad_LegacyProxyPreservesDestination(t *testing.T) {
+	for _, base := range []string{
+		"http://127.0.0.1:9000/proxy/api.openai.com/v1",
+		"http://openrouter.ai.internal:9000/v1",
+		"https://proxy.example/v1?upstream=openrouter.ai",
+		"https://api.openai.com@proxy.example/v1",
+	} {
+		t.Run(base, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "legacy.json")
+			raw, err := json.Marshal(FileConfig{Provider: ProviderOpenAI, BaseURL: base, APIKey: "synthetic-key"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			for load := 0; load < 2; load++ {
+				cfg, err := Load(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resolved := ResolveCredentials(CredentialInput{File: cfg})
+				if resolved.Provider != ProviderCompatible || resolved.BaseURL != base || resolved.APIKey != "synthetic-key" {
+					t.Fatalf("load=%d: proxy routing changed: provider=%q url=%q", load, resolved.Provider, resolved.BaseURL)
+				}
+			}
+		})
+	}
+}
+
 func TestLoad_OllamaLegacyHostGetsDedicatedSlot(t *testing.T) {
 	for _, field := range []string{"compatible_base_url", "base_url"} {
 		for _, host := range []string{"http://192.168.1.10:11434", "http://localhost:11435", "http://127.0.0.1:11435/ollama"} {

@@ -135,23 +135,37 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 // for a blocking request. SSE permits one optional space after the field colon.
 func readStream(body io.Reader, onDelta func(string)) (string, error) {
 	var full strings.Builder
+	var pending strings.Builder
 	completed := false
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
 		line := scanner.Text()
+		if line == "" && pending.Len() > 0 {
+			return "", fmt.Errorf("openai: invalid JSON in SSE event")
+		}
 		if !strings.HasPrefix(line, "data:") {
 			continue
 		}
 		data := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
 		if data == "[DONE]" {
+			if pending.Len() > 0 {
+				return "", fmt.Errorf("openai: incomplete SSE event: %w", io.ErrUnexpectedEOF)
+			}
 			completed = true
 			break
 		}
+		if pending.Len() > 0 {
+			pending.WriteByte('\n')
+		}
+		pending.WriteString(data)
 		var chunk chatResponse
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+		if err := json.Unmarshal([]byte(pending.String()), &chunk); err != nil {
 			continue
 		}
+		// Decode once the event's JSON is complete. This also preserves
+		// compatible servers that omit blank lines between complete records.
+		pending.Reset()
 		if err := chunk.streamError(); err != nil {
 			return "", err
 		}
@@ -175,7 +189,7 @@ func readStream(body io.Reader, onDelta func(string)) (string, error) {
 	if err := scanner.Err(); err != nil {
 		return "", logger.LogError(err, "openai: stream read failed")
 	}
-	if !completed {
+	if !completed || pending.Len() > 0 {
 		return "", fmt.Errorf("openai: stream ended before completion: %w", io.ErrUnexpectedEOF)
 	}
 
@@ -219,7 +233,11 @@ func (c *Client) generateWithRetry(ctx context.Context, msgs []vscodeprompt.VSCo
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		if attempt > 0 {
 			logger.Info("openai: retry attempt", "attempt", attempt, "max", maxRetries)
-			time.Sleep(time.Duration(attempt) * time.Second)
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(attempt) * time.Second):
+			}
 		}
 		result, err := c.generate(ctx, msgs, temp)
 		if err == nil {

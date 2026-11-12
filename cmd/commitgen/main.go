@@ -305,9 +305,9 @@ func defaultModelForProvider(provider string) string {
 	case config.ProviderOllamaCloud:
 		return "deepseek-v4-pro"
 	case config.ProviderAnthropic:
-		return "claude-sonnet-4-20250514"
+		return "claude-sonnet-4-6"
 	case config.ProviderGemini:
-		return "gemini-2.0-flash"
+		return "gemini-3.8-flash"
 	case config.ProviderOpenRouter:
 		return "anthropic/claude-sonnet-4"
 	default:

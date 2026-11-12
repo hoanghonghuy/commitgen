@@ -424,7 +424,7 @@ func (m tuiModel) buildConfirmContent() string {
 // and auto-scrolls to keep the current action cursor visible.
 // Must be called from Update() only (modifies model state).
 func (m tuiModel) refreshViewport() tuiModel {
-	m.viewport.Height = max(3, m.innerHeight()-3)
+	m.viewport.Height = menuViewportHeight(m.innerHeight(), m.innerWidth(), m.i18n, m.statusBanner)
 	content := m.buildConfirmContent()
 	m.cachedContent = content
 
@@ -450,13 +450,25 @@ func (m tuiModel) refreshViewport() tuiModel {
 	return m
 }
 
+func (m tuiModel) streamHeader() string {
+	return "\n" + styleMsgTitle.Render(m.i18n.T("tui.hint.generating_stream"))
+}
+
+func (m tuiModel) refreshStreamViewport() tuiModel {
+	hint := styleHint.Width(m.innerWidth()).Render(m.i18n.T("tui.hint.esc_cancel"))
+	m.viewport.Height = max(1, m.innerHeight()-lipgloss.Height(m.streamHeader())-lipgloss.Height(hint))
+	m.viewport.SetContent(msgContentStyle(m.innerWidth() - 6).Render(m.streamView))
+	m.viewport.GotoBottom()
+	return m
+}
+
 func (m tuiModel) validationFooter() string {
 	return styleHint.Width(m.innerWidth()).Render(m.i18n.T("tui.hint.validation_keys") + "\n" + actionFooter(m.i18n))
 }
 
 func (m tuiModel) refreshValidationViewport() tuiModel {
 	var b strings.Builder
-	b.WriteString(statusLine(m.i18n, m.statusBanner))
+	b.WriteString(statusLine(m.i18n, m.statusBanner, m.innerWidth()))
 	b.WriteString("\n" + styleReviewError.Render(m.i18n.T("tui.title.validation_failed")) + "\n\n")
 	b.WriteString(m.i18n.T("tui.hint.validation_issues") + "\n")
 	for _, issue := range m.validationIssues {
@@ -498,7 +510,7 @@ func (m tuiModel) refreshCandidatesViewport() tuiModel {
 	footer := hintStyle.Render(m.i18n.T("tui.hint.choose_nav") + "\n" + m.i18n.T("tui.hint.esc_cancel"))
 	scrollHint := hintStyle.Render(fmt.Sprintf(m.i18n.T("tui.hint.choose_scroll"), 100))
 	statusHeight := 0
-	if status := strings.TrimSuffix(statusLine(m.i18n, m.statusBanner), "\n"); status != "" {
+	if status := strings.TrimSuffix(statusLine(m.i18n, m.statusBanner, m.innerWidth()), "\n"); status != "" {
 		statusHeight = lipgloss.Height(hintStyle.Render(status))
 	}
 	m.viewport.Height = max(1, m.innerHeight()-lipgloss.Height(footer)-lipgloss.Height(scrollHint)-statusHeight)
@@ -770,6 +782,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.viewportReady = true
 		}
 		switch m.state {
+		case stateGenerating:
+			m = m.refreshStreamViewport()
 		case stateChoose:
 			m = m.refreshCandidatesViewport()
 		case stateValidationFailed:
@@ -828,7 +842,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.streamView += msg.delta
-		return m, waitStreamCmd(m.streamCh)
+		return m.refreshStreamViewport(), waitStreamCmd(m.streamCh)
 
 	case candProgressMsg:
 		if msg.genID != 0 && msg.genID != m.genID {
@@ -892,7 +906,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case clipboardErrMsg:
 		m.statusBanner = m.i18n.T("tui.status.clipboard_failed", msg.err)
 		m.state = stateConfirm
-		return m, nil
+		return m.refreshViewport(), nil
 	}
 
 	return m, nil
@@ -908,15 +922,7 @@ func (m tuiModel) View() string {
 	switch m.state {
 	case stateGenerating:
 		if strings.TrimSpace(m.streamView) != "" {
-			var b strings.Builder
-			b.WriteString("\n")
-			b.WriteString(styleMsgTitle.Render(m.i18n.T("tui.hint.generating_stream")))
-			b.WriteString("\n")
-			b.WriteString(msgContentStyle(m.innerWidth() - 6).Render(m.streamView))
-			b.WriteString("\n")
-			b.WriteString(styleHint.Render(m.i18n.T("tui.hint.esc_cancel")))
-			b.WriteString("\n")
-			inner = b.String()
+			inner = m.streamHeader() + "\n" + m.viewport.View() + "\n" + styleHint.Width(m.innerWidth()).Render(m.i18n.T("tui.hint.esc_cancel"))
 		} else {
 			total := m.candTotal
 			if total <= 0 && m.count > 1 {
@@ -934,12 +940,12 @@ func (m tuiModel) View() string {
 		inner = fmt.Sprintf("\n %s %s\n", m.spinner.View(), m.i18n.T("tui.hint.committing"))
 
 	case stateConfirm:
-		status := statusLine(m.i18n, m.statusBanner)
+		status := statusLine(m.i18n, m.statusBanner, m.innerWidth())
 		if m.needsScroll && m.viewportReady {
 			// Content overflows → viewport (content already set in Update via refreshViewport).
 			pct := int(m.viewport.ScrollPercent() * 100)
 			hint := scrollHintText(m.i18n, pct, m.viewport.AtTop(), m.viewport.AtBottom())
-			inner = status + m.viewport.View() + "\n" + styleHint.Render(hint) + "\n" + styleHint.Render(actionFooter(m.i18n))
+			inner = status + m.viewport.View() + "\n" + styleHint.Width(m.innerWidth()).Render(hint) + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.i18n))
 		} else {
 			// Content fits — use cached content built in Update (zero allocations here).
 			if m.cachedContent == "" {
@@ -948,7 +954,7 @@ func (m tuiModel) View() string {
 			} else {
 				inner = m.cachedContent
 			}
-			inner = status + inner + "\n" + styleHint.Render(actionFooter(m.i18n))
+			inner = status + inner + "\n" + styleHint.Width(m.innerWidth()).Render(actionFooter(m.i18n))
 		}
 
 	case stateEditing:
@@ -972,7 +978,7 @@ func (m tuiModel) View() string {
 			m = m.refreshCandidatesViewport()
 		}
 		hintStyle := styleHint.Width(m.innerWidth())
-		inner = statusLine(m.i18n, m.statusBanner)
+		inner = statusLine(m.i18n, m.statusBanner, m.innerWidth())
 		if m.needsScroll && m.viewportReady {
 			pct := int(m.viewport.ScrollPercent() * 100)
 			inner += m.viewport.View() + "\n" + hintStyle.Render(fmt.Sprintf(m.i18n.T("tui.hint.choose_scroll"), pct)) + "\n"

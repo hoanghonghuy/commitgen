@@ -82,8 +82,8 @@ var modelSuggestions = map[string][]string{
 	ProviderCompatible:  {"gpt-4o", "llama3", "deepseek-v4-pro"},
 	ProviderOllama:      {"llama3", "mistral", "qwen2.5"},
 	ProviderOllamaCloud: {"deepseek-v4-pro", "llama3.3", "qwen2.5-coder"},
-	ProviderAnthropic:   {"claude-sonnet-4-20250514", "claude-3-5-haiku-latest", "claude-3-opus-20240229"},
-	ProviderGemini:      {"gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"},
+	ProviderAnthropic:   {"claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-opus-4-6"},
+	ProviderGemini:      {"gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite"},
 }
 
 // Lookup returns registry metadata for a provider id.

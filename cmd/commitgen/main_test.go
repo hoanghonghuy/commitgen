@@ -14,25 +14,55 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/ansi"
 )
 
 type formStep struct {
 	prompt string
 	input  string
+	signal syscall.Signal
+}
+
+func TestDefaultModels_SupportedProviders(t *testing.T) {
+	// Official lifecycle tables checked on 2026-11-12.
+	for provider, want := range map[string]string{"anthropic": "claude-sonnet-4-6", "gemini": "gemini-3.8-flash"} {
+		if got := defaultModelForProvider(provider); got != want {
+			t.Errorf("%s default model=%q, want supported model %q", provider, got, want)
+		}
+	}
 }
 
 type formDriver struct {
-	input   io.Writer
-	steps   []formStep
-	pending string
-	output  strings.Builder
+	input    io.Writer
+	steps    []formStep
+	pending  string
+	output   strings.Builder
+	terminal bool
+	pid      atomic.Int64
 }
 
 func (d *formDriver) Write(p []byte) (int, error) {
 	d.output.Write(p)
 	d.pending += string(p)
+	if d.terminal {
+		if bytes.Contains(p, []byte("\x1b[6n")) {
+			if _, err := io.WriteString(d.input, "\x1b[1;1R"); err != nil {
+				return 0, err
+			}
+		}
+		d.pending = ansi.Strip(d.pending)
+		if index := strings.Index(d.pending, "COMMITGEN_TEST_PID="); index >= 0 && strings.Contains(d.pending[index:], "\n") {
+			var pid int64
+			if _, err := fmt.Sscanf(d.pending[index:], "COMMITGEN_TEST_PID=%d", &pid); err == nil {
+				d.pid.Store(pid)
+			}
+		}
+	}
 	for len(d.steps) > 0 {
 		step := d.steps[0]
 		index := strings.Index(d.pending, step.prompt)
@@ -41,6 +71,15 @@ func (d *formDriver) Write(p []byte) (int, error) {
 		}
 		d.pending = d.pending[index+len(step.prompt):]
 		d.steps = d.steps[1:]
+		if step.signal != 0 {
+			process, err := os.FindProcess(int(d.pid.Load()))
+			if err != nil {
+				return 0, err
+			}
+			if err := process.Signal(step.signal); err != nil {
+				return 0, err
+			}
+		}
 		if _, err := io.WriteString(d.input, step.input); err != nil {
 			return 0, err
 		}
@@ -48,7 +87,7 @@ func (d *formDriver) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func runConfigForm(t *testing.T, path string) {
+func runConfigForm(t *testing.T, path string, terminalSteps ...[]formStep) string {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("interactive CLI test uses Linux script PTY")
@@ -62,7 +101,11 @@ func runConfigForm(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'" }
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	timeout := 15 * time.Second
+	if len(terminalSteps) > 0 {
+		timeout = 5 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	command := quote(exe) + " -test.run=^TestCLIProcess$ -- --config " + quote(path) + " config"
 	cmd := exec.CommandContext(ctx, script, "-q", "-e", "-c", command, "/dev/null")
@@ -73,14 +116,28 @@ func runConfigForm(t *testing.T, path string) {
 	}
 	defer input.Close()
 	driver := &formDriver{input: input, steps: []formStep{
-		{"Enter a number between 1 and 7: ", "\n"}, {"Model ", "\n"}, {"API Key ", "\n"},
-		{"System Prompt Template ", "\n"}, {"Recent Commits ", "5\n"}, {"Max Files ", "10\n"},
-		{"Temperature ", "0.7\n"}, {"Request Timeout (seconds) ", "120\n"},
-		{"Summarize Changes [Y/n] ", "\n"}, {"Conventional Commits [Y/n] ", "\n"},
-		{"Ignored Files ", "\n"}, {"Rules File ", "\n"},
-		{"Enter a number between 1 and 5: ", "\n"}, {"Enter a number between 1 and 4: ", "\n"},
-		{"Enter a number between 1 and 4: ", "\n"}, {"Enter a number between 1 and 3: ", "\n"}, {"Log File Path ", "\n"},
+		{prompt: "Enter a number between 1 and 7: ", input: "\n"}, {prompt: "Model ", input: "\n"}, {prompt: "API Key ", input: "\n"},
+		{prompt: "System Prompt Template ", input: "\n"}, {prompt: "Recent Commits ", input: "5\n"}, {prompt: "Max Files ", input: "10\n"},
+		{prompt: "Temperature ", input: "0.7\n"}, {prompt: "Request Timeout (seconds) ", input: "120\n"},
+		{prompt: "Summarize Changes [Y/n] ", input: "\n"}, {prompt: "Conventional Commits [Y/n] ", input: "\n"},
+		{prompt: "Ignored Files ", input: "\n"}, {prompt: "Rules File ", input: "\n"},
+		{prompt: "Enter a number between 1 and 5: ", input: "\n"}, {prompt: "Enter a number between 1 and 4: ", input: "\n"},
+		{prompt: "Enter a number between 1 and 4: ", input: "\n"}, {prompt: "Enter a number between 1 and 3: ", input: "\n"}, {prompt: "Log File Path ", input: "\n"},
 	}}
+	if len(terminalSteps) > 0 {
+		cmd.Env = append(cmd.Env, "ACCESSIBLE=", "TERM=xterm-256color", "NO_COLOR=1", "COMMITGEN_TEST_PTY=1", "GORACE=atexit_sleep_ms=0")
+		driver.steps = terminalSteps[0]
+		driver.terminal = true
+		cmd.Cancel = func() error {
+			if pid := driver.pid.Load(); pid > 0 {
+				if process, err := os.FindProcess(int(pid)); err == nil {
+					_ = process.Kill()
+				}
+			}
+			return cmd.Process.Kill()
+		}
+		cmd.WaitDelay = time.Second
+	}
 	var stderr bytes.Buffer
 	cmd.Stdout = driver
 	cmd.Stderr = &stderr
@@ -89,6 +146,59 @@ func runConfigForm(t *testing.T, path string) {
 	}
 	if len(driver.steps) != 0 {
 		t.Fatalf("form finished before all prompts: %s", driver.output.String())
+	}
+	return driver.output.String()
+}
+
+func TestCLI_ConfigTerminalNumbers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	steps := []formStep{{prompt: "┃ AI Provider", input: "\r"}}
+	for _, field := range []struct{ title, value string }{
+		{"Model", ""}, {"API Key", ""}, {"System Prompt Template", ""},
+		{"Number of recent commits to include", " 15 "}, {"Max staged files to analyze", " 7 "}, {"LLM temperature (0.0 - 2.0)", "0.2"}, {"AI request timeout in seconds (default 120)", " 45 "},
+		{"Summarize Changes", ""}, {"Conventional Commits", ""}, {"Ignored Files", ""}, {"Rules File", ""},
+		{"UI Language", ""}, {"Review Language", ""}, {"Log Level", ""}, {"Log Output", ""}, {"Log File Path", ""},
+	} {
+		input := "\r"
+		if field.value != "" {
+			input = "\x01\x0b" + field.value + "\r"
+		}
+		steps = append(steps, formStep{prompt: "┃ " + field.title, input: input})
+	}
+	runConfigForm(t, path, steps)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		RecentN  int `json:"recent_n"`
+		MaxFiles int `json:"max_files"`
+		Timeout  int `json:"timeout_seconds"`
+	}
+	if err := json.Unmarshal(b, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if saved.RecentN != 15 || saved.MaxFiles != 7 || saved.Timeout != 45 {
+		t.Errorf("accepted settings were lost: %+v", saved)
+	}
+}
+
+func TestCLI_ConfigTerminalCancel(t *testing.T) {
+	for name, steps := range map[string][]formStep{
+		"Esc back and cancel": {{prompt: "┃ AI Provider", input: "\r"}, {prompt: "┃ Model", input: "\x1b"}, {prompt: "┃ AI Provider", input: "\x1b"}},
+		"Ctrl+C cancel":       {{prompt: "┃ AI Provider", input: "\x03"}},
+		"SIGTERM cancel":      {{prompt: "┃ AI Provider", signal: syscall.SIGTERM}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.json")
+			output := runConfigForm(t, path, steps)
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Errorf("cancel wrote config: %v", err)
+			}
+			if strings.Contains(output, "Error:") {
+				t.Errorf("normal cancellation reported as error: %s", output)
+			}
+		})
 	}
 }
 
@@ -214,6 +324,14 @@ func TestCLI_PromptTemplateUsesConfigDirectory(t *testing.T) {
 func TestCLIProcess(t *testing.T) {
 	if os.Getenv("COMMITGEN_TEST_PROCESS") != "1" {
 		return
+	}
+	if os.Getenv("COMMITGEN_TEST_PTY") == "1" {
+		size := exec.Command("stty", "rows", "60", "cols", "80")
+		size.Stdin = os.Stdin
+		if err := size.Run(); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("COMMITGEN_TEST_PID=%d\n", os.Getpid())
 	}
 	for i, arg := range os.Args {
 		if arg == "--" {

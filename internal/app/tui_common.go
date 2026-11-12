@@ -2,12 +2,14 @@ package app
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 	"github.com/hoanghonghuy/commitgen/internal/logger"
 )
@@ -73,4 +75,18 @@ func scrollHintText(tr *i18n.Translator, pct int, atTop, atBottom bool) string {
 	default:
 		return fmt.Sprintf(tr.T("tui.hint.scroll_mid"), pct)
 	}
+}
+
+// menuViewportHeight reserves the actual wrapped status and keyboard hints.
+func menuViewportHeight(height, width int, tr *i18n.Translator, banner string) int {
+	hintStyle := styleHint.Width(width)
+	statusHeight := 0
+	if status := strings.TrimSuffix(statusLine(tr, banner, width), "\n"); status != "" {
+		statusHeight = lipgloss.Height(status)
+	}
+	scrollHeight := 0
+	for _, position := range []struct{ top, bottom bool }{{true, false}, {false, false}, {false, true}} {
+		scrollHeight = max(scrollHeight, lipgloss.Height(hintStyle.Render(scrollHintText(tr, 100, position.top, position.bottom))))
+	}
+	return max(1, height-statusHeight-scrollHeight-lipgloss.Height(hintStyle.Render(actionFooter(tr))))
 }

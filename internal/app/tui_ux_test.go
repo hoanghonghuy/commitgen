@@ -118,6 +118,63 @@ func TestActionFooter_IncludesNav(t *testing.T) {
 	}
 }
 
+func TestStreamingView_FitsTerminalAndShowsLatestText(t *testing.T) {
+	for _, locale := range []i18n.Locale{i18n.LocaleEN, i18n.LocaleVI, i18n.LocaleJA, i18n.LocaleZH} {
+		for _, size := range []struct{ width, height int }{{80, 24}, {40, 24}, {80, 12}} {
+			t.Run(fmt.Sprintf("%s/%dx%d", locale, size.width, size.height), func(t *testing.T) {
+				m := newTestModel()
+				m.i18n = i18n.New(locale)
+				u, _ := m.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height})
+				m = u.(tuiModel)
+				u, _ = m.Update(streamEvent{delta: "feat: change\n\n" + strings.Repeat("Detailed body line\n", 80) + "LATEST_LINE"})
+				m = u.(tuiModel)
+				for _, resize := range []bool{false, true} {
+					if resize {
+						u, _ = m.Update(tea.WindowSizeMsg{Width: size.width, Height: size.height - 1})
+						m = u.(tuiModel)
+					}
+					view := m.View()
+					if lipgloss.Height(view) > m.height {
+						t.Errorf("stream exceeds terminal: view=%d terminal=%d", lipgloss.Height(view), m.height)
+					}
+					if !strings.Contains(view, "LATEST_LINE") || !strings.Contains(view, strings.TrimSpace(m.i18n.T("tui.hint.esc_cancel"))) {
+						t.Error("latest text or cancel hint is hidden")
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestClipboardError_ViewportFitsTerminal(t *testing.T) {
+	clipErr := errors.New("No clipboard utilities available. Please install xsel, xclip, wl-clipboard or Termux:API add-on for termux-clipboard-get/set.")
+	for _, review := range []bool{false, true} {
+		for _, width := range []int{40, 80} {
+			var m tea.Model
+			if review {
+				m = newReviewModel(context.Background(), fakeProvider{}, baseMsgs(), 0.7, time.Second, true, i18n.New(i18n.LocaleEN))
+				m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+				m, _ = m.Update(reviewResultMsg{content: strings.Repeat("Review warning detail\n", 80)})
+			} else {
+				m = newTestModel()
+				m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: 24})
+				m, _ = m.Update(commitResultMsg{content: "feat: change\n\n" + strings.Repeat("Detailed body line\n", 80)})
+			}
+			m, _ = m.Update(clipboardErrMsg{err: clipErr})
+			for _, height := range []int{24, 23} {
+				m, _ = m.Update(tea.WindowSizeMsg{Width: width, Height: height})
+				view := m.View()
+				if lipgloss.Height(view) > height {
+					t.Errorf("review=%v width=%d: clipboard status overflows: height=%d terminal=%d", review, width, lipgloss.Height(view), height)
+				}
+				if !strings.Contains(view, "clipboard") || !strings.Contains(view, "Enter") {
+					t.Error("status or keyboard footer lost")
+				}
+			}
+		}
+	}
+}
+
 func TestConfirm_NavigationKeepsWrappedActionsVisible(t *testing.T) {
 	for _, content := range []string{
 		"feat: explain change\n\n" + strings.Repeat("long wrapped body ", 150),

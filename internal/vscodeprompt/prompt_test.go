@@ -1,9 +1,35 @@
 package vscodeprompt
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
+
+func TestExtractOneTextCodeBlock_NestedFences(t *testing.T) {
+	body := "# PR title\n\n## Summary\n```go\nfunc main() {}\n```\n\n## Test plan\n- [x] go test ./..."
+	for _, fence := range []string{"```", "````", "~~~~"} {
+		t.Run(fmt.Sprintf("fence=%s", fence), func(t *testing.T) {
+			raw := fence + "markdown\n" + body + "\n" + fence
+			got, ok := ExtractOneTextCodeBlock(raw)
+			want := body
+			if fence == "```" {
+				// Equal inner/outer fences are not one Markdown wrapper;
+				// retain the full raw response instead of extracting a fragment.
+				want = raw
+			}
+			if got != want || ok != (fence != "```") {
+				t.Errorf("nested content lost: got=%q ok=%v", got, ok)
+			}
+		})
+	}
+	for _, raw := range []string{"Review:\n" + body, "```text\none\n```\n```text\ntwo\n```"} {
+		got, ok := ExtractOneTextCodeBlock(raw)
+		if ok || got != raw {
+			t.Errorf("partial block treated as complete wrapper: got=%q ok=%v", got, ok)
+		}
+	}
+}
 
 func TestBuildReviewMessages_DefaultTemplate(t *testing.T) {
 	data := Data{

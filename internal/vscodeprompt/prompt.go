@@ -2,7 +2,6 @@ package vscodeprompt
 
 import (
 	"bytes"
-	"regexp"
 	"strings"
 	"text/template"
 )
@@ -380,18 +379,33 @@ func ToOpenAIMessages(vs []VSCodeMessage) []OpenAIMessage {
 	return out
 }
 
-var reTextBlock = regexp.MustCompile("(?ms)^```(?:\\w+)?\\s*([\\s\\S]+?)\\s*```$")
-
 // Returns (contentToPrint, okExactOneTextBlock)
 func ExtractOneTextCodeBlock(s string) (string, bool) {
 	s = strings.TrimSpace(s)
-	// Try to find the block
-	m := reTextBlock.FindStringSubmatch(s)
-	if len(m) == 2 {
-		return strings.TrimSpace(m[1]), true
+	lines := strings.Split(s, "\n")
+	if len(lines) < 2 {
+		return s, false
 	}
-	// Fallback: if the whole message is code but without blocks (unlikely but possible),
-	// or if there's prose.
-	// Current caller behavior: if !ok, it prints warning and usage raw s.
-	return s, false
+	opening := strings.TrimSpace(lines[0])
+	if len(opening) < 3 || (opening[0] != '`' && opening[0] != '~') {
+		return s, false
+	}
+	marker := string(opening[0])
+	size := len(opening) - len(strings.TrimLeft(opening, marker))
+	if size < 3 {
+		return s, false
+	}
+	isClosing := func(line string) bool {
+		line = strings.TrimSpace(line)
+		return len(line) >= size && strings.Trim(line, marker) == ""
+	}
+	if !isClosing(lines[len(lines)-1]) {
+		return s, false
+	}
+	for _, line := range lines[1 : len(lines)-1] {
+		if isClosing(line) {
+			return s, false
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines[1:len(lines)-1], "\n")), true
 }

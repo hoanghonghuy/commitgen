@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,14 +9,46 @@ import (
 	"strings"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/hoanghonghuy/commitgen/internal/config"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
+// runConfigForm quits gracefully so Bubble Tea waits for its input reader.
+// Huh's interrupt/context shutdown can close that reader while it is still active.
+func runConfigForm(ctx context.Context, form *huh.Form) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if shouldUseAccessibleForm(os.Getenv) {
+		return form.RunWithContext(ctx)
+	}
+	form.SubmitCmd = tea.Quit
+	form.CancelCmd = tea.Quit
+	program := tea.NewProgram(form, tea.WithOutput(os.Stderr), tea.WithReportFocus(), tea.WithoutSignalHandler())
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-ctx.Done():
+			program.Quit()
+		case <-done:
+		}
+	}()
+	_, err := program.Run()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if form.State == huh.StateAborted {
+		return huh.ErrUserAborted
+	}
+	return err
+}
+
 // runConfigInteractive launches a two-step TUI: provider select, then fields.
 // Aborting step 2 returns to step 1 (back) instead of exiting.
-func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Config, string, bool, error) {
+func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *i18n.Translator) (Config, string, bool, error) {
 	existing, _ := config.Load(cfg.ConfigPath)
 
 	provider := strings.TrimSpace(cfg.Provider)
@@ -67,6 +100,9 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 	}
 
 	for {
+		if err := ctx.Err(); err != nil {
+			return cfg, "", false, err
+		}
 		step1 := applyFormAccessibility(huh.NewForm(
 			huh.NewGroup(
 				huh.NewNote().
@@ -86,7 +122,10 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 					Value(&provider),
 			),
 		), os.Getenv)
-		if err := step1.Run(); err != nil {
+		if err := runConfigForm(ctx, step1); err != nil {
+			if errors.Is(err, huh.ErrUserAborted) {
+				return cfg, "", false, nil
+			}
 			return cfg, "", false, err
 		}
 
@@ -245,7 +284,7 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 			),
 		), os.Getenv)
 
-		if err := step2.Run(); err != nil {
+		if err := runConfigForm(ctx, step2); err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
 				continue // back to provider selection
 			}
@@ -258,16 +297,16 @@ func runConfigInteractive(cfg Config, savePath string, tr *i18n.Translator) (Con
 		cfg.PromptTemplate = promptTemplate
 		cfg.RulesFile = rulesFile
 
-		if v, err := strconv.Atoi(recentNStr); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(recentNStr)); err == nil {
 			cfg.RecentN = v
 		}
-		if v, err := strconv.Atoi(maxFilesStr); err == nil {
+		if v, err := strconv.Atoi(strings.TrimSpace(maxFilesStr)); err == nil {
 			cfg.MaxFiles = v
 		}
 		if v, err := strconv.ParseFloat(tempStr, 64); err == nil {
 			cfg.Temperature = v
 		}
-		if v, err := strconv.Atoi(timeoutStr); err == nil && v > 0 {
+		if v, err := strconv.Atoi(strings.TrimSpace(timeoutStr)); err == nil && v > 0 {
 			cfg.TimeoutSeconds = &v
 			cfg.Timeout = time.Duration(v) * time.Second
 		}

@@ -115,3 +115,25 @@ func TestSummarizeGo_FuncWithoutBody(t *testing.T) {
 		t.Error("bodyless func should be kept")
 	}
 }
+
+func TestSummarizeGo_LineDirectiveUsesPhysicalPosition(t *testing.T) {
+	defer func() {
+		if r := recover(); r != nil {
+			t.Errorf("valid Go source caused panic: %v", r)
+		}
+	}()
+	src := "package generated\n//line grammar.y:1000\nfunc Parse() { println(1) }\n"
+	got := BuildAttachment("/repo", "generated.go", src, true)
+	if !strings.Contains(got, "3: func Parse() {…}") || strings.Contains(got, "println(1)") {
+		t.Errorf("wrong physical source mapping: %s", got)
+	}
+}
+
+func TestSummarizeGo_PreservesAnonymousReturnTypes(t *testing.T) {
+	for _, signature := range []string{"func Build() struct{ Value int }", "func Build() interface{ Value() int }"} {
+		got := BuildAttachment("/repo", "factory.go", "package factory\n"+signature+" { panic(\"BODY_MARKER\") }\n", true)
+		if !strings.Contains(got, signature+" {…}") || strings.Contains(got, "BODY_MARKER") {
+			t.Errorf("signature changed: %s", got)
+		}
+	}
+}

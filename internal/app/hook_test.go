@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -54,9 +55,19 @@ func TestInstallAndUninstallHook(t *testing.T) {
 		t.Error("hook script should always use --print headless mode")
 	}
 
-	// Installing again should back up the existing hook, not fail.
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(hookPath, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Reinstalling restores execution while preserving the original backup.
 	if err := InstallHook(ctx, dir, false, "", tr); err != nil {
 		t.Errorf("InstallHook over existing hook should back up, not error: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(hookPath); err != nil || info.Mode().Perm()&0111 == 0 {
+			t.Errorf("reinstalled hook is not executable: info=%v err=%v", info, err)
+		}
 	}
 	if _, err := os.Stat(hookPath + ".bak"); err != nil {
 		t.Errorf("expected backup hook at %s.bak: %v", hookPath, err)
@@ -107,8 +118,18 @@ func TestInstallAndUninstallMsgHook(t *testing.T) {
 		}
 	}
 
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(hookPath, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := InstallMsgHook(ctx, dir, "", tr); err != nil {
 		t.Errorf("InstallMsgHook over existing hook should back up, not error: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(hookPath); err != nil || info.Mode().Perm()&0111 == 0 {
+			t.Errorf("reinstalled message hook is not executable: info=%v err=%v", info, err)
+		}
 	}
 	if _, err := os.Stat(hookPath + ".bak"); err != nil {
 		t.Errorf("expected backup commit-msg hook at %s.bak: %v", hookPath, err)

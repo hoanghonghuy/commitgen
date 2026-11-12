@@ -84,7 +84,7 @@ func summarizeGoAST(src string, lines []string) (map[int]string, bool) {
 
 	n := len(lines)
 	kept := map[int]string{}
-	lineOf := func(p token.Pos) int { return fset.Position(p).Line }
+	lineOf := func(p token.Pos) int { return fset.PositionFor(p, false).Line }
 	keepRange := func(start, end int) {
 		for i := start; i <= end && i >= 1 && i <= n; i++ {
 			kept[i] = strings.TrimRight(lines[i-1], "\r")
@@ -109,12 +109,13 @@ func summarizeGoAST(src string, lines []string) (map[int]string, bool) {
 				keepRange(sigStart, lineOf(d.End()))
 				continue
 			}
-			lb := lineOf(d.Body.Lbrace)
-			keepRange(sigStart, lb-1)
-			sigLine := strings.TrimRight(lines[lb-1], "\r")
-			if idx := strings.Index(sigLine, "{"); idx >= 0 {
-				sigLine = strings.TrimRight(sigLine[:idx], " \t") + " {…}"
+			brace := fset.PositionFor(d.Body.Lbrace, false)
+			lb := brace.Line
+			if lb < 1 || lb > n || brace.Column < 1 || brace.Column > len(lines[lb-1]) {
+				return nil, false
 			}
+			keepRange(sigStart, lb-1)
+			sigLine := strings.TrimRight(lines[lb-1][:brace.Column-1], " \t") + " {…}"
 			kept[lb] = sigLine
 		}
 	}

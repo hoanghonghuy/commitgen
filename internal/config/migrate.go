@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"strings"
 
 	"github.com/hoanghonghuy/commitgen/internal/ollama"
@@ -33,7 +34,10 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 		provider = ProviderOpenAI
 	}
 	base := strings.TrimSpace(out.BaseURL)
-	lowerBase := strings.ToLower(base)
+	baseHost := ""
+	if parsed, err := url.Parse(base); err == nil {
+		baseHost = strings.ToLower(parsed.Hostname())
+	}
 	apiKey := strings.TrimSpace(out.APIKey)
 	if provider == ProviderOllama && out.OllamaBaseURL == "" && out.CompatibleBaseURL != "" {
 		out.OllamaBaseURL = out.CompatibleBaseURL
@@ -42,10 +46,10 @@ func MigrateFileConfig(cfg FileConfig) (FileConfig, bool) {
 	switch provider {
 	case ProviderOpenAI:
 		switch {
-		case strings.Contains(lowerBase, "openrouter.ai"):
+		case baseHost == "openrouter.ai":
 			out.Provider = ProviderOpenRouter
 			setKeyIfEmpty(out.APIKeys, "openrouter", apiKey)
-		case base == "" || strings.Contains(lowerBase, "api.openai.com"):
+		case base == "" || baseHost == "api.openai.com":
 			out.Provider = ProviderOpenAI
 			setKeyIfEmpty(out.APIKeys, "openai", apiKey)
 		default:

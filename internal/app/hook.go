@@ -111,6 +111,9 @@ func InstallHook(ctx context.Context, repoArg string, _ bool, configPath string,
 	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write hook file: %w", err)
 	}
+	if err := os.Chmod(hookPath, 0755); err != nil {
+		return fmt.Errorf("make hook executable: %w", err)
+	}
 
 	fmt.Println(tr.T("hook.installed", hookPath))
 	return nil
@@ -149,6 +152,9 @@ func InstallMsgHook(ctx context.Context, repoArg string, configPath string, tr *
 	script := buildMsgHookScript(exe, configArg, tr.T("hook.failed"))
 	if err := os.WriteFile(hookPath, []byte(script), 0755); err != nil {
 		return fmt.Errorf("write hook file: %w", err)
+	}
+	if err := os.Chmod(hookPath, 0755); err != nil {
+		return fmt.Errorf("make hook executable: %w", err)
 	}
 	fmt.Println(tr.T("hook.installed", hookPath))
 	return nil

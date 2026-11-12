@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
@@ -59,7 +60,7 @@ func actionFooter(tr *i18n.Translator) string {
 }
 
 // statusLine renders a short status banner (errors / no-ops).
-func statusLine(tr *i18n.Translator, msg string) string {
+func statusLine(tr *i18n.Translator, msg string, width int) string {
 	msg = strings.TrimSpace(msg)
 	if msg == "" {
 		return ""
@@ -67,7 +68,7 @@ func statusLine(tr *i18n.Translator, msg string) string {
 	if tr == nil {
 		return " ! " + msg + "\n"
 	}
-	return styleHint.Render(" ! "+msg) + "\n"
+	return styleHint.Width(width).Render(" ! "+msg) + "\n"
 }
 
 // candidatePreview returns up to maxLines of a candidate for the choose UI.
@@ -136,7 +137,9 @@ func applyFormAccessibility(form *huh.Form, getenv func(string) string) *huh.For
 	if form == nil {
 		return nil
 	}
-	return form.WithAccessible(shouldUseAccessibleForm(getenv))
+	keymap := huh.NewDefaultKeyMap()
+	keymap.Quit = key.NewBinding(key.WithKeys("esc", "ctrl+c"))
+	return form.WithKeyMap(keymap).WithAccessible(shouldUseAccessibleForm(getenv))
 }
 
 // validateIntField maps strconv failures to a localized error.
