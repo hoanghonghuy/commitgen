@@ -87,6 +87,22 @@ func TestGenerate_PreservesAllTextBlocks(t *testing.T) {
 	}
 }
 
+func TestGenerateStream_MultilineEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"feat: \"}}\n\n"+
+			"data: {\"type\":\"content_block_delta\",\ndata: \"delta\":{\"type\":\"text_delta\",\"text\":\"complete body\"}}\n\n"+
+			"data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n"+
+			"data: {\"type\":\"message_stop\"}\n\n")
+	}))
+	defer srv.Close()
+	var deltas strings.Builder
+	content, err := newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), .7, func(s string) { deltas.WriteString(s) })
+	if err != nil || content != "feat: complete body" || deltas.String() != content {
+		t.Errorf("SSE content lost: content=%q deltas=%q err=%v", content, deltas.String(), err)
+	}
+}
+
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{
 		{Role: vscodeprompt.RoleSystem, Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "system prompt"}}},

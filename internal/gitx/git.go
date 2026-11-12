@@ -48,6 +48,19 @@ func Git(ctx context.Context, repoRoot string, args ...string) (string, error) {
 	return stdout.String(), nil
 }
 
+// StripMessageComments uses Git's comment configuration without changing the file.
+func StripMessageComments(ctx context.Context, repoRoot, message string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", "-C", repoRoot, "stripspace", "--strip-comments")
+	cmd.Stdin = strings.NewReader(message)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("strip commit message comments: %w: %s", err, stderr.String())
+	}
+	return stdout.String(), nil
+}
+
 // CurrentBranch returns the name of the current git branch.
 func CurrentBranch(ctx context.Context, repoRoot string) (string, error) {
 	out, err := Git(ctx, repoRoot, "rev-parse", "--abbrev-ref", "HEAD")

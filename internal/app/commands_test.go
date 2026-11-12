@@ -114,7 +114,7 @@ func TestRunValidateMsg_OKAndError(t *testing.T) {
 	writeFile(t, dir, "MSG_OK", "feat: x\n")
 
 	okOut := captureStdout(t, func() {
-		if err := runValidateMsg(Config{MessageFile: "MSG_OK"}, dir, i18n.New(i18n.LocaleEN)); err != nil {
+		if err := runValidateMsg(context.Background(), Config{MessageFile: "MSG_OK"}, dir, i18n.New(i18n.LocaleEN)); err != nil {
 			t.Errorf("runValidateMsg OK error: %v", err)
 		}
 	})
@@ -124,7 +124,7 @@ func TestRunValidateMsg_OKAndError(t *testing.T) {
 
 	writeFile(t, dir, "MSG_BAD", "feat: this subject is too long\n")
 	badOut := captureStdout(t, func() {
-		err := runValidateMsg(Config{MessageFile: "MSG_BAD"}, dir, i18n.New(i18n.LocaleEN))
+		err := runValidateMsg(context.Background(), Config{MessageFile: "MSG_BAD"}, dir, i18n.New(i18n.LocaleEN))
 		if err == nil {
 			t.Error("expected validation error")
 		}
@@ -141,7 +141,7 @@ func TestRunValidateMsg_BrokenRules(t *testing.T) {
 			writeFile(t, dir, ".commitgen-rules.json", "{invalid json")
 			writeFile(t, dir, "rules-directory/keep", "")
 			writeFile(t, dir, "MSG", strings.Repeat("x", 100))
-			err := runValidateMsg(Config{MessageFile: "MSG", RulesFile: rulesPath}, dir, i18n.New(i18n.LocaleEN))
+			err := runValidateMsg(context.Background(), Config{MessageFile: "MSG", RulesFile: rulesPath}, dir, i18n.New(i18n.LocaleEN))
 			if err == nil {
 				t.Fatal("configured rules failed to load but validation succeeded")
 			}
@@ -153,7 +153,7 @@ func TestRunValidateMsg_NoRules(t *testing.T) {
 	dir := initRepo(t)
 	writeFile(t, dir, "MSG", "whatever\n")
 	out := captureStdout(t, func() {
-		if err := runValidateMsg(Config{MessageFile: "MSG"}, dir, i18n.New(i18n.LocaleEN)); err != nil {
+		if err := runValidateMsg(context.Background(), Config{MessageFile: "MSG"}, dir, i18n.New(i18n.LocaleEN)); err != nil {
 			t.Errorf("runValidateMsg error: %v", err)
 		}
 	})

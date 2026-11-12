@@ -1,7 +1,6 @@
 package anthropic
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -194,27 +193,20 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 
 	var full strings.Builder
 	completed := false
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	err = httpx.ReadSSEJSON(resp.Body, func(data []byte) (bool, error) {
 		var chunk anthropicStreamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			return false, err
 		}
 		if chunk.Error != nil {
-			return "", fmt.Errorf("anthropic: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
+			return false, fmt.Errorf("anthropic: stream error (%s): %s", chunk.Error.Type, chunk.Error.Message)
 		}
 		if err := completionError(chunk.Delta.StopReason); err != nil {
-			return "", err
+			return false, err
 		}
 		if chunk.Type == "message_stop" {
 			completed = true
-			break
+			return true, nil
 		}
 		if chunk.Type == "content_block_delta" && chunk.Delta.Text != "" {
 			full.WriteString(chunk.Delta.Text)
@@ -222,8 +214,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 				onDelta(chunk.Delta.Text)
 			}
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return false, nil
+	})
+	if err != nil {
 		return "", logger.LogError(err, "anthropic: stream read failed")
 	}
 	if !completed {

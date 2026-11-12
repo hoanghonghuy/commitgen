@@ -197,7 +197,18 @@ if [ -z "$COMMIT_MSG_FILE" ]; then
 	exit 1
 fi
 
-if ! %s%s validate-msg --file "$COMMIT_MSG_FILE"; then
+cleanup=$(git config --get commit.cleanup)
+status=$?
+if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then
+	exit "$status"
+fi
+case "$cleanup" in
+  ''|default|strip) set -- --strip-comments ;;
+  verbatim|whitespace|scissors) set -- ;;
+  *) printf 'Unsupported commit.cleanup: %%s\n' "$cleanup" >&2; exit 1 ;;
+esac
+
+if ! %s%s validate-msg --file "$COMMIT_MSG_FILE" "$@"; then
 	printf '%%s\n' %s >&2
 	exit 1
 fi

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,28 @@ func TestGenerateStream_RequiresCompletion(t *testing.T) {
 	}
 	if deltas.String() != "feat: partial" {
 		t.Errorf("partial display lost: %q", deltas.String())
+	}
+}
+
+func TestGenerate_RejectsLengthCompletion(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		t.Run(fmt.Sprintf("stream=%v", stream), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, `{"message":{"content":"feat: partial"},"done":true,"done_reason":"length"}`+"\n")
+			}))
+			defer srv.Close()
+			c := New(Config{BaseURL: srv.URL, Model: "fixture"})
+			var content string
+			var err error
+			if stream {
+				content, err = c.GenerateStream(context.Background(), sampleMsgs(), .7, nil)
+			} else {
+				content, err = c.Generate(context.Background(), sampleMsgs(), .7)
+			}
+			if err == nil || !strings.Contains(err.Error(), "length") || content != "" {
+				t.Errorf("incomplete completion accepted: content=%q err=%v", content, err)
+			}
+		})
 	}
 }
 

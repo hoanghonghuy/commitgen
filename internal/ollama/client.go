@@ -59,9 +59,17 @@ type options struct {
 }
 
 type chatResponse struct {
-	Message message `json:"message"`
-	Done    bool    `json:"done"`
-	Error   string  `json:"error,omitempty"`
+	Message    message `json:"message"`
+	Done       bool    `json:"done"`
+	DoneReason string  `json:"done_reason"`
+	Error      string  `json:"error,omitempty"`
+}
+
+func (r chatResponse) completionError() error {
+	if r.DoneReason != "" && r.DoneReason != "stop" {
+		return fmt.Errorf("ollama: incomplete completion: done_reason=%s", r.DoneReason)
+	}
+	return nil
 }
 
 func (c *Client) Generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage, temperature float64) (string, error) {
@@ -153,6 +161,9 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		if chunk.Error != "" {
 			return "", fmt.Errorf("ollama: stream error: %s", chunk.Error)
 		}
+		if err := chunk.completionError(); err != nil {
+			return "", err
+		}
 		if chunk.Message.Content != "" {
 			full.WriteString(chunk.Message.Content)
 			if onDelta != nil {
@@ -189,6 +200,9 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		return "", logger.LogError(fmt.Errorf("ollama: %w", err), "ollama: request failed", "url", url)
 	}
 
+	if err := chatResp.completionError(); err != nil {
+		return "", err
+	}
 	return chatResp.Message.Content, nil
 }
 

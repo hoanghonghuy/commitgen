@@ -272,7 +272,7 @@ func runStyle(ctx context.Context, repoRoot string, recentN int, jsonOutput bool
 }
 
 // runValidateMsg validates an existing commit message file for commit-msg hooks and CI.
-func runValidateMsg(cfg Config, repoRoot string, tr *i18n.Translator) error {
+func runValidateMsg(ctx context.Context, cfg Config, repoRoot string, tr *i18n.Translator) error {
 	msgFile := strings.TrimSpace(cfg.MessageFile)
 	if msgFile == "" {
 		return fmt.Errorf("--file is required for validate-msg")
@@ -292,7 +292,14 @@ func runValidateMsg(cfg Config, repoRoot string, tr *i18n.Translator) error {
 		fmt.Println("No validation rules configured.")
 		return nil
 	}
-	issues := v.Validate(string(b))
+	message := string(b)
+	if cfg.StripComments {
+		message, err = gitx.StripMessageComments(ctx, repoRoot, message)
+		if err != nil {
+			return err
+		}
+	}
+	issues := v.Validate(message)
 	if len(issues) == 0 {
 		fmt.Println("Commit message OK.")
 		return nil

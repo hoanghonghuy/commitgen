@@ -67,6 +67,8 @@ Config form: abort step 2 (Esc / cancel) returns to provider selection. Set `ACC
 
 After upgrading, reinstall existing CommitGen hooks with `install-hook` / `install-msg-hook` to refresh their scripts. The validation hook uses the worktree where the commit is running, including linked worktrees.
 
+The validation hook ignores Git comment lines by default and honors `core.commentChar` / `core.commentString`. Setting `commit.cleanup` to `verbatim`, `whitespace`, or `scissors` keeps the raw input for validation. Git does not expose a command-line `--cleanup` override to hooks: use `git -c commit.cleanup=verbatim commit ...` (or the desired mode) when overriding the hook policy. Standalone `validate-msg` checks raw text unless `--strip-comments` is supplied; validation never rewrites the message file.
+
 ### Pull request draft
 
 ```bash
@@ -155,7 +157,7 @@ Other settings:
 - **Temperature**: Use a finite number from 0 to 1 for Anthropic, or 0 to 2 for the other providers. The config editor and runtime reject values outside the provider's range.
 - **Connectivity timeout**: `ping` and `models` use at most 30 seconds and honor shorter configured timeouts.
 - **Advanced** (edit JSON): `prompt_template_file`, `rules_file`.
-- **Template paths**: Relative `prompt_template_file` paths resolve from the config file that supplied them, including inherited global settings and explicit `--config` files.
+- **Template paths**: Relative `prompt_template_file` paths resolve from the config file that supplied them, including inherited global settings and explicit `--config` files. The config editor saves the resolved template path so moving inherited settings to the global config preserves their source.
 - **Custom Ollama host**: Set `ollama_base_url` in JSON for a LAN/remote daemon. It is independent of `compatible_base_url`; older Ollama host settings are migrated automatically.
 - **Per-repo**: Place `.commitgen.json` in the repository root to override global settings. With `--repo`, the overlay comes from the target repository root, including when the argument points to a subdirectory. An explicit `--config` still takes precedence. Use `commitgen config --config .commitgen.json` to edit repo-local settings.
 - **Validation**: Place `.commitgen-rules.json` in the repo root (auto-discovered) or set `rules_file` in config.

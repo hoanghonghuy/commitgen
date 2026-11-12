@@ -15,14 +15,49 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
+type configFormInput struct {
+	*os.File
+	err error
+}
+
+func (r *configFormInput) Read(p []byte) (int, error) {
+	// Each accessible field creates its own scanner. Avoid consuming input
+	// intended for the next field while retaining Fd for password prompts.
+	if len(p) > 1 {
+		p = p[:1]
+	}
+	n, err := r.File.Read(p)
+	if err != nil {
+		r.err = err
+	}
+	return n, err
+}
+
 // runConfigForm quits gracefully so Bubble Tea waits for its input reader.
 // Huh's interrupt/context shutdown can close that reader while it is still active.
-func runConfigForm(ctx context.Context, form *huh.Form) error {
+func runConfigForm(ctx context.Context, form *huh.Form, fields []huh.Field) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	if UseAccessibleForm(os.Getenv) {
-		return form.RunWithContext(ctx)
+		// Huh's accessible form discards field/input errors. Run the same
+		// fields directly so EOF or a password read failure prevents saving.
+		input := &configFormInput{File: os.Stdin}
+		for _, field := range fields {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			field.Init()
+			field.Focus()
+			if err := field.RunAccessible(os.Stdout, input); err != nil {
+				return fmt.Errorf("read config field: %w", err)
+			}
+			if input.err != nil {
+				return fmt.Errorf("read config input: %w", input.err)
+			}
+			fmt.Println()
+		}
+		return nil
 	}
 	form.SubmitCmd = tea.Quit
 	form.CancelCmd = tea.Quit
@@ -100,12 +135,18 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 		timeoutStr = fmt.Sprintf("%d", int(cfg.Timeout.Seconds()))
 	}
 
+	var formFields []huh.Field
+	newGroup := func(fields ...huh.Field) *huh.Group {
+		formFields = append(formFields, fields...)
+		return huh.NewGroup(fields...)
+	}
 	for {
+		formFields = nil
 		if err := ctx.Err(); err != nil {
 			return cfg, "", false, err
 		}
 		step1 := applyFormAccessibility(huh.NewForm(
-			huh.NewGroup(
+			newGroup(
 				huh.NewNote().
 					Title(tr.T("config.form.title")).
 					Description(tr.T("config.form_intro")+"\n"+tr.T("config.save_target", savePath)),
@@ -123,7 +164,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					Value(&provider),
 			),
 		), os.Getenv)
-		if err := runConfigForm(ctx, step1); err != nil {
+		if err := runConfigForm(ctx, step1, formFields); err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
 				return cfg, "", false, nil
 			}
@@ -148,6 +189,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 			}
 		}
 
+		formFields = nil
 		aiFields := []huh.Field{
 			huh.NewInput().
 				Title(tr.T("config.field.model")).
@@ -177,8 +219,8 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 		)
 
 		step2 := applyFormAccessibility(huh.NewForm(
-			huh.NewGroup(aiFields...),
-			huh.NewGroup(
+			newGroup(aiFields...),
+			newGroup(
 				huh.NewInput().
 					Title(tr.T("config.field.recent_n")).
 					Description(tr.T("config.field.recent_n.desc")).
@@ -215,7 +257,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 						return nil
 					}),
 			),
-			huh.NewGroup(
+			newGroup(
 				huh.NewConfirm().
 					Title(tr.T("config.field.summarize")).
 					Description(tr.T("config.field.summarize.desc")).
@@ -225,7 +267,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					Description(tr.T("config.field.conventional.desc")).
 					Value(&conventional),
 			),
-			huh.NewGroup(
+			newGroup(
 				huh.NewInput().
 					Title(tr.T("config.field.ignored_files")).
 					Description(tr.T("config.field.ignored_files.desc")).
@@ -235,7 +277,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					Description(tr.T("config.field.rules_file.desc")).
 					Value(&rulesFile),
 			),
-			huh.NewGroup(
+			newGroup(
 				huh.NewSelect[string]().
 					Title(tr.T("config.field.ui_language")).
 					Description(tr.T("config.field.ui_language.desc")).
@@ -248,7 +290,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					).
 					Value(&locale),
 			),
-			huh.NewGroup(
+			newGroup(
 				huh.NewSelect[string]().
 					Title(tr.T("config.field.review_language")).
 					Description(tr.T("config.field.review_language.desc")).
@@ -260,7 +302,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					).
 					Value(&reviewLanguage),
 			),
-			huh.NewGroup(
+			newGroup(
 				huh.NewNote().
 					Title(tr.T("config.advanced.title")).
 					Description(tr.T("config.advanced.desc")),
@@ -291,7 +333,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 			),
 		), os.Getenv)
 
-		if err := runConfigForm(ctx, step2); err != nil {
+		if err := runConfigForm(ctx, step2, formFields); err != nil {
 			if errors.Is(err, huh.ErrUserAborted) {
 				continue // back to provider selection
 			}

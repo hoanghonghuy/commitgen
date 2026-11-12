@@ -20,12 +20,68 @@ import (
 	"time"
 
 	"github.com/charmbracelet/x/ansi"
+	"github.com/hoanghonghuy/commitgen/internal/config"
 )
 
 type formStep struct {
 	prompt string
 	input  string
 	signal syscall.Signal
+}
+
+func TestCLI_ConfigEOFDoesNotSave(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(fmt.Sprintf("existing=%v", existing), func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", os.Getenv("HOME"))
+			t.Setenv("ACCESSIBLE", "1")
+			t.Setenv("TERM", "dumb")
+			path := filepath.Join(t.TempDir(), "config.json")
+			before := []byte(`{"provider":"openai","model":"kept-model"}`)
+			if existing {
+				if err := os.WriteFile(path, before, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			out, cliErr := runCLI(t, "config", "--config", path)
+			if cliErr == nil || !strings.Contains(out, "EOF") {
+				t.Fatalf("expected input EOF, got err=%v output=%s", cliErr, out)
+			}
+			after, err := os.ReadFile(path)
+			if existing && (err != nil || !bytes.Equal(before, after)) {
+				t.Errorf("EOF changed config without submission: err=%v content=%s", err, after)
+			} else if !existing && !os.IsNotExist(err) {
+				t.Errorf("EOF created config without submission: err=%v output=%s", err, out)
+			}
+		})
+	}
+}
+
+func TestCLI_ConfigSavePreservesTemplateSource(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	repo := t.TempDir()
+	initCLIRepo(t, repo)
+	t.Chdir(repo)
+	for path, content := range map[string]string{
+		filepath.Join(repo, ".commitgen.json"): `{"provider":"openai","prompt_template_file":"prompt.txt"}`,
+		filepath.Join(repo, "prompt.txt"):      "REPO_TEMPLATE",
+		filepath.Join(home, "prompt.txt"):      "OTHER_HOME_TEMPLATE",
+	} {
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	runConfigForm(t, "")
+	saved, err := config.Load(filepath.Join(home, ".commitgen.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := os.ReadFile(saved.PromptTemplatePath())
+	if err != nil || string(content) != "REPO_TEMPLATE" {
+		t.Errorf("saving changed template source: path=%q content=%q err=%v", saved.PromptTemplatePath(), content, err)
+	}
 }
 
 func TestDefaultModels_SupportedProviders(t *testing.T) {
@@ -534,6 +590,60 @@ func TestCLI_InstalledHooksPreserveLiteralPaths(t *testing.T) {
 	}
 	if commitErr != nil || !strings.Contains(string(out), "fix: literal paths") {
 		t.Fatalf("hook did not preserve literal paths: %v %s", commitErr, out)
+	}
+}
+
+func TestCLI_MsgHookCommentCleanup(t *testing.T) {
+	exe := buildCLI(t)
+	for _, mode := range []string{"default", "strip", "verbatim", "whitespace"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", os.Getenv("HOME"))
+			repo := t.TempDir()
+			initCLIRepo(t, repo)
+			for key, value := range map[string]string{"core.commentChar": ";", "commit.cleanup": mode} {
+				if mode == "default" && key == "commit.cleanup" {
+					continue
+				}
+				if out, err := exec.Command("git", "-C", repo, "config", key, value).CombinedOutput(); err != nil {
+					t.Fatalf("git config: %v %s", err, out)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(repo, ".commitgen-rules.json"), []byte(`{"rules":{"prohibited-words":{"enabled":true,"words":["DO_NOT_USE"]}}}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := runBinary(t, exe, repo, "install-msg-hook"); err != nil {
+				t.Fatalf("install: %v %s", err, out)
+			}
+			msgPath := filepath.Join(t.TempDir(), "message.txt")
+			if err := os.WriteFile(msgPath, []byte("feat: valid subject\n\n; DO_NOT_USE: editor commentary\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			// Independent validate-msg must continue validating the raw input.
+			if out, err := runBinary(t, exe, repo, "validate-msg", "--file", msgPath); err == nil || !strings.Contains(out, "Prohibited word") {
+				t.Fatalf("raw validation changed: err=%v output=%s", err, out)
+			}
+			cleanup := mode
+			if cleanup == "default" {
+				cleanup = "strip"
+			}
+			cmd := exec.Command("git", "-C", repo, "commit", "--allow-empty", "--cleanup="+cleanup, "-F", msgPath)
+			cmd.Env = cliTestEnv()
+			out, err := cmd.CombinedOutput()
+			if mode == "verbatim" || mode == "whitespace" {
+				if err == nil || !strings.Contains(string(out), "Prohibited word") {
+					t.Fatalf("retained comment was not validated: err=%v output=%s", err, out)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("stripped comment blocked valid commit: %v %s", err, out)
+				}
+				message, err := exec.Command("git", "-C", repo, "log", "-1", "--format=%B").Output()
+				if err != nil || strings.TrimSpace(string(message)) != "feat: valid subject" {
+					t.Errorf("wrong final message: %q err=%v", message, err)
+				}
+			}
+		})
 	}
 }
 

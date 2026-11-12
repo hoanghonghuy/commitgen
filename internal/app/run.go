@@ -76,6 +76,7 @@ type Config struct {
 	RulesFile      string // path to validation rules file (.commitgen-rules.json)
 	StyleJSON      bool   // style command: print machine-readable JSON
 	MessageFile    string // validate-msg command: commit message file path
+	StripComments  bool   // validate-msg: ignore Git comment lines in hook input
 
 	// PR generation
 	BaseBranch string // target branch for merge-base (e.g. main); empty = auto-detect
@@ -130,7 +131,7 @@ func Run(ctx context.Context, cfg Config) error {
 		return runStyle(ctx, repoRoot, cfg.RecentN, cfg.StyleJSON)
 	}
 	if cfg.Command == "validate-msg" {
-		return runValidateMsg(cfg, repoRoot, tr)
+		return runValidateMsg(ctx, cfg, repoRoot, tr)
 	}
 
 	customInstructions := ""

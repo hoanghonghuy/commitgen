@@ -15,6 +15,21 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
+func TestGenerateStream_MultilineEvents(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"feat: \"}]}}]}\n\n"+
+			"data: {\"candidates\":[\ndata: {\"content\":{\"parts\":[{\"text\":\"complete body\"}]}}]}\n\n"+
+			"data: {\"candidates\":[{\"finishReason\":\"STOP\"}]}\n\n")
+	}))
+	defer srv.Close()
+	var deltas strings.Builder
+	content, err := newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), .7, func(s string) { deltas.WriteString(s) })
+	if err != nil || content != "feat: complete body" || deltas.String() != content {
+		t.Errorf("SSE content lost: content=%q deltas=%q err=%v", content, deltas.String(), err)
+	}
+}
+
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{
 		{Role: vscodeprompt.RoleSystem, Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "sys instr"}}},

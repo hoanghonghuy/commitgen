@@ -64,6 +64,7 @@ func main() {
 	localeFlag := flag.String("locale", "", "UI language (en, vi, ja, zh, auto). Default: en")
 	jsonFlag := flag.Bool("json", false, "Print JSON output for supported commands")
 	fileFlag := flag.String("file", "", "Input file for commands that read a file (for example validate-msg)")
+	stripCommentsFlag := flag.Bool("strip-comments", false, "Validate a commit message after Git strips comment lines (used by commit-msg hooks)")
 
 	flag.Parse()
 
@@ -171,7 +172,8 @@ func main() {
 		RulesFile:          fileCfg.RulesFile,
 		StyleJSON:          *jsonFlag,
 		MessageFile:        *fileFlag,
-		PromptTemplateFile: fileCfg.PromptTemplateFile,
+		StripComments:      *stripCommentsFlag,
+		PromptTemplateFile: fileCfg.PromptTemplatePath(),
 		TimeoutSeconds:     fileCfg.Timeout,
 		IgnoredFiles:       fileCfg.IgnoredFiles,
 		BaseBranch:         *baseBranchFlag,

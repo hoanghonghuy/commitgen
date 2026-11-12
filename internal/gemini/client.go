@@ -1,7 +1,6 @@
 package gemini
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -202,27 +201,20 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 
 	var full strings.Builder
 	completed := false
-	scanner := bufio.NewScanner(resp.Body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+	err = httpx.ReadSSEJSON(resp.Body, func(data []byte) (bool, error) {
 		var chunk generateContentResponse
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
+		if err := json.Unmarshal(data, &chunk); err != nil {
+			return false, err
 		}
 		if chunk.Error != nil {
-			return "", fmt.Errorf("gemini: stream error (%d): %s", chunk.Error.Code, chunk.Error.Message)
+			return false, fmt.Errorf("gemini: stream error (%d): %s", chunk.Error.Code, chunk.Error.Message)
 		}
 		if len(chunk.Candidates) == 0 {
-			continue
+			return false, nil
 		}
 		selected := chunk.Candidates[0]
 		if err := selected.completionError(); err != nil {
-			return "", err
+			return false, err
 		}
 		text := selected.Content.text()
 		if text != "" {
@@ -233,10 +225,10 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		}
 		if selected.FinishReason == "STOP" {
 			completed = true
-			break
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return completed, nil
+	})
+	if err != nil {
 		return "", logger.LogError(err, "gemini: stream read failed")
 	}
 	if !completed {
