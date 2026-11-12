@@ -52,7 +52,7 @@ func testConfigAccessibleNumericDefaults(t *testing.T, temperature float64) {
 		{prompt: "Model ", input: "\n"}, {prompt: "API Key ", input: "\n"},
 		{prompt: "System Prompt Template ", input: "\n"},
 	}
-	for _, prompt := range []string{"Recent Commits ", "Max Files ", "Temperature ", "Request Timeout (seconds) ", "Summarize Changes [Y/n] ", "Conventional Commits [Y/n] ", "Ignored Files ", "Rules File ", "Enter a number between 1 and 5: ", "Enter a number between 1 and 4: ", "Enter a number between 1 and 4: ", "Enter a number between 1 and 3: ", "Log File Path "} {
+	for _, prompt := range []string{"Recent Commits ", "Max Files ", "Temperature ", "Request Timeout (seconds) ", "Summarize Changes [Y/n] ", "Conventional Commits [Y/n] ", "Ignored Files ", "Rules File ", "Enter a number between 1 and 5: ", "Enter a number between 1 and 4: ", "Enter a number between 1 and 4: ", "Enter a number between 1 and 4: ", "Log File Path "} {
 		steps = append(steps, formStep{prompt: prompt, input: "\n"})
 	}
 	runConfigFormMode(t, path, false, steps)
@@ -155,6 +155,80 @@ func TestCLI_ConfigIgnoredFilesEditing(t *testing.T) {
 			saved, err := config.Load(path)
 			if err != nil || !reflect.DeepEqual(saved.IgnoredFiles, tc.want) {
 				t.Errorf("explicit edit lost: got=%#v want=%#v err=%v", saved.IgnoredFiles, tc.want, err)
+			}
+		})
+	}
+}
+
+func TestCLI_ConfigPromptAndLogOutputRoundTrip(t *testing.T) {
+	for _, normal := range []bool{false, true} {
+		for _, tc := range []struct{ name, template, output string }{
+			{"control", "Keep identifiers unchanged.", "stderr"},
+			{"multiline-template", "Keep identifiers unchanged.\n\nUse this format:\n```text\nsubject\n```", "stderr"},
+			{"crlf-template", "Line one\r\n\r\nLine two", "stderr"},
+			{"tabs-template", "Examples:\n\tone\n\ttwo", "stderr"},
+			{"stdout-logging", "Keep identifiers unchanged.", "stdout"},
+		} {
+			t.Run(fmt.Sprintf("%s/normal=%v", tc.name, normal), func(t *testing.T) {
+				t.Setenv("HOME", t.TempDir())
+				t.Setenv("USERPROFILE", os.Getenv("HOME"))
+				path := filepath.Join(t.TempDir(), "config.json")
+				original := config.FileConfig{Provider: "openai", Model: "test", PromptTemplate: tc.template, LogOutput: tc.output}
+				body, err := json.Marshal(original)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if normal {
+					steps := []formStep{{prompt: "┃ AI Provider", input: "\r"}}
+					for _, title := range []string{"Model", "API Key", "System Prompt Template", "Number of recent commits to include", "Max staged files to analyze", "LLM temperature (0.0 - 2.0)", "AI request timeout in seconds (default 120)", "Summarize Changes", "Conventional Commits", "Ignored Files", "Rules File", "UI Language", "Review Language", "Log Level", "Log Output", "Log File Path"} {
+						steps = append(steps, formStep{prompt: "┃ " + title, input: "\r"})
+					}
+					runConfigFormMode(t, path, true, steps, "COMMITGEN_LOG_OUTPUT="+tc.output)
+				} else {
+					runConfigFormMode(t, path, false, nil, "COMMITGEN_LOG_OUTPUT="+tc.output)
+				}
+				saved, err := config.Load(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if saved.PromptTemplate != tc.template {
+					t.Errorf("unchanged prompt changed: before=%q after=%q", tc.template, saved.PromptTemplate)
+				}
+				if saved.LogOutput != tc.output {
+					t.Errorf("unchanged log destination changed: before=%q after=%q", tc.output, saved.LogOutput)
+				}
+			})
+		}
+	}
+}
+
+func TestCLI_ConfigPromptEditing(t *testing.T) {
+	for _, tc := range []struct{ name, input string }{
+		{"replace", "New custom instructions."},
+		{"clear", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", os.Getenv("HOME"))
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(`{"provider":"openai","prompt_template":"Original instructions."}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			steps := []formStep{{prompt: "┃ AI Provider", input: "\r"}}
+			for _, title := range []string{"Model", "API Key", "System Prompt Template", "Number of recent commits to include", "Max staged files to analyze", "LLM temperature (0.0 - 2.0)", "AI request timeout in seconds (default 120)", "Summarize Changes", "Conventional Commits", "Ignored Files", "Rules File", "UI Language", "Review Language", "Log Level", "Log Output", "Log File Path"} {
+				input := "\r"
+				if title == "System Prompt Template" {
+					input = "\x01\x0b" + tc.input + "\r"
+				}
+				steps = append(steps, formStep{prompt: "┃ " + title, input: input})
+			}
+			runConfigForm(t, path, steps)
+			saved, err := config.Load(path)
+			if err != nil || saved.PromptTemplate != tc.input {
+				t.Errorf("explicit prompt edit lost: got=%q want=%q err=%v", saved.PromptTemplate, tc.input, err)
 			}
 		})
 	}
@@ -319,7 +393,7 @@ func runConfigForm(t *testing.T, path string, terminalSteps ...[]formStep) strin
 	return runConfigFormMode(t, path, false, nil)
 }
 
-func runConfigFormMode(t *testing.T, path string, normal bool, steps []formStep) string {
+func runConfigFormMode(t *testing.T, path string, normal bool, steps []formStep, envOverrides ...string) string {
 	t.Helper()
 	if runtime.GOOS != "linux" {
 		t.Skip("interactive CLI test uses Linux script PTY")
@@ -342,6 +416,7 @@ func runConfigFormMode(t *testing.T, path string, normal bool, steps []formStep)
 	command := quote(exe) + " -test.run=^TestCLIProcess$ -- --config " + quote(path) + " config"
 	cmd := exec.CommandContext(ctx, script, "-q", "-e", "-c", command, "/dev/null")
 	cmd.Env = append(cliTestEnv(), "ACCESSIBLE=1", "TERM=dumb", "COMMITGEN_LOCALE=en")
+	cmd.Env = append(cmd.Env, envOverrides...)
 	input, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -354,7 +429,7 @@ func runConfigFormMode(t *testing.T, path string, normal bool, steps []formStep)
 		{prompt: "Summarize Changes [Y/n] ", input: "\n"}, {prompt: "Conventional Commits [Y/n] ", input: "\n"},
 		{prompt: "Ignored Files ", input: "\n"}, {prompt: "Rules File ", input: "\n"},
 		{prompt: "Enter a number between 1 and 5: ", input: "\n"}, {prompt: "Enter a number between 1 and 4: ", input: "\n"},
-		{prompt: "Enter a number between 1 and 4: ", input: "\n"}, {prompt: "Enter a number between 1 and 3: ", input: "\n"}, {prompt: "Log File Path ", input: "\n"},
+		{prompt: "Enter a number between 1 and 4: ", input: "\n"}, {prompt: "Enter a number between 1 and 4: ", input: "\n"}, {prompt: "Log File Path ", input: "\n"},
 	}}
 	if steps != nil {
 		cmd.Env = append(cmd.Env, "NO_COLOR=1", "COMMITGEN_TEST_PTY=1", "GORACE=atexit_sleep_ms=0")

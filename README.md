@@ -65,6 +65,8 @@ Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--loca
 
 Config form: abort step 2 (Esc / cancel) returns to provider selection. Set `ACCESSIBLE=1` or `TERM=dumb` for huh accessible mode. Press Enter to keep the current numeric value in accessible mode; the value must still pass validation.
 
+The System Prompt Template field supports multiple lines in the normal form: Alt+Enter adds a line, and Enter moves to the next field. Saving an unchanged prompt preserves its original line endings and tabs.
+
 After upgrading, reinstall existing CommitGen hooks with `install-hook` / `install-msg-hook` to refresh their scripts. The validation hook uses the worktree where the commit is running, including linked worktrees.
 
 The validation hook ignores Git comment lines by default and honors `core.commentChar` / `core.commentString`. Setting `commit.cleanup` to `verbatim`, `whitespace`, or `scissors` keeps the raw input for validation. Git does not expose a command-line `--cleanup` override to hooks: use `git -c commit.cleanup=verbatim commit ...` (or the desired mode) when overriding the hook policy. Standalone `validate-msg` checks raw text unless `--strip-comments` is supplied; validation never rewrites the message file.

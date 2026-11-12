@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
 	"github.com/hoanghonghuy/commitgen/internal/config"
@@ -104,7 +105,11 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 		baseURL = cfg.BaseURL
 	}
 
-	promptTemplate := cfg.PromptTemplate
+	promptTemplate := strings.ReplaceAll(cfg.PromptTemplate, "\r\n", "\n")
+	initialPromptTemplate := promptTemplate
+	promptPreview := textarea.New()
+	promptPreview.SetValue(promptTemplate)
+	initialPromptDisplay := promptPreview.Value()
 	rulesFile := cfg.RulesFile
 	recentNStr := fmt.Sprintf("%d", cfg.RecentN)
 	maxFilesStr := fmt.Sprintf("%d", cfg.MaxFiles)
@@ -213,7 +218,8 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 			)
 		}
 		aiFields = append(aiFields,
-			huh.NewInput().
+			huh.NewText().
+				ExternalEditor(false).
 				Title(tr.T("config.field.prompt_template")).
 				Description(tr.T("config.field.prompt_template.desc")).
 				Value(&promptTemplate),
@@ -325,6 +331,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 						huh.NewOption(tr.T("config.log_output.stderr"), "stderr"),
 						huh.NewOption(tr.T("config.log_output.file"), "file"),
 						huh.NewOption(tr.T("config.log_output.both"), "both"),
+						huh.NewOption(tr.T("config.log_output.stdout"), "stdout"),
 					).
 					Value(&logOutput),
 				huh.NewInput().
@@ -344,7 +351,10 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 		cfg.Provider = provider
 		cfg.Model = model
 		cfg.BaseURL = baseURL
-		cfg.PromptTemplate = promptTemplate
+		// Preserve original line endings and tabs when the displayed text is unchanged.
+		if promptTemplate != initialPromptTemplate && promptTemplate != initialPromptDisplay {
+			cfg.PromptTemplate = promptTemplate
+		}
 		cfg.RulesFile = rulesFile
 
 		if v, err := strconv.Atoi(strings.TrimSpace(recentNStr)); err == nil {

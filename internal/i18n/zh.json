@@ -120,6 +120,7 @@
   "config.log_output.stderr": "控制台 (stderr)",
   "config.log_output.file": "仅文件",
   "config.log_output.both": "控制台和文件",
+  "config.log_output.stdout": "控制台 (stdout)",
   "config.locale.auto": "自动 (来自 LANG)",
   "config.field.timeout": "请求超时 (秒)",
   "config.field.timeout.desc": "AI 请求超时秒数 (默认 120)",

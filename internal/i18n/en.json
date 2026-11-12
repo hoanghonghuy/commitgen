@@ -120,6 +120,7 @@
   "config.log_output.stderr": "Console (stderr)",
   "config.log_output.file": "File only",
   "config.log_output.both": "Both console and file",
+  "config.log_output.stdout": "Console (stdout)",
   "config.locale.auto": "Auto (from LANG)",
   "config.field.timeout": "Request Timeout (seconds)",
   "config.field.timeout.desc": "AI request timeout in seconds (default 120)",
