@@ -195,6 +195,60 @@ func TestSaveAndLoad_IgnoredFilesOverride(t *testing.T) {
 	}
 }
 
+func TestSave_PreservesSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks may require administrator privileges")
+	}
+	for _, existing := range []bool{false, true} {
+		name := "dangling"
+		if existing {
+			name = "existing"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			target := filepath.Join(dir, "target.json")
+			path := filepath.Join(dir, "config.json")
+			if existing {
+				if err := os.WriteFile(target, []byte(`{"model":"old"}`), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.Symlink("target.json", path); err != nil {
+				t.Fatal(err)
+			}
+			if err := Save(FileConfig{Model: "new"}, path); err != nil {
+				t.Fatal(err)
+			}
+			link, err := os.Readlink(path)
+			if err != nil || link != "target.json" {
+				t.Fatalf("config symlink replaced: link=%q err=%v", link, err)
+			}
+			loaded, err := Load(target)
+			if err != nil || loaded.Model != "new" {
+				t.Errorf("symlink target not updated: model=%q err=%v", loaded.Model, err)
+			}
+		})
+	}
+}
+
+func TestSave_RejectsReadOnlyFile(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("requires POSIX permissions enforced for a non-root user")
+	}
+	path := filepath.Join(t.TempDir(), "config.json")
+	before := `{"model":"original"}`
+	if err := os.WriteFile(path, []byte(before), 0400); err != nil {
+		t.Fatal(err)
+	}
+	if err := Save(FileConfig{Model: "new"}, path); err == nil {
+		t.Fatal("read-only config was replaced")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || string(after) != before {
+		t.Errorf("read-only config changed: content=%q err=%v", after, err)
+	}
+}
+
 func TestSave_RestrictsExistingPermissions(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX permissions are not enforced on Windows")

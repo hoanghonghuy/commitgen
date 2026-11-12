@@ -108,7 +108,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 	rulesFile := cfg.RulesFile
 	recentNStr := fmt.Sprintf("%d", cfg.RecentN)
 	maxFilesStr := fmt.Sprintf("%d", cfg.MaxFiles)
-	tempStr := fmt.Sprintf("%.2f", cfg.Temperature)
+	tempStr := strconv.FormatFloat(cfg.Temperature, 'g', -1, 64)
 	summarize := cfg.Summarize
 	conventional := cfg.Conventional
 	ignoredFilesStr := strings.Join(cfg.IgnoredFiles, ", ")

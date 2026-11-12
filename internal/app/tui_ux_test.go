@@ -19,6 +19,34 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
+func TestValidation_AutoFixPreservesSubject(t *testing.T) {
+	for _, prefix := range []string{"", " "} {
+		t.Run("leading-space="+prefix, func(t *testing.T) {
+			m := newTestModel()
+			m.validator = validator.New(validator.Config{Rules: map[string]validator.RuleConfig{"subject-length": {Enabled: true, Max: 50}}})
+			u, _ := m.Update(commitResultMsg{content: "feat: initial"})
+			m = u.(tuiModel)
+			m.cursor = 2
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = u.(tuiModel)
+			m.textarea.SetValue(prefix + strings.Repeat("修正", 40))
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			m = u.(tuiModel)
+			m.cursor = 0
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+			m = u.(tuiModel)
+			if m.state != stateValidationFailed {
+				t.Fatal("did not reach validation screen")
+			}
+			u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+			m = u.(tuiModel)
+			if m.state != stateConfirm || strings.TrimSpace(m.commitMsg) == "" || len([]rune(m.commitMsg)) > 50 {
+				t.Errorf("Auto-fix erased nonblank subject: state=%v message=%q", m.state, m.commitMsg)
+			}
+		})
+	}
+}
+
 func TestConfigFieldValidator_DefaultsAndErrors(t *testing.T) {
 	for _, accessible := range []bool{false, true} {
 		t.Run(fmt.Sprintf("accessible=%v", accessible), func(t *testing.T) {

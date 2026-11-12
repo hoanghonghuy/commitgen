@@ -30,10 +30,19 @@ type formStep struct {
 }
 
 func TestCLI_ConfigAccessibleNumericDefaults(t *testing.T) {
+	for _, temperature := range []float64{0.9, 0.125, 0.004} {
+		t.Run(fmt.Sprint(temperature), func(t *testing.T) {
+			testConfigAccessibleNumericDefaults(t, temperature)
+		})
+	}
+}
+
+func testConfigAccessibleNumericDefaults(t *testing.T, temperature float64) {
+	t.Helper()
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("USERPROFILE", os.Getenv("HOME"))
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := os.WriteFile(path, []byte(`{"provider":"openai","recent_n":7,"max_files":6,"temperature":0.9,"timeout_seconds":42}`), 0600); err != nil {
+	if err := os.WriteFile(path, []byte(fmt.Sprintf(`{"provider":"openai","recent_n":7,"max_files":6,"temperature":%g,"timeout_seconds":42}`, temperature)), 0600); err != nil {
 		t.Fatal(err)
 	}
 	steps := []formStep{
@@ -46,8 +55,32 @@ func TestCLI_ConfigAccessibleNumericDefaults(t *testing.T) {
 	}
 	runConfigFormMode(t, path, false, steps)
 	saved, err := config.Load(path)
-	if err != nil || saved.RecentN == nil || *saved.RecentN != 7 || saved.MaxFiles == nil || *saved.MaxFiles != 6 || saved.Temperature == nil || *saved.Temperature != .9 || saved.Timeout == nil || *saved.Timeout != 42 {
+	if err != nil || saved.RecentN == nil || *saved.RecentN != 7 || saved.MaxFiles == nil || *saved.MaxFiles != 6 || saved.Temperature == nil || *saved.Temperature != temperature || saved.Timeout == nil || *saved.Timeout != 42 {
 		t.Errorf("Enter changed numeric defaults: saved=%+v err=%v", saved, err)
+		if saved.Temperature != nil {
+			t.Logf("temperature before=%g after=%g", temperature, *saved.Temperature)
+		}
+	}
+}
+
+func TestCLI_ConfigTemperatureNormalRoundTrip(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider":"openai","temperature":0.125}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	steps := []formStep{{prompt: "┃ AI Provider", input: "\r"}}
+	for _, title := range []string{"Model", "API Key", "System Prompt Template", "Number of recent commits to include", "Max staged files to analyze", "LLM temperature (0.0 - 2.0)", "AI request timeout in seconds (default 120)", "Summarize Changes", "Conventional Commits", "Ignored Files", "Rules File", "UI Language", "Review Language", "Log Level", "Log Output", "Log File Path"} {
+		steps = append(steps, formStep{prompt: "┃ " + title, input: "\r"})
+	}
+	runConfigForm(t, path, steps)
+	saved, err := config.Load(path)
+	if err != nil || saved.Temperature == nil || *saved.Temperature != .125 {
+		t.Errorf("normal form changed unchanged temperature: saved=%v err=%v", saved.Temperature, err)
+		if saved.Temperature != nil {
+			t.Logf("actual saved temperature=%g", *saved.Temperature)
+		}
 	}
 }
 

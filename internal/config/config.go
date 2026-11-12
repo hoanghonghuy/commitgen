@@ -119,23 +119,80 @@ func Save(cfg FileConfig, path string) error {
 		return err
 	}
 
-	const privateFileMode = 0600
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE, privateFileMode)
+	path, err = configWritePath(path)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
-	// Tighten existing files before writing any credentials to them.
-	if err := f.Chmod(privateFileMode); err != nil {
+	const (
+		privateFileMode = 0600
+		tempFilePattern = ".commitgen-*"
+	)
+	// Preserve permission checks and tighten the existing credential file
+	// without truncating it before the replacement is ready.
+	if existing, err := os.OpenFile(path, os.O_WRONLY, 0); err == nil {
+		chmodErr := existing.Chmod(privateFileMode)
+		closeErr := existing.Close()
+		if chmodErr != nil {
+			return chmodErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := f.Truncate(0); err != nil {
+	f, err := os.CreateTemp(filepath.Dir(path), tempFilePattern)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+	}()
+	if err := f.Chmod(privateFileMode); err != nil {
 		return err
 	}
 	if _, err := f.Write(b); err != nil {
 		return err
 	}
-	return f.Close()
+	if err := f.Sync(); err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
+}
+
+// configWritePath preserves symlinks, including links to a not-yet-created file.
+func configWritePath(path string) (string, error) {
+	for {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err == nil {
+			return resolved, nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		info, statErr := os.Lstat(path)
+		if os.IsNotExist(statErr) {
+			return path, nil
+		}
+		if statErr != nil {
+			return "", statErr
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return "", err
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(target) {
+			target = filepath.Join(filepath.Dir(path), target)
+		}
+		path = target
+	}
 }
 
 // Merge overlays the non-empty/non-nil fields of override onto base and

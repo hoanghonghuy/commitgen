@@ -148,12 +148,15 @@ func (r *SubjectLengthRule) AutoFix(msg string) (string, bool) {
 	if runeLen(subject) <= r.MaxLength {
 		return msg, false
 	}
-	runes := []rune(subject)
-	cut := r.MaxLength
-	for i := r.MaxLength - 1; i >= 0; i-- {
-		if runes[i] == ' ' {
-			cut = i
-			break
+	runes := []rune(strings.TrimSpace(subject))
+	cut := len(runes)
+	if cut > r.MaxLength {
+		cut = r.MaxLength
+		for i := r.MaxLength - 1; i >= 0; i-- {
+			if runes[i] == ' ' {
+				cut = i
+				break
+			}
 		}
 	}
 	lines[0] = string(runes[:cut])

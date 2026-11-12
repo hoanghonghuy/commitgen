@@ -84,6 +84,23 @@ func TestSubjectLengthRule_AutoFix(t *testing.T) {
 	}
 }
 
+func TestSubjectLengthRule_AutoFixPreservesContent(t *testing.T) {
+	rule := SubjectLengthRule{MaxLength: 50}
+	const body = "\n\nDetailed body\n\nSigned-off-by: Developer"
+	for _, test := range []struct{ name, subject, want string }{
+		{"leading space", " " + strings.Repeat("修正", 40), strings.Repeat("修正", 25)},
+		{"padding before short subject", strings.Repeat(" ", 60) + "feat: short", "feat: short"},
+		{"mixed padding", " \t" + strings.Repeat("文", 60) + "\t", strings.Repeat("文", 50)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, changed := rule.AutoFix(test.subject + body)
+			if !changed || got != test.want+body {
+				t.Errorf("Auto-fix lost subject/body: changed=%v got=%q want=%q", changed, got, test.want+body)
+			}
+		})
+	}
+}
+
 func TestBodyLineLengthRule_Validate(t *testing.T) {
 	r := BodyLineLengthRule{MaxLength: 72}
 	// Short lines pass

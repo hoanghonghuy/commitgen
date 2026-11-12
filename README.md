@@ -152,6 +152,7 @@ Example schema:
 Legacy `api_key` / `base_url` / `anthropic_key` / `gemini_key` are **migrated automatically on load** and rewritten to the new schema.
 
 Other settings:
+- **Config saves**: Write errors leave the previous JSON intact. Saving requires write access to the containing directory; symlinks to config files are preserved and their targets are updated.
 - **Preferences**: Conventional Commits, Summarization, Ignored Files.
 - **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests. With `--count`, each candidate gets its own request timeout.
 - **Temperature**: Use a finite number from 0 to 1 for Anthropic, or 0 to 2 for the other providers. The config editor and runtime reject values outside the provider's range.
