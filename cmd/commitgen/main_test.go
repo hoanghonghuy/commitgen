@@ -29,6 +29,44 @@ type formStep struct {
 	signal syscall.Signal
 }
 
+func TestCLI_ConfigAccessibleNumericDefaults(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider":"openai","recent_n":7,"max_files":6,"temperature":0.9,"timeout_seconds":42}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	steps := []formStep{
+		{prompt: "Enter a number between 1 and 7: ", input: "\n"},
+		{prompt: "Model ", input: "\n"}, {prompt: "API Key ", input: "\n"},
+		{prompt: "System Prompt Template ", input: "\n"},
+	}
+	for _, prompt := range []string{"Recent Commits ", "Max Files ", "Temperature ", "Request Timeout (seconds) ", "Summarize Changes [Y/n] ", "Conventional Commits [Y/n] ", "Ignored Files ", "Rules File ", "Enter a number between 1 and 5: ", "Enter a number between 1 and 4: ", "Enter a number between 1 and 4: ", "Enter a number between 1 and 3: ", "Log File Path "} {
+		steps = append(steps, formStep{prompt: prompt, input: "\n"})
+	}
+	runConfigFormMode(t, path, false, steps)
+	saved, err := config.Load(path)
+	if err != nil || saved.RecentN == nil || *saved.RecentN != 7 || saved.MaxFiles == nil || *saved.MaxFiles != 6 || saved.Temperature == nil || *saved.Temperature != .9 || saved.Timeout == nil || *saved.Timeout != 42 {
+		t.Errorf("Enter changed numeric defaults: saved=%+v err=%v", saved, err)
+	}
+}
+
+func TestCLI_CLocalePrecedence(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", os.Getenv("HOME"))
+	t.Setenv("LC_ALL", "C")
+	t.Setenv("LC_MESSAGES", "")
+	t.Setenv("LANG", "vi_VN.UTF-8")
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider":"openai"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output, err := runCLI(t, "config", "show", "--config", path, "--locale", "auto")
+	if err != nil || !strings.Contains(output, "Config file: ") {
+		t.Errorf("LC_ALL=C did not select English: err=%v output=%s", err, output)
+	}
+}
+
 func TestCLI_ConfigEOFDoesNotSave(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(fmt.Sprintf("existing=%v", existing), func(t *testing.T) {

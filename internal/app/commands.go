@@ -74,9 +74,6 @@ func conventionalReminder() vscodeprompt.VSCodeMessage {
 // stdout without launching the TUI. With --print it also writes the hook file
 // when one is configured; with --dry-run it never produces side effects.
 func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, provider ai.Provider, msgs []vscodeprompt.VSCodeMessage, v *validator.Validator, tr *i18n.Translator) error {
-	cctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
-	defer cancel()
-
 	count := cfg.Count
 	if count < 1 {
 		count = 1
@@ -84,7 +81,9 @@ func runSuggestNonInteractive(ctx context.Context, cfg Config, repoRoot string, 
 
 	messages := make([]string, 0, count)
 	for i := 0; i < count; i++ {
+		cctx, cancel := context.WithTimeout(ctx, cfg.Timeout)
 		msg, err := generateCommitMessage(cctx, provider, msgs, cfg.Temperature, cfg.Conventional)
+		cancel()
 		if err != nil {
 			return logger.LogError(err, "failed to generate commit message")
 		}

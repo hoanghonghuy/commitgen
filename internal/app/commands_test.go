@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
+	"github.com/hoanghonghuy/commitgen/internal/openai"
 )
 
 // captureStdout redirects os.Stdout for the duration of fn and returns what was written.
@@ -32,6 +35,34 @@ func captureStdout(t *testing.T, fn func()) string {
 	_ = w.Close()
 	os.Stdout = orig
 	return <-done
+}
+
+func TestRunSuggestNonInteractive_TimeoutPerRequest(t *testing.T) {
+	for _, count := range []int{1, 2} {
+		t.Run(fmt.Sprintf("count=%d", count), func(t *testing.T) {
+			var calls atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				timer := time.NewTimer(600 * time.Millisecond)
+				defer timer.Stop()
+				select {
+				case <-r.Context().Done():
+					return
+				case <-timer.C:
+				}
+				_, _ = fmt.Fprint(w, `{"choices":[{"message":{"content":"feat: candidate"},"finish_reason":"stop"}]}`)
+			}))
+			defer srv.Close()
+			provider := openai.New(openai.Config{BaseURL: srv.URL, Model: "fixture", Timeout: 5 * time.Second})
+			var err error
+			captureStdout(t, func() {
+				err = runSuggestNonInteractive(context.Background(), Config{Count: count, Print: true, Timeout: time.Second}, "", provider, baseMsgs(), nil, i18n.New(i18n.LocaleEN))
+			})
+			if err != nil || calls.Load() != int32(count) {
+				t.Errorf("each request took 600ms within timeout=1s, count=%d calls=%d err=%v", count, calls.Load(), err)
+			}
+		})
+	}
 }
 
 func TestGenerateCommitMessage_ExtractAndConventional(t *testing.T) {

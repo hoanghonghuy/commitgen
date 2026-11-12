@@ -1,7 +1,6 @@
 package openai
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -139,40 +138,20 @@ func readStream(body io.Reader, onDelta func(string)) (string, error) {
 	var full strings.Builder
 	var pending strings.Builder
 	completed := false
-	scanner := bufio.NewScanner(body)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line == "" && pending.Len() > 0 {
-			return "", fmt.Errorf("openai: invalid JSON in SSE event")
+	consumePending := func() error {
+		if pending.Len() == 0 {
+			return nil
 		}
-		if !strings.HasPrefix(line, "data:") {
-			continue
-		}
-		data := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
-		if data == "[DONE]" {
-			if pending.Len() > 0 {
-				return "", fmt.Errorf("openai: incomplete SSE event: %w", io.ErrUnexpectedEOF)
-			}
-			completed = true
-			break
-		}
-		if pending.Len() > 0 {
-			pending.WriteByte('\n')
-		}
-		pending.WriteString(data)
 		var chunk chatResponse
 		if err := json.Unmarshal([]byte(pending.String()), &chunk); err != nil {
-			continue
+			return fmt.Errorf("openai: invalid JSON in SSE event: %w", err)
 		}
-		// Decode once the event's JSON is complete. This also preserves
-		// compatible servers that omit blank lines between complete records.
 		pending.Reset()
 		if err := chunk.responseError(); err != nil {
-			return "", err
+			return err
 		}
 		if len(chunk.Choices) == 0 {
-			continue
+			return nil
 		}
 		if chunk.Choices[0].FinishReason != "" {
 			completed = true
@@ -187,11 +166,56 @@ func readStream(body io.Reader, onDelta func(string)) (string, error) {
 				onDelta(delta)
 			}
 		}
+		return nil
+	}
+	scanner := httpx.NewSSEScanner(body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if err := consumePending(); err != nil {
+				return "", err
+			}
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " ")
+		if data == "[DONE]" {
+			if pending.Len() > 0 && !json.Valid([]byte(pending.String())) {
+				return "", fmt.Errorf("openai: incomplete SSE event: %w", io.ErrUnexpectedEOF)
+			}
+			if err := consumePending(); err != nil {
+				return "", err
+			}
+			completed = true
+			break
+		}
+		// Legacy compatible servers may omit blank separators between complete
+		// JSON records. Wait for a new record before consuming the previous one,
+		// so trailing whitespace data fields stay part of their original event.
+		if pending.Len() > 0 && json.Valid([]byte(pending.String())) && json.Valid([]byte(data)) {
+			if err := consumePending(); err != nil {
+				return "", err
+			}
+		}
+		if pending.Len() > 0 {
+			pending.WriteByte('\n')
+		}
+		pending.WriteString(data)
 	}
 	if err := scanner.Err(); err != nil {
 		return "", logger.LogError(err, "openai: stream read failed")
 	}
-	if !completed || pending.Len() > 0 {
+	if pending.Len() > 0 {
+		if !json.Valid([]byte(pending.String())) {
+			return "", fmt.Errorf("openai: stream ended before completion: %w", io.ErrUnexpectedEOF)
+		}
+		if err := consumePending(); err != nil {
+			return "", err
+		}
+	}
+	if !completed {
 		return "", fmt.Errorf("openai: stream ended before completion: %w", io.ErrUnexpectedEOF)
 	}
 

@@ -19,6 +19,30 @@ import (
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
 
+func TestConfigFieldValidator_DefaultsAndErrors(t *testing.T) {
+	for _, accessible := range []bool{false, true} {
+		t.Run(fmt.Sprintf("accessible=%v", accessible), func(t *testing.T) {
+			t.Setenv("TERM", "xterm")
+			t.Setenv("ACCESSIBLE", "")
+			if accessible {
+				t.Setenv("ACCESSIBLE", "1")
+			}
+			value := "7"
+			validate := configFieldValidator(&value, func(s string) error { return validateIntField(nil, s) })
+			if err := validate(""); (err == nil) != accessible {
+				t.Errorf("empty input validation changed: accessible=%v err=%v", accessible, err)
+			}
+			if err := validate("not-a-number"); err == nil {
+				t.Error("invalid explicit number was accepted")
+			}
+			value = "invalid-default"
+			if err := validate(""); err == nil {
+				t.Error("invalid default was accepted")
+			}
+		})
+	}
+}
+
 func TestCandidatePicker_FitsTerminalAndKeepsSelectionVisible(t *testing.T) {
 	for _, size := range []struct{ width, height int }{{80, 24}, {80, 12}, {40, 24}} {
 		t.Run(fmt.Sprintf("%dx%d", size.width, size.height), func(t *testing.T) {

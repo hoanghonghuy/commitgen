@@ -34,6 +34,11 @@ func resolveLocaleSetting(s string) Locale {
 func DetectFromEnvironment() Locale {
 	for _, key := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
 		if v := os.Getenv(key); v != "" {
+			base, _, _ := strings.Cut(strings.TrimSpace(v), ".")
+			base, _, _ = strings.Cut(base, "@")
+			if strings.EqualFold(base, "C") || strings.EqualFold(base, "POSIX") {
+				return LocaleEN
+			}
 			if loc := NormalizeLocale(v); loc != "" {
 				return loc
 			}

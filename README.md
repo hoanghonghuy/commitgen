@@ -63,7 +63,7 @@ Common flags: `--print`, `--dry-run`, `--amend`, `--count`, `--timeout`, `--loca
 | `Ctrl+C` | Quit |
 | `PgUp` / `PgDn` | Scroll long content |
 
-Config form: abort step 2 (Esc / cancel) returns to provider selection. Set `ACCESSIBLE=1` or `TERM=dumb` for huh accessible mode.
+Config form: abort step 2 (Esc / cancel) returns to provider selection. Set `ACCESSIBLE=1` or `TERM=dumb` for huh accessible mode. Press Enter to keep the current numeric value in accessible mode; the value must still pass validation.
 
 After upgrading, reinstall existing CommitGen hooks with `install-hook` / `install-msg-hook` to refresh their scripts. The validation hook uses the worktree where the commit is running, including linked worktrees.
 
@@ -153,7 +153,7 @@ Legacy `api_key` / `base_url` / `anthropic_key` / `gemini_key` are **migrated au
 
 Other settings:
 - **Preferences**: Conventional Commits, Summarization, Ignored Files.
-- **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests.
+- **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests. With `--count`, each candidate gets its own request timeout.
 - **Temperature**: Use a finite number from 0 to 1 for Anthropic, or 0 to 2 for the other providers. The config editor and runtime reject values outside the provider's range.
 - **Connectivity timeout**: `ping` and `models` use at most 30 seconds and honor shorter configured timeouts.
 - **Advanced** (edit JSON): `prompt_template_file`, `rules_file`.

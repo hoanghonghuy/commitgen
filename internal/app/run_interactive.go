@@ -225,28 +225,28 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 					Title(tr.T("config.field.recent_n")).
 					Description(tr.T("config.field.recent_n.desc")).
 					Value(&recentNStr).
-					Validate(func(s string) error { return validateIntField(tr, s) }),
+					Validate(configFieldValidator(&recentNStr, func(s string) error { return validateIntField(tr, s) })),
 				huh.NewInput().
 					Title(tr.T("config.field.max_files")).
 					Description(tr.T("config.field.max_files.desc")).
 					Value(&maxFilesStr).
-					Validate(func(s string) error { return validateIntField(tr, s) }),
+					Validate(configFieldValidator(&maxFilesStr, func(s string) error { return validateIntField(tr, s) })),
 				huh.NewInput().
 					Title(tr.T("config.field.temperature")).
 					Description(tr.T("config.field.temperature.desc", maxTemperature(provider))).
 					Value(&tempStr).
-					Validate(func(s string) error {
+					Validate(configFieldValidator(&tempStr, func(s string) error {
 						v, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 						if err != nil {
 							return fmt.Errorf("%s", tr.T("config.field.temperature.error", maxTemperature(provider)))
 						}
 						return validateTemperature(tr, provider, v)
-					}),
+					})),
 				huh.NewInput().
 					Title(tr.T("config.field.timeout")).
 					Description(tr.T("config.field.timeout.desc")).
 					Value(&timeoutStr).
-					Validate(func(s string) error {
+					Validate(configFieldValidator(&timeoutStr, func(s string) error {
 						if err := validateIntField(tr, s); err != nil {
 							return err
 						}
@@ -255,7 +255,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 							return fmt.Errorf("%s", tr.T("config.field.timeout.error"))
 						}
 						return nil
-					}),
+					})),
 			),
 			newGroup(
 				huh.NewConfirm().

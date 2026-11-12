@@ -142,6 +142,18 @@ func applyFormAccessibility(form *huh.Form, getenv func(string) string) *huh.For
 	return form.WithKeyMap(keymap).WithAccessible(UseAccessibleForm(getenv))
 }
 
+// configFieldValidator applies Huh's accessible default before validation.
+// Normal TUI inputs still validate an explicitly cleared value as empty.
+func configFieldValidator(value *string, validate func(string) error) func(string) error {
+	accessible := UseAccessibleForm(os.Getenv)
+	return func(s string) error {
+		if accessible && strings.TrimSpace(s) == "" {
+			s = *value
+		}
+		return validate(s)
+	}
+}
+
 // validateIntField maps strconv failures to a localized error.
 func validateIntField(tr *i18n.Translator, s string) error {
 	if _, err := strconv.Atoi(strings.TrimSpace(s)); err != nil {

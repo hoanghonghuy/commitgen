@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,32 @@ import (
 
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
+
+func TestGenerateStream_FramingMatrix(t *testing.T) {
+	original := "data: {\"choices\":[{\"delta\":{\"content\":\"feat: \"}}]}\n\ndata: {\"choices\":[{\"delta\":{\"content\":\"complete\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n"
+	for name, body := range map[string]string{
+		"LF":                       original,
+		"CRLF":                     strings.ReplaceAll(original, "\n", "\r\n"),
+		"CR":                       strings.ReplaceAll(original, "\n", "\r"),
+		"BOM":                      "\ufeff" + original,
+		"no_space":                 strings.ReplaceAll(original, "data: ", "data:"),
+		"comments":                 ": keepalive\n\n" + original,
+		"trailing_data_whitespace": strings.Replace(original, "\n\n", "\ndata:  \n\n", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, body)
+			}))
+			defer srv.Close()
+			var deltas strings.Builder
+			content, err := New(Config{BaseURL: srv.URL, Model: "fixture"}).GenerateStream(context.Background(), sampleMsgs(), .7, func(s string) { deltas.WriteString(s) })
+			if err != nil || content != "feat: complete" || deltas.String() != content {
+				t.Errorf("valid SSE framing rejected or lost content: content=%q deltas=%q err=%v", content, deltas.String(), err)
+			}
+		})
+	}
+}
 
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{

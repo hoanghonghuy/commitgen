@@ -103,6 +103,32 @@ func TestGenerateStream_MultilineEvents(t *testing.T) {
 	}
 }
 
+func TestGenerateStream_FramingMatrix(t *testing.T) {
+	original := "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"feat: \"}}\n\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"complete\"}}\n\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"}}\n\ndata: {\"type\":\"message_stop\"}\n\n"
+	for name, body := range map[string]string{
+		"LF":                       original,
+		"CRLF":                     strings.ReplaceAll(original, "\n", "\r\n"),
+		"CR":                       strings.ReplaceAll(original, "\n", "\r"),
+		"BOM":                      "\ufeff" + original,
+		"no_space":                 strings.ReplaceAll(original, "data: ", "data:"),
+		"comments":                 ": keepalive\n\n" + original,
+		"trailing_data_whitespace": strings.Replace(original, "\n\n", "\ndata:  \n\n", 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, body)
+			}))
+			defer srv.Close()
+			var deltas strings.Builder
+			content, err := newTestClient(srv.URL).GenerateStream(context.Background(), sampleMsgs(), .7, func(s string) { deltas.WriteString(s) })
+			if err != nil || content != "feat: complete" || deltas.String() != content {
+				t.Errorf("valid SSE framing rejected or lost content: content=%q deltas=%q err=%v", content, deltas.String(), err)
+			}
+		})
+	}
+}
+
 func sampleMsgs() []vscodeprompt.VSCodeMessage {
 	return []vscodeprompt.VSCodeMessage{
 		{Role: vscodeprompt.RoleSystem, Content: []vscodeprompt.VSCodeContentPart{{Type: 1, Text: "system prompt"}}},

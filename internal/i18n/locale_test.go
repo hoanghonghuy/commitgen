@@ -4,6 +4,28 @@ import (
 	"testing"
 )
 
+func TestResolveLocale_SystemPrecedence(t *testing.T) {
+	for _, test := range []struct {
+		name, all, messages, lang string
+		want                      Locale
+	}{
+		{"explicit_English_control", "en_US.UTF-8", "", "vi_VN.UTF-8", LocaleEN},
+		{"LC_ALL_C", "C", "", "vi_VN.UTF-8", LocaleEN},
+		{"LC_ALL_C_UTF8", "C.UTF-8", "", "vi_VN.UTF-8", LocaleEN},
+		{"LC_ALL_POSIX", "POSIX", "", "ja_JP.UTF-8", LocaleEN},
+		{"LC_MESSAGES_C", "", "C", "zh_CN.UTF-8", LocaleEN},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("LC_ALL", test.all)
+			t.Setenv("LC_MESSAGES", test.messages)
+			t.Setenv("LANG", test.lang)
+			if got := ResolveLocale("auto", "", "", "en"); got != test.want {
+				t.Errorf("locale precedence ignored: LC_ALL=%q LC_MESSAGES=%q LANG=%q got=%q want=%q", test.all, test.messages, test.lang, got, test.want)
+			}
+		})
+	}
+}
+
 func TestNormalizeLocale(t *testing.T) {
 	tests := []struct {
 		in   string
@@ -24,6 +46,8 @@ func TestNormalizeLocale(t *testing.T) {
 }
 
 func TestResolveLocale_Auto(t *testing.T) {
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
 	t.Setenv("LANG", "vi_VN.UTF-8")
 	if got := ResolveLocale("auto", "", "", "en"); got != LocaleVI {
 		t.Fatalf("auto flag = %q, want vi", got)
@@ -38,6 +62,8 @@ func TestResolveLocale_Priority(t *testing.T) {
 }
 
 func TestResolveLocale_FileAuto(t *testing.T) {
+	t.Setenv("LC_ALL", "")
+	t.Setenv("LC_MESSAGES", "")
 	t.Setenv("LANG", "zh_CN.UTF-8")
 	if got := ResolveLocale("", "", "auto", "en"); got != LocaleZH {
 		t.Fatalf("file auto = %q, want zh", got)
