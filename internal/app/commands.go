@@ -335,5 +335,9 @@ func getJSON(ctx context.Context, url string, headers map[string]string, out int
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read response: %w", err)
+	}
+	return json.Unmarshal(body, out)
 }

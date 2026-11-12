@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/hoanghonghuy/commitgen/internal/i18n"
 )
 
@@ -50,6 +52,40 @@ func TestApplyInlineStyles(t *testing.T) {
 func newTestReviewModel(quick bool) reviewModel {
 	tr := i18n.New(i18n.LocaleEN)
 	return newReviewModel(context.Background(), fakeProvider{resp: "## Conclusion\nok"}, baseMsgs(), 0.7, 5*time.Second, quick, tr)
+}
+
+func TestReview_CopyResize(t *testing.T) {
+	for _, locale := range []i18n.Locale{i18n.LocaleEN, i18n.LocaleVI, i18n.LocaleJA, i18n.LocaleZH} {
+		for _, quick := range []bool{false, true} {
+			for _, copying := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/quick=%v/copying=%v", locale, quick, copying), func(t *testing.T) {
+					m := newTestReviewModel(quick)
+					m.tr = i18n.New(locale)
+					report := strings.Repeat("left ", 8) + "IMPORTANT_DETAIL\n" + strings.Repeat("Review detail\n", 30)
+					u, _ := m.Update(reviewResultMsg{content: report})
+					m = u.(reviewModel)
+					if copying {
+						// Exercise the key path, then simulate successful clipboard completion.
+						// Do not execute the OS clipboard command during this render test.
+						u, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'y'}})
+						m = u.(reviewModel)
+					}
+					u, _ = m.Update(tea.WindowSizeMsg{Width: 40, Height: 12})
+					m = u.(reviewModel)
+					if copying {
+						u, _ = m.Update(reviewCopyDoneMsg{})
+						m = u.(reviewModel)
+					}
+					if w, h := lipgloss.Width(m.View()), lipgloss.Height(m.View()); w > 40 || h > 12 {
+						t.Fatalf("review after copy/resize renders %dx%d in 40x12 terminal; viewport=%d\n%s", w, h, m.viewport.Height, m.View())
+					}
+					if !strings.Contains(m.View(), "IMPORTANT_DETAIL") {
+						t.Fatalf("detail lost after copy/resize despite fitting the top viewport\n%s", m.View())
+					}
+				})
+			}
+		}
+	}
 }
 
 func TestReview_NavigationKeepsSelectedActionVisible(t *testing.T) {

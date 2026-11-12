@@ -154,6 +154,7 @@ Legacy `api_key` / `base_url` / `anthropic_key` / `gemini_key` are **migrated au
 Other settings:
 - **Config saves**: Write errors leave the previous JSON intact. Saving requires write access to the containing directory; symlinks to config files are preserved and their targets are updated.
 - **Preferences**: Conventional Commits, Summarization, Ignored Files.
+  The config editor preserves existing ignore patterns when the field is unchanged. Edit `ignored_files` in JSON for patterns containing literal commas; the editor uses commas to separate newly entered patterns.
 - **Timeout**: Set `--timeout`, `timeout_seconds`, or the timeout field in `commitgen config` (seconds, default 120). The HTTP timeout applies to every AI provider, including streaming requests. With `--count`, each candidate gets its own request timeout.
 - **Temperature**: Use a finite number from 0 to 1 for Anthropic, or 0 to 2 for the other providers. The config editor and runtime reject values outside the provider's range.
 - **Connectivity timeout**: `ping` and `models` use at most 30 seconds and honor shorter configured timeouts.

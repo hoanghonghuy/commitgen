@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync/atomic"
@@ -61,6 +62,101 @@ func testConfigAccessibleNumericDefaults(t *testing.T, temperature float64) {
 		if saved.Temperature != nil {
 			t.Logf("temperature before=%g after=%g", temperature, *saved.Temperature)
 		}
+	}
+}
+
+func TestCLI_ConfigIgnoredFilesRoundTrip(t *testing.T) {
+	for _, tc := range []struct {
+		pattern string
+		normal  bool
+	}{
+		{"logs/**", false}, {"data,backup/**", false}, {"[a,b].txt", false},
+		{"logs/**", true}, {"data,backup/**", true}, {"[a,b].txt", true},
+	} {
+		t.Run(fmt.Sprintf("%s/normal=%v", tc.pattern, tc.normal), func(t *testing.T) {
+			pattern := tc.pattern
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", os.Getenv("HOME"))
+			path := filepath.Join(t.TempDir(), "config.json")
+			original := config.FileConfig{Provider: "openai", Model: "test", IgnoredFiles: []string{pattern}}
+			body, err := json.Marshal(original)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, body, 0600); err != nil {
+				t.Fatal(err)
+			}
+			repo := t.TempDir()
+			initCLIRepo(t, repo)
+			ignoredName := map[string]string{"logs/**": "logs/private.txt", "data,backup/**": "data,backup/private.txt", "[a,b].txt": "a.txt"}[pattern]
+			ignoredPath := filepath.Join(repo, ignoredName)
+			if err := os.MkdirAll(filepath.Dir(ignoredPath), 0700); err != nil {
+				t.Fatal(err)
+			}
+			const marker = "AUDIT_SHOULD_STAY_IGNORED"
+			for file, content := range map[string]string{ignoredPath: marker, filepath.Join(repo, "visible.txt"): "visible change"} {
+				if err := os.WriteFile(file, []byte(content), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if out, err := exec.Command("git", "-C", repo, "add", ".").CombinedOutput(); err != nil {
+				t.Fatalf("git add: %v %s", err, out)
+			}
+			beforePrompt, err := runCLI(t, "dump-prompt", "--repo", repo, "--config", path)
+			if err != nil || strings.Contains(beforePrompt, marker) {
+				t.Fatalf("ignore pattern control failed before saving: err=%v output=%s", err, beforePrompt)
+			}
+			if tc.normal {
+				steps := []formStep{{prompt: "┃ AI Provider", input: "\r"}}
+				for _, title := range []string{"Model", "API Key", "System Prompt Template", "Number of recent commits to include", "Max staged files to analyze", "LLM temperature (0.0 - 2.0)", "AI request timeout in seconds (default 120)", "Summarize Changes", "Conventional Commits", "Ignored Files", "Rules File", "UI Language", "Review Language", "Log Level", "Log Output", "Log File Path"} {
+					steps = append(steps, formStep{prompt: "┃ " + title, input: "\r"})
+				}
+				runConfigForm(t, path, steps)
+			} else {
+				runConfigForm(t, path)
+			}
+			saved, err := config.Load(path)
+			if err != nil || !reflect.DeepEqual(saved.IgnoredFiles, original.IgnoredFiles) {
+				t.Errorf("unchanged ignores corrupted: before=%q after=%q err=%v", original.IgnoredFiles, saved.IgnoredFiles, err)
+			}
+			afterPrompt, err := runCLI(t, "dump-prompt", "--repo", repo, "--config", path)
+			if err != nil || strings.Contains(afterPrompt, marker) {
+				t.Errorf("saving untouched config exposed ignored fixture in AI prompt: markerPresent=%v err=%v", strings.Contains(afterPrompt, marker), err)
+			}
+		})
+	}
+}
+
+func TestCLI_ConfigIgnoredFilesEditing(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  []string
+	}{
+		{"replace", "logs/**, tmp/**", []string{"logs/**", "tmp/**"}},
+		{"clear", "", []string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", os.Getenv("HOME"))
+			path := filepath.Join(t.TempDir(), "config.json")
+			if err := os.WriteFile(path, []byte(`{"provider":"openai","ignored_files":["data,backup/**"]}`), 0600); err != nil {
+				t.Fatal(err)
+			}
+			steps := []formStep{{prompt: "┃ AI Provider", input: "\r"}}
+			for _, title := range []string{"Model", "API Key", "System Prompt Template", "Number of recent commits to include", "Max staged files to analyze", "LLM temperature (0.0 - 2.0)", "AI request timeout in seconds (default 120)", "Summarize Changes", "Conventional Commits", "Ignored Files", "Rules File", "UI Language", "Review Language", "Log Level", "Log Output", "Log File Path"} {
+				input := "\r"
+				if title == "Ignored Files" {
+					input = "\x01\x0b" + tc.input + "\r"
+				}
+				steps = append(steps, formStep{prompt: "┃ " + title, input: input})
+			}
+			runConfigForm(t, path, steps)
+			saved, err := config.Load(path)
+			if err != nil || !reflect.DeepEqual(saved.IgnoredFiles, tc.want) {
+				t.Errorf("explicit edit lost: got=%#v want=%#v err=%v", saved.IgnoredFiles, tc.want, err)
+			}
+		})
 	}
 }
 

@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -256,6 +257,51 @@ func TestProviderLabel(t *testing.T) {
 	}
 	if providerLabel("Anthropic") != "anthropic" {
 		t.Error("should lowercase")
+	}
+}
+
+func TestRunModels_GzipIntegrity(t *testing.T) {
+	for _, provider := range []string{"compatible", "ollama"} {
+		for _, corrupt := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/corrupt=%v", provider, corrupt), func(t *testing.T) {
+				body := `{"data":[{"id":"model-original"}]}`
+				if provider == "ollama" {
+					body = `{"models":[{"name":"model-original"}]}`
+				}
+				var compressed bytes.Buffer
+				zw, err := gzip.NewWriterLevel(&compressed, gzip.NoCompression)
+				if err != nil {
+					t.Fatal(err)
+				}
+				fmt.Fprint(zw, body)
+				if err := zw.Close(); err != nil {
+					t.Fatal(err)
+				}
+				payload := compressed.Bytes()
+				if corrupt {
+					index := bytes.Index(payload, []byte("model-original"))
+					if index < 0 {
+						t.Fatal("fixture must contain uncompressed text")
+					}
+					payload[index+len("model-")] = 'X'
+				}
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Encoding", "gzip")
+					_, _ = w.Write(payload)
+				}))
+				defer server.Close()
+				var modelErr error
+				out := captureStdout(t, func() {
+					modelErr = runModels(context.Background(), Config{Provider: provider, BaseURL: server.URL}, i18n.New(i18n.LocaleEN))
+				})
+				if corrupt && (modelErr == nil || out != "") {
+					t.Fatalf("damaged model list accepted: output=%q err=%v", out, modelErr)
+				}
+				if !corrupt && (modelErr != nil || out != "model-original\n") {
+					t.Fatalf("valid control: output=%q err=%v", out, modelErr)
+				}
+			})
+		}
 	}
 }
 

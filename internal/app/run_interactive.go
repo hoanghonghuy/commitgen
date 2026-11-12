@@ -112,6 +112,7 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 	summarize := cfg.Summarize
 	conventional := cfg.Conventional
 	ignoredFilesStr := strings.Join(cfg.IgnoredFiles, ", ")
+	originalIgnoredFilesStr := ignoredFilesStr
 
 	reviewLanguage := cfg.ReviewLanguage
 	if reviewLanguage == "" {
@@ -362,18 +363,21 @@ func runConfigInteractive(ctx context.Context, cfg Config, savePath string, tr *
 		cfg.Summarize = summarize
 		cfg.Conventional = conventional
 
-		rawIgnores := strings.Split(ignoredFilesStr, ",")
-		var ignores []string
-		if cfg.IgnoredFiles != nil {
-			ignores = []string{}
-		}
-		for _, s := range rawIgnores {
-			s = strings.TrimSpace(s)
-			if s != "" {
-				ignores = append(ignores, s)
+		// An unchanged field must preserve commas inside existing patterns.
+		if ignoredFilesStr != originalIgnoredFilesStr {
+			rawIgnores := strings.Split(ignoredFilesStr, ",")
+			var ignores []string
+			if cfg.IgnoredFiles != nil {
+				ignores = []string{}
 			}
+			for _, s := range rawIgnores {
+				s = strings.TrimSpace(s)
+				if s != "" {
+					ignores = append(ignores, s)
+				}
+			}
+			cfg.IgnoredFiles = ignores
 		}
-		cfg.IgnoredFiles = ignores
 		cfg.ReviewLanguage = reviewLanguage
 		cfg.Locale = locale
 		cfg.LogLevel = logLevel

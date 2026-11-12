@@ -578,7 +578,7 @@ func (m reviewModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.state = reviewStateDone
 		}
-		return m, nil
+		return m.refreshViewport(), nil
 
 	case clipboardErrMsg:
 		m.statusBanner = m.tr.T("tui.status.clipboard_failed", msg.err)
