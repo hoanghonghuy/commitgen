@@ -1,14 +1,18 @@
 package openai
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hoanghonghuy/commitgen/internal/vscodeprompt"
 )
@@ -67,6 +71,72 @@ func TestBuildRequest_ZeroTemperature(t *testing.T) {
 		if got := string(request["temperature"]); got != "0" {
 			t.Errorf("stream=%v: temperature = %q, want 0", stream, got)
 		}
+	}
+}
+
+func TestGenerate_GzipIntegrity(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		status  int
+		corrupt bool
+	}{
+		{"valid", http.StatusOK, false},
+		{"corrupt", http.StatusOK, true},
+		{"client-error", http.StatusUnauthorized, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var compressed bytes.Buffer
+			zw, err := gzip.NewWriterLevel(&compressed, gzip.NoCompression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprint(zw, `{"choices":[{"message":{"content":"fix: repair cache"},"finish_reason":"stop"}]}`)
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			payload := compressed.Bytes()
+			if tc.corrupt {
+				index := bytes.Index(payload, []byte("repair cache"))
+				if index < 0 {
+					t.Fatal("fixture must contain uncompressed text")
+				}
+				payload[index] = 'd'
+			}
+			var calls int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				atomic.AddInt32(&calls, 1)
+				w.Header().Set("Content-Encoding", "gzip")
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write(payload)
+			}))
+			defer server.Close()
+			// Verify the real HTTP transport detects the damaged checksum.
+			resp, err := http.Get(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, readErr := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if (readErr != nil) != tc.corrupt {
+				t.Fatalf("transport control: corrupt=%v err=%v", tc.corrupt, readErr)
+			}
+			atomic.StoreInt32(&calls, 0)
+			client := New(Config{BaseURL: server.URL, Model: "test", Timeout: time.Second})
+			got, err := client.Generate(context.Background(), nil, 0)
+			if tc.status != http.StatusOK {
+				if err == nil || !strings.Contains(err.Error(), "401") || atomic.LoadInt32(&calls) != 1 || got != "" {
+					t.Fatalf("client error lost or retried: content=%q calls=%d err=%v", got, atomic.LoadInt32(&calls), err)
+				}
+				return
+			}
+			if tc.corrupt && (err == nil || !strings.Contains(err.Error(), "checksum") || got != "") {
+				t.Fatalf("provider ignored %v and accepted %q", readErr, got)
+			}
+			if !tc.corrupt && (err != nil || got != "fix: repair cache") {
+				t.Fatalf("valid control: got=%q err=%v", got, err)
+			}
+		})
 	}
 }
 

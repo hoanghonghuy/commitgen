@@ -85,10 +85,17 @@ func TestSaveWriteFailureProcess(t *testing.T) {
 	if err := syscall.Getrlimit(syscall.RLIMIT_FSIZE, &limit); err != nil {
 		t.Fatal(err)
 	}
+	original := limit
 	limit.Cur = 128
 	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &limit); err != nil {
 		t.Fatal(err)
 	}
+	defer func() {
+		// Go writes subprocess coverage after this test returns.
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &original); err != nil {
+			t.Errorf("restore file size limit: %v", err)
+		}
+	}()
 	signal.Ignore(syscall.SIGXFSZ)
 	err := Save(FileConfig{Provider: "openai", Model: "new", PromptTemplate: strings.Repeat("X", 512)}, path)
 	if !errors.Is(err, syscall.EFBIG) {

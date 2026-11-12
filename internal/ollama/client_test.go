@@ -161,14 +161,21 @@ func TestGenerateStream_HTTPError(t *testing.T) {
 }
 
 func TestGenerateStream_RejectsMidstreamError(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("{\"message\":{\"content\":\"feat: partial\"},\"done\":false}\n{\"error\":\"model failed mid-stream\"}\n"))
-	}))
-	defer srv.Close()
-	client := New(Config{BaseURL: srv.URL, Model: "test"})
-	text, err := client.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
-	if err == nil || !strings.Contains(err.Error(), "model failed mid-stream") {
-		t.Fatalf("midstream error accepted: content=%q err=%v", text, err)
+	for _, tc := range []struct{ name, chunk, wantError string }{
+		{"api-error", `{"error":"model failed mid-stream"}`, "model failed mid-stream"},
+		{"invalid-json", `{"message":{"content":"lost text"},BROKEN}`, "decode"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, `{"message":{"content":"feat: partial"},"done":false}`+"\n"+tc.chunk+"\n"+`{"done":true,"done_reason":"stop"}`+"\n")
+			}))
+			defer srv.Close()
+			client := New(Config{BaseURL: srv.URL, Model: "test"})
+			text, err := client.GenerateStream(context.Background(), sampleMsgs(), 0.7, nil)
+			if err == nil || !strings.Contains(err.Error(), tc.wantError) || text != "" {
+				t.Fatalf("midstream error accepted: content=%q err=%v", text, err)
+			}
+		})
 	}
 }
 

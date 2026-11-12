@@ -156,7 +156,7 @@ func (c *Client) GenerateStream(ctx context.Context, msgs []vscodeprompt.VSCodeM
 		}
 		var chunk chatResponse
 		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
-			continue
+			return "", fmt.Errorf("ollama: decode stream response: %w", err)
 		}
 		if chunk.Error != "" {
 			return "", fmt.Errorf("ollama: stream error: %s", chunk.Error)

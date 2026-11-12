@@ -231,6 +231,60 @@ func TestSave_PreservesSymlink(t *testing.T) {
 	}
 }
 
+func TestSave_PreservesSymlinkTraversal(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("creating symlinks may require administrator privileges")
+	}
+	for _, kind := range []string{"relative-link", "absolute-link", "direct-path"} {
+		t.Run(kind, func(t *testing.T) {
+			dir := t.TempDir()
+			realDir := filepath.Join(dir, "real")
+			if err := os.MkdirAll(filepath.Join(realDir, "child"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(filepath.Join("real", "child"), filepath.Join(dir, "alias")); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(realDir, "settings.json")
+			unrelated := filepath.Join(dir, "settings.json")
+			before := []byte(`{"model":"unrelated"}`)
+			if err := os.WriteFile(unrelated, before, 0600); err != nil {
+				t.Fatal(err)
+			}
+			// Keep '..' intact: the kernel follows alias before traversing it.
+			linkTarget := "alias/../settings.json"
+			if kind != "relative-link" {
+				linkTarget = dir + string(os.PathSeparator) + linkTarget
+			}
+			path := filepath.Join(dir, "config.json")
+			if kind == "direct-path" {
+				path = linkTarget
+			} else if err := os.Symlink(linkTarget, path); err != nil {
+				t.Fatal(err)
+			}
+			if err := Save(FileConfig{Model: "new"}, path); err != nil {
+				t.Fatal(err)
+			}
+			after, err := os.ReadFile(unrelated)
+			if err != nil || string(after) != string(before) {
+				t.Errorf("save modified unrelated file: before=%q after=%q err=%v", before, after, err)
+			}
+			for _, readPath := range []string{path, target} {
+				loaded, err := load(readPath, false)
+				if err != nil || loaded.Model != "new" {
+					t.Errorf("expected target not saved: path=%q model=%q err=%v", readPath, loaded.Model, err)
+				}
+			}
+			if kind != "direct-path" {
+				got, err := os.Readlink(path)
+				if err != nil || got != linkTarget {
+					t.Errorf("config symlink changed: got=%q err=%v", got, err)
+				}
+			}
+		})
+	}
+}
+
 func TestSave_RejectsReadOnlyFile(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("requires POSIX permissions enforced for a non-root user")

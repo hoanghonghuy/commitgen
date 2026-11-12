@@ -176,7 +176,15 @@ func configWritePath(path string) (string, error) {
 		}
 		info, statErr := os.Lstat(path)
 		if os.IsNotExist(statErr) {
-			return path, nil
+			dir, name := filepath.Split(path)
+			if dir == "" {
+				dir = "."
+			}
+			dir, err := filepath.EvalSymlinks(dir)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(dir, name), nil
 		}
 		if statErr != nil {
 			return "", statErr
@@ -189,7 +197,9 @@ func configWritePath(path string) (string, error) {
 			return "", err
 		}
 		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(path), target)
+			// Joining would clean '..' before resolving a preceding symlink.
+			dir, _ := filepath.Split(path)
+			target = dir + target
 		}
 		path = target
 	}

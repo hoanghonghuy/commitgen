@@ -1,7 +1,11 @@
 package httpx
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,6 +46,44 @@ func TestDoJSONRequest_Success(t *testing.T) {
 	}
 	if resp.Greeting != "hello world" {
 		t.Errorf("got greeting %q", resp.Greeting)
+	}
+}
+
+func TestDoJSONRequest_GzipIntegrity(t *testing.T) {
+	for _, corrupt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("corrupt=%v", corrupt), func(t *testing.T) {
+			var compressed bytes.Buffer
+			zw, err := gzip.NewWriterLevel(&compressed, gzip.NoCompression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprint(zw, `{"greeting":"hello world"}`)
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			payload := compressed.Bytes()
+			if corrupt {
+				index := bytes.Index(payload, []byte("hello world"))
+				if index < 0 {
+					t.Fatal("fixture must contain uncompressed text")
+				}
+				payload[index] = 'j'
+			}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Encoding", "gzip")
+				_, _ = w.Write(payload)
+			}))
+			defer srv.Close()
+			resp := echoResp{Greeting: "original"}
+			err = DoJSONRequest(context.Background(), newTestClient(), http.MethodPost, srv.URL, nil, echoReq{}, &resp)
+			if corrupt {
+				if !errors.Is(err, gzip.ErrChecksum) || resp.Greeting != "original" {
+					t.Fatalf("corrupt response accepted or decoded: greeting=%q err=%v", resp.Greeting, err)
+				}
+			} else if err != nil || resp.Greeting != "hello world" {
+				t.Fatalf("valid control: greeting=%q err=%v", resp.Greeting, err)
+			}
+		})
 	}
 }
 

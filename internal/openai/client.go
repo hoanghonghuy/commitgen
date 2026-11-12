@@ -313,7 +313,7 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 		}
 	}()
 
-	b, _ := io.ReadAll(resp.Body)
+	b, readErr := io.ReadAll(resp.Body)
 
 	// Check HTTP status before parsing. Non-2xx responses (auth errors, rate
 	// limits, gateway errors) may not be valid JSON, so handle them explicitly
@@ -332,6 +332,10 @@ func (c *Client) generate(ctx context.Context, msgs []vscodeprompt.VSCodeMessage
 			status: resp.StatusCode,
 			msg:    fmt.Sprintf("openai: API error (status %d): %s", resp.StatusCode, truncateString(string(b), 500)),
 		}
+	}
+
+	if readErr != nil {
+		return "", fmt.Errorf("openai: read response: %w", readErr)
 	}
 
 	// Some compatible servers return SSE even for a blocking request.

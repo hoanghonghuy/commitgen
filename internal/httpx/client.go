@@ -91,7 +91,11 @@ func doOnce(ctx context.Context, client *http.Client, method, url string, header
 		return isRetryableStatus(resp.StatusCode), apiErr
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(response); err != nil {
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return ctx.Err() == nil, fmt.Errorf("read response: %w", err)
+	}
+	if err := json.Unmarshal(respBody, response); err != nil {
 		return false, fmt.Errorf("decode response: %w", err)
 	}
 	return false, nil

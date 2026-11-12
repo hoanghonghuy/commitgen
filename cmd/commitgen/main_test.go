@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"flag"
@@ -818,6 +819,64 @@ func TestCLI_SubcommandConfigFlags(t *testing.T) {
 	out, err := runCLI(t, "--config", before, "config", "path", "--unknown-option")
 	if err == nil || !strings.Contains(out, "flag provided but not defined") {
 		t.Fatalf("unknown flag was not rejected: output=%q err=%v", out, err)
+	}
+}
+
+func TestCLI_CorruptResponseDoesNotWriteHook(t *testing.T) {
+	for _, corrupt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("corrupt=%v", corrupt), func(t *testing.T) {
+			var compressed bytes.Buffer
+			zw, err := gzip.NewWriterLevel(&compressed, gzip.NoCompression)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprint(zw, `{"choices":[{"message":{"content":"fix: repair cache"},"finish_reason":"stop"}]}`)
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
+			payload := compressed.Bytes()
+			if corrupt {
+				index := bytes.Index(payload, []byte("repair cache"))
+				if index < 0 {
+					t.Fatal("fixture must contain uncompressed text")
+				}
+				payload[index] = 'd'
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Encoding", "gzip")
+				w.Header().Set("Content-Type", "application/json")
+				w.Write(payload)
+			}))
+			defer server.Close()
+			dir := t.TempDir()
+			initCLIRepo(t, dir)
+			if err := os.WriteFile(filepath.Join(dir, "file.txt"), []byte("staged change\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if out, err := exec.Command("git", "-C", dir, "add", "file.txt").CombinedOutput(); err != nil {
+				t.Fatalf("git add: %v %s", err, out)
+			}
+			configPath := filepath.Join(t.TempDir(), "config.json")
+			settings := fmt.Sprintf(`{"provider":"compatible","model":"test","compatible_base_url":%q}`, server.URL)
+			if err := os.WriteFile(configPath, []byte(settings), 0600); err != nil {
+				t.Fatal(err)
+			}
+			hook := filepath.Join(t.TempDir(), "COMMIT_EDITMSG")
+			if err := os.WriteFile(hook, []byte("original message"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			out, cliErr := runCLI(t, "suggest", "--repo", dir, "--config", configPath, "--print", "--hook", hook)
+			message, err := os.ReadFile(hook)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if corrupt && (cliErr == nil || string(message) != "original message") {
+				t.Fatalf("corrupt response reported success or modified hook: err=%v hook=%q output=%q", cliErr, message, out)
+			}
+			if !corrupt && (cliErr != nil || string(message) != "fix: repair cache") {
+				t.Fatalf("valid control: err=%v hook=%q output=%q", cliErr, message, out)
+			}
+		})
 	}
 }
 
